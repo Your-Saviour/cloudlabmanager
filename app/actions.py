@@ -2,6 +2,8 @@ import subprocess
 from pathlib import Path
 import os
 import yaml
+from typing import Union, Sequence
+import shlex
 
 class actions:
     def __init__(self, action_file):
@@ -32,28 +34,39 @@ class actions:
                     env[key] = (value)
                 
                 if command_start == "CLONE":
-                    print(env)
-                    p = subprocess.run(
-                        ["git", "clone", command_variables],
-                        env=env,
-                        check=True,
-                        capture_output=True
-                    )
-                    print("STDOUT:\n", p.stdout)
-                    print("STDERR:\n", p.stderr)
-                    p.check_returncode()
-                    pass
+                    self.run(["git", "clone", command_variables], env=env)
 
                 if command_start == "RUN":
-                    p = subprocess.run(
-                        command_variables,
-                        env=env,
-                        check=True,
-                        capture_output=True
-                    )
-                    print("STDOUT:\n", p.stdout)
-                    print("STDERR:\n", p.stderr)
-                    p.check_returncode()
+                    self.run(command_variables, env=env)
                 
                 if command_start == "RETURN":
                     return command_variables
+    
+    def run(self, cmd: Union[str, Sequence[str]], *, env=None, cwd=None, add_env=None) -> subprocess.CompletedProcess:
+        # If cmd is a string, split it into args safely (no shell required)
+        if isinstance(cmd, str):
+            cmd = shlex.split(cmd)
+
+        try:
+            p = subprocess.run(
+                list(cmd),
+                env=env,
+                cwd=cwd,
+                text=True,            # gives you strings not bytes
+                capture_output=True,
+                check=True,
+            )
+            print("✅ RUN ok")
+            if p.stdout:
+                print("STDOUT:\n", p.stdout)
+            if p.stderr:
+                print("STDERR:\n", p.stderr)
+            return p
+
+        except subprocess.CalledProcessError as e:
+            print("❌ RUN failed")
+            print("returncode:", e.returncode)
+            print("cmd:", e.cmd)
+            print("STDOUT:\n", e.stdout)
+            print("STDERR:\n", e.stderr)
+            raise

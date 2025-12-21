@@ -10,7 +10,9 @@ services:
 
     container_name: cloud-lab-manager
 
-    restart: unless-stopped
+    #restart: unless-stopped
+    restart: no
 
     volumes:
       - ./data:/data
+      #- ../cloudlabsettings:/app/cloudlabsettings
