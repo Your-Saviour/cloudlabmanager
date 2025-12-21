@@ -1,0 +1,59 @@
+import subprocess
+from pathlib import Path
+import os
+import yaml
+
+class actions:
+    def __init__(self, action_file):
+        with open(action_file, "r") as f:
+            self.settings = yaml.safe_load(f)
+        print(self.settings)
+
+    def start(self):
+        env = os.environ.copy()
+        for action in self.settings:
+            print(action)
+            print(type(self.settings[action]))
+            if type(self.settings[action]) != type(list()):
+                raise Exception("action not a list")
+
+            for command in self.settings[action]:
+                if command == None:
+                    continue
+
+                command_start = command.split(" ")
+                command_variables = " ".join(command_start[1:])
+                command_start = command_start[0]
+
+                if command_start == "ENV":
+                    key = command_variables.split("=")[0]#.strip('"')
+                    value = "=".join(command_variables.split("=")[1:])#.strip('"')
+                    print(key, value)
+                    env[key] = (value)
+                
+                if command_start == "CLONE":
+                    print(env)
+                    p = subprocess.run(
+                        ["git", "clone", command_variables],
+                        env=env,
+                        check=True,
+                        capture_output=True
+                    )
+                    print("STDOUT:\n", p.stdout)
+                    print("STDERR:\n", p.stderr)
+                    p.check_returncode()
+                    pass
+
+                if command_start == "RUN":
+                    p = subprocess.run(
+                        command_variables,
+                        env=env,
+                        check=True,
+                        capture_output=True
+                    )
+                    print("STDOUT:\n", p.stdout)
+                    print("STDERR:\n", p.stderr)
+                    p.check_returncode()
+                
+                if command_start == "RETURN":
+                    return command_variables

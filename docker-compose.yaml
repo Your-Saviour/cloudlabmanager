@@ -1,0 +1,16 @@
+services:
+  cloudlabmanager:
+    build:
+      dockerfile: Dockerfile
+    platform: linux/amd64 
+
+    ports: 
+      - 8000:8000
+
+
+    container_name: cloud-lab-manager
+
+    restart: unless-stopped
+
+    volumes:
+      - ./data:/data

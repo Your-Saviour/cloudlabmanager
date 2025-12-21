@@ -1,0 +1,5 @@
+startup_action:
+  - ENV GIT_SSH_COMMAND=ssh -i /data/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
+  - CLONE git@github.com:Your-Saviour/cloudlabsettings.git
+  - RETURN app/cloudlabsettings/startup.conf.yaml
+  - #RUN GIT_SSH_COMMAND="ssh -i /data/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" git clone git@github.com:Your-Saviour/cloudlabsettings.git
