@@ -1,6 +1,6 @@
 import yaml
 
-class config:
+class main:
     def __init__(self):
         self.settings = {}
         return None

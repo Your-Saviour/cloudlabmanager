@@ -1,5 +1,6 @@
-from config import config as config_class
-from actions import actions as actions_class
+from config import main as config_class
+from actions import main as actions_class
+from data import main as data_class
 
 
 async def main():
@@ -10,8 +11,13 @@ async def main():
     config = config_class()
     config.add_settings(startup_config, "startup")
 
+
+
     core_settings_file = "/app/" + config.settings["startup"]["core_settings"]
     config.add_settings(core_settings_file, "core")
+
+    #data = data_class(config.settings["core"]["database_location"])
+    #data.store_metadata("blah", "blah")
 
     print(config.settings)
 
@@ -21,6 +27,13 @@ async def main():
         else:
             raise  Exception("I DIDNT PROGRAM THIS")
         
-    
+    init_data(config)
     return True
+
+def init_data(config):
+    env = actions_class().get_env()
+    print(env)
+
+    data = data_class(config.settings["core"]["database_location"])
+    data.store_metadata("HOST_HOSTNAME", env["HOST_HOSTNAME"])
 

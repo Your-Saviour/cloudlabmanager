@@ -5,11 +5,16 @@ import yaml
 from typing import Union, Sequence
 import shlex
 
-class actions:
-    def __init__(self, action_file):
-        with open(action_file, "r") as f:
-            self.settings = yaml.safe_load(f)
-        print(self.settings)
+class main:
+    def __init__(self, action_file: str = ""):
+        try:
+            with open(action_file, "r") as f:
+                self.settings = yaml.safe_load(f)
+        except FileNotFoundError as e:
+            print("ERROR: Action YAML FILE NOT FOUND") 
+            if action_file != "":
+                raise
+        #print(self.settings)
 
     def start(self):
         env = os.environ.copy()
@@ -32,6 +37,7 @@ class actions:
                     value = "=".join(command_variables.split("=")[1:])#.strip('"')
                     print(key, value)
                     env[key] = (value)
+                    print(env)
                 
                 if command_start == "CLONE":
                     self.run(["git", "clone", command_variables], env=env)
@@ -63,10 +69,14 @@ class actions:
                 print("STDERR:\n", p.stderr)
             return p
 
-        except subprocess.CalledProcessError as e:
+       #except subprocess.CalledProcessError as e:
+        except Exception as e:
             print("❌ RUN failed")
             print("returncode:", e.returncode)
             print("cmd:", e.cmd)
             print("STDOUT:\n", e.stdout)
             print("STDERR:\n", e.stderr)
             raise
+
+    def get_env(self):
+        return os.environ.copy()
