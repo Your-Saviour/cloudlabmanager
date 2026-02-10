@@ -1,7 +1,15 @@
-flask
 uvicorn
 fastapi
 pydantic
 pyyaml
-typing
 cloudflare
+python-jose[cryptography]
+passlib
+bcrypt<4.1
+sse-starlette
+python-multipart
+asyncssh
+websockets
+sqlalchemy
+httpx
+slowapi

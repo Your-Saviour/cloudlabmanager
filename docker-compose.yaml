@@ -2,14 +2,20 @@ services:
   cloudlabmanager:
     build:
       dockerfile: Dockerfile
-    platform: linux/amd64 
+    platform: linux/amd64
 
-    ports: 
+    ports:
       - 8000:8000
 
     environment:
       HOST_HOSTNAME: "jakesmac"
-
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      VAULT_PASSWORD: ${VAULT_PASSWORD:-}
+      LOCAL_MODE: ${LOCAL_MODE:-}
+      SENDAMATIC_API_KEY: ${SENDAMATIC_API_KEY:-}
+      SENDAMATIC_SENDER_EMAIL: ${SENDAMATIC_SENDER_EMAIL:-}
+      SENDAMATIC_SENDER_NAME: ${SENDAMATIC_SENDER_NAME:-CloudLab Manager}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
 
     container_name: cloud-lab-manager
 
@@ -19,3 +25,4 @@ services:
     volumes:
       - ./data:/data
       - ../cloudlabsettings:/app/cloudlabsettings
+      - ../cloudlab/vault:/vault:ro
