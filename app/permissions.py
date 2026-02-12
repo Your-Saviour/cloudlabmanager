@@ -39,6 +39,9 @@ STATIC_PERMISSION_DEFS = [
     ("system.settings.edit", "system", "Edit Settings", "Edit system settings"),
     ("system.stop_all", "system", "Stop All", "Stop all running instances"),
     ("system.audit_log", "system", "Audit Log", "View audit log"),
+    # costs
+    ("costs.view", "costs", "View Costs", "View cost breakdown and billing data"),
+    ("costs.refresh", "costs", "Refresh Costs", "Trigger cost data refresh from Vultr"),
     # inventory management
     ("inventory.tags.manage", "inventory", "Manage Tags", "Create, edit, and delete inventory tags"),
     ("inventory.acl.manage", "inventory", "Manage ACLs", "Set per-object and tag-level permissions"),

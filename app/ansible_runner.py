@@ -12,7 +12,7 @@ VAULT_PASS_FILE = "/tmp/.vault_pass.txt"
 CLOUDLAB_PATH = "/app/cloudlab"
 SERVICES_DIR = os.path.join(CLOUDLAB_PATH, "services")
 INVENTORY_FILE = "/inventory/vultr.yml"
-ALLOWED_CONFIG_FILES = {"instance.yaml", "config.yaml", "scripts.yaml"}
+ALLOWED_CONFIG_FILES = {"instance.yaml", "config.yaml", "scripts.yaml", "outputs.yaml"}
 ALLOWED_FILE_SUBDIRS = {"inputs", "outputs"}
 MAX_CONFIG_SIZE = 100 * 1024  # 100KB
 MAX_FILE_SIZE = 100 * 1024  # 100KB
@@ -322,6 +322,60 @@ class AnsibleRunner:
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job, object_id=object_id, type_slug=type_slug)
 
+        # Post-action: keep instances cache and inventory objects in sync
+        if ok and type_slug == "server":
+            try:
+                self._sync_server_inventory(job, action_name, object_id)
+            except Exception as e:
+                job.output.append(f"[Warning: Could not update inventory: {e}]")
+
+    def _sync_server_inventory(self, job: Job, action_name: str, object_id: int | None):
+        """Keep instances cache and inventory objects in sync after server actions."""
+        from database import SessionLocal, AppMetadata, InventoryObject
+        import json as _json
+
+        session = SessionLocal()
+        try:
+            if action_name == "destroy" and object_id:
+                # Remove destroyed server from cache and delete the object
+                linked = session.query(InventoryObject).get(object_id)
+                if linked:
+                    linked_data = _json.loads(linked.data)
+                    hostname = linked_data.get("hostname", "")
+
+                    cache = AppMetadata.get(session, "instances_cache") or {}
+                    hosts = cache.get("all", {}).get("hosts", {})
+                    children = cache.get("all", {}).get("children", {})
+
+                    if hostname and hostname in hosts:
+                        del hosts[hostname]
+                        for group in children.values():
+                            group.get("hosts", {}).pop(hostname, None)
+                        AppMetadata.set(session, "instances_cache", cache)
+                        AppMetadata.set(session, "instances_cache_time",
+                                        datetime.now(timezone.utc).isoformat())
+
+                    session.delete(linked)
+                    session.commit()
+                    job.output.append("[Server removed from inventory]")
+
+            elif action_name == "refresh":
+                # Re-read inventory file into cache, then re-sync all server objects
+                if os.path.isfile(INVENTORY_FILE):
+                    with open(INVENTORY_FILE, "r") as f:
+                        inv_data = yaml.safe_load(f)
+                    AppMetadata.set(session, "instances_cache", inv_data)
+                    AppMetadata.set(session, "instances_cache_time",
+                                    datetime.now(timezone.utc).isoformat())
+                    session.commit()
+                    job.output.append("[Inventory cache updated]")
+
+                from inventory_sync import run_sync_for_source
+                run_sync_for_source("vultr_inventory")
+                job.output.append("[Inventory objects synced]")
+        finally:
+            session.close()
+
     # --- Deployment / job methods ---
 
     async def run_script(self, name: str, script_name: str, inputs: dict,
@@ -378,6 +432,10 @@ class AnsibleRunner:
     async def _run_script_job(self, job: Job, script_path: str, env: dict):
         job.output.append(f"--- Running {job.script} for {job.service} ---")
         ok = await self._run_command(job, ["bash", script_path], env=env)
+
+        if ok:
+            self._sync_service_outputs(job, job.service)
+
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
@@ -509,6 +567,9 @@ class AnsibleRunner:
         job.output.append(f"--- Running deploy.sh for {name} ---")
         ok = await self._run_command(job, ["bash", script_path])
 
+        if ok:
+            self._sync_service_outputs(job, name)
+
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
@@ -583,12 +644,79 @@ class AnsibleRunner:
                     try:
                         AppMetadata.set(session, "instances_cache", inv_data)
                         AppMetadata.set(session, "instances_cache_time", datetime.now(timezone.utc).isoformat())
+
+                        # Cache plan pricing data if available
+                        plans_file = "/outputs/instance_plans_output.json"
+                        if os.path.isfile(plans_file):
+                            with open(plans_file, "r") as f:
+                                plans_data = json.load(f)
+                            AppMetadata.set(session, "plans_cache", plans_data)
+                            job.output.append("[Plan pricing cached]")
+
                         session.commit()
                         job.output.append("[Inventory cached successfully]")
                     finally:
                         session.close()
+
+                    from inventory_sync import run_sync_for_source
+                    run_sync_for_source("vultr_inventory")
+                    job.output.append("[Inventory objects synced]")
                 except Exception as e:
                     job.output.append(f"[Warning: Could not cache inventory: {e}]")
+
+        job.status = "completed" if ok else "failed"
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(job)
+
+    async def refresh_costs(self, user_id: int | None = None, username: str | None = None) -> Job:
+        job_id = str(uuid.uuid4())[:8]
+        job = Job(
+            id=job_id,
+            service="costs",
+            action="refresh",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+        )
+        self.jobs[job_id] = job
+
+        asyncio.create_task(self._run_refresh_costs(job))
+        return job
+
+    async def _run_refresh_costs(self, job: Job):
+        job.output.append("--- Fetching cost data from Vultr ---")
+        ok = await self._run_command(job, [
+            "ansible-playbook",
+            "/init_playbook/cost-info.yaml",
+            "--vault-password-file", VAULT_PASS_FILE,
+        ])
+
+        if ok:
+            cost_report_file = "/outputs/cost_report.json"
+            if os.path.isfile(cost_report_file):
+                try:
+                    with open(cost_report_file, "r") as f:
+                        cost_data = json.load(f)
+                    from database import SessionLocal, AppMetadata
+                    session = SessionLocal()
+                    try:
+                        AppMetadata.set(session, "cost_cache", cost_data)
+                        AppMetadata.set(session, "cost_cache_time", datetime.now(timezone.utc).isoformat())
+
+                        # Also cache plan pricing data
+                        plans_file = "/outputs/instance_plans_output.json"
+                        if os.path.isfile(plans_file):
+                            with open(plans_file, "r") as f:
+                                plans_data = json.load(f)
+                            AppMetadata.set(session, "plans_cache", plans_data)
+
+                        session.commit()
+                        job.output.append("[Cost data cached successfully]")
+                    finally:
+                        session.close()
+                except Exception as e:
+                    job.output.append(f"[Warning: Could not cache cost data: {e}]")
 
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
@@ -632,12 +760,27 @@ class AnsibleRunner:
                     job.output.append("[Instance removed from cache]")
                 finally:
                     session.close()
+
+                from inventory_sync import run_sync_for_source
+                run_sync_for_source("vultr_inventory")
+                job.output.append("[Inventory objects synced]")
             except Exception as e:
                 job.output.append(f"[Warning: Could not update cache: {e}]")
 
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
+
+    def _sync_service_outputs(self, job: Job, service_name: str):
+        """Read service outputs and sync credentials to inventory after a successful deploy."""
+        try:
+            from service_outputs import get_service_outputs, sync_credentials_to_inventory
+            outputs = get_service_outputs(service_name)
+            if outputs:
+                sync_credentials_to_inventory(service_name, outputs)
+                job.output.append(f"[Service outputs synced for {service_name}]")
+        except Exception as e:
+            job.output.append(f"[Warning: Could not sync service outputs: {e}]")
 
     def _persist_job(self, job: Job, object_id: int | None = None, type_slug: str | None = None):
         from database import SessionLocal, JobRecord

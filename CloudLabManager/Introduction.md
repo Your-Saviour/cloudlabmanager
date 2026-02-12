@@ -1,4 +1,4 @@
-CloudLabManager is a web-based management interface for [[CloudLab]] infrastructure. It provides a browser UI and REST API for deploying services, managing Vultr instances, and running Ansible playbooks — without needing direct shell access to the Ansible container.
+CloudLabManager is a web-based management interface for [[CloudLab]] infrastructure. It provides a browser UI and REST API for deploying services, managing Vultr instances, running Ansible playbooks, managing users with role-based access control, and tracking infrastructure inventory — without needing direct shell access to the Ansible container.
 
 ## Quick Links
 
@@ -7,7 +7,10 @@ CloudLabManager is a web-based management interface for [[CloudLab]] infrastruct
 - [[Architecture]]
 - [[Frontend]]
 - [[Authentication]]
+- [[RBAC]]
+- [[Inventory System]]
 - [[Ansible Integration]]
+- [[Testing]]
 
 ## Getting Started
 
@@ -29,3 +32,8 @@ On first boot you'll see a **Setup** page where you create an admin account and 
 4. Runs Ansible playbooks via async subprocess (same flow as the shell scripts)
 5. Tracks deployment jobs with live output streaming
 6. Caches Vultr instance inventory on demand
+7. Manages users with role-based access control (RBAC) and email invitations
+8. Provides a flexible inventory system with type-driven objects, tags, and ACLs
+9. Supports WebSocket SSH terminals to managed servers
+10. Logs all user actions to an audit trail
+11. Sends email notifications for invitations and password resets

@@ -17,6 +17,7 @@ from routes.user_routes import router as user_router
 from routes.role_routes import router as role_router
 from routes.audit_routes import router as audit_router
 from routes.inventory_routes import router as inventory_router
+from routes.cost_routes import router as cost_router
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -57,10 +58,20 @@ app.include_router(user_router)
 app.include_router(role_router)
 app.include_router(audit_router)
 app.include_router(inventory_router)
+app.include_router(cost_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/")
 async def root():
+    return FileResponse("static/index.html")
+
+
+@app.get("/{full_path:path}")
+async def spa_catchall(full_path: str):
+    """Serve index.html for client-side routing (React SPA)."""
+    static_path = os.path.join("static", full_path)
+    if os.path.isfile(static_path):
+        return FileResponse(static_path)
     return FileResponse("static/index.html")

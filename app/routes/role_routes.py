@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from database import Role, Permission
 from auth import get_current_user
-from permissions import require_permission, invalidate_cache, PERMISSION_DEFS
+from permissions import require_permission, invalidate_cache
 from db_session import get_db_session
 from audit import log_action
 from models import RoleCreateRequest, RoleUpdateRequest

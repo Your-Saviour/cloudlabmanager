@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.orm import Session
 from database import (
     SessionLocal, User, InventoryType, InventoryObject, InventoryTag,
@@ -81,6 +82,7 @@ async def list_types(request: Request, user: User = Depends(get_current_user)):
             "description": tc.get("description", ""),
             "fields": tc.get("fields", []),
             "actions": tc.get("actions", []),
+            "sync": tc.get("sync"),
         })
     return {"types": result}
 
@@ -190,6 +192,34 @@ async def set_tag_permission(tag_id: int, body: TagPermissionSet,
     session.flush()
 
     return {"id": tp.id, "role_id": tp.role_id, "permission": tp.permission}
+
+
+# --- Sync ---
+
+@router.post("/{type_slug}/sync")
+async def sync_type(type_slug: str, request: Request,
+                    user: User = Depends(get_current_user),
+                    session: Session = Depends(get_db_session)):
+    """Trigger a re-sync from the external source for this inventory type."""
+    tc = _get_type_config(request, type_slug)
+    if not check_type_permission(session, user, type_slug, "view"):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    sync_config = tc.get("sync")
+    if not sync_config:
+        raise HTTPException(status_code=400, detail="This type has no sync source")
+
+    source = sync_config.get("source") if isinstance(sync_config, dict) else sync_config
+
+    from inventory_sync import run_sync_for_source
+    run_sync_for_source(source)
+
+    log_action(session, user.id, user.username, "inventory.sync",
+               f"inventory/{type_slug}",
+               details={"source": source},
+               ip_address=request.client.host if request.client else None)
+
+    return {"ok": True}
 
 
 # --- Object CRUD ---

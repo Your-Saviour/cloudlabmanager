@@ -4,7 +4,7 @@ import json
 import os
 import yaml
 from sqlalchemy.orm import Session
-from database import InventoryType, InventoryObject, AppMetadata
+from database import InventoryType, InventoryObject, AppMetadata, User, JobRecord, SessionLocal
 
 SERVICES_DIR = "/app/cloudlab/services"
 INVENTORY_FILE = "/inventory/vultr.yml"
@@ -72,7 +72,9 @@ class VultrInventorySync:
             return
 
         synced = 0
+        seen_hostnames = set()
         for hostname, info in hosts.items():
+            seen_hostnames.add(hostname)
             data = {
                 "hostname": hostname,
                 "ip_address": info.get("ansible_host", ""),
@@ -87,8 +89,16 @@ class VultrInventorySync:
             _find_or_create_object(session, inv_type.id, data, "hostname", fields)
             synced += 1
 
+        # Remove objects for servers no longer in the cache
+        removed = 0
+        for obj in session.query(InventoryObject).filter_by(type_id=inv_type.id).all():
+            obj_data = json.loads(obj.data)
+            if obj_data.get("hostname") not in seen_hostnames:
+                session.delete(obj)
+                removed += 1
+
         session.flush()
-        print(f"  Vultr sync: {synced} server(s)")
+        print(f"  Vultr sync: {synced} server(s), {removed} removed")
 
 
 class ServiceDiscoverySync:
@@ -124,9 +134,121 @@ class ServiceDiscoverySync:
         print(f"  Service discovery: {synced} service(s)")
 
 
+class UserSync:
+    """Sync users from the CloudLab Manager users table."""
+
+    def sync(self, session: Session, type_config: dict):
+        inv_type = session.query(InventoryType).filter_by(slug="user").first()
+        if not inv_type:
+            print("WARN: 'user' inventory type not found, skipping user sync")
+            return
+
+        fields = type_config.get("fields", [])
+        users = session.query(User).all()
+
+        synced = 0
+        for user in users:
+            # Derive status from is_active and invite_accepted_at
+            if not user.is_active:
+                status = "inactive"
+            elif user.invite_accepted_at is None:
+                status = "invited"
+            else:
+                status = "active"
+
+            # Comma-join role names
+            role = ", ".join(r.name for r in user.roles) if user.roles else ""
+
+            data = {
+                "username": user.username,
+                "display_name": user.display_name or "",
+                "email": user.email or "",
+                "ssh_public_key": user.ssh_public_key or "",
+                "role": role,
+                "status": status,
+                "last_login_at": str(user.last_login_at) if user.last_login_at else "",
+            }
+            _find_or_create_object(session, inv_type.id, data, "username", fields)
+            synced += 1
+
+        session.flush()
+        print(f"  User sync: {synced} user(s)")
+
+
+class DeploymentSync:
+    """Sync deployments from the jobs table."""
+
+    def sync(self, session: Session, type_config: dict):
+        inv_type = session.query(InventoryType).filter_by(slug="deployment").first()
+        if not inv_type:
+            print("WARN: 'deployment' inventory type not found, skipping deployment sync")
+            return
+
+        fields = type_config.get("fields", [])
+
+        jobs = (
+            session.query(JobRecord)
+            .filter(JobRecord.action == "deploy")
+            .filter(JobRecord.deployment_id.isnot(None))
+            .filter(JobRecord.deployment_id != "")
+            .filter(JobRecord.status.in_(["completed", "failed"]))
+            .all()
+        )
+
+        # Build a hostname/IP lookup from server inventory cache
+        server_lookup = {}
+        cache = AppMetadata.get(session, "instances_cache")
+        if cache:
+            hosts = cache.get("all", {}).get("hosts", {})
+            for hostname, info in hosts.items():
+                ip = info.get("ansible_host", "")
+                tags = info.get("vultr_tags", [])
+                server_lookup[hostname] = {"hostname": hostname, "ip_address": ip}
+                # Also index by tag so we can match service names
+                for tag in tags:
+                    server_lookup[tag] = {"hostname": hostname, "ip_address": ip}
+
+        synced = 0
+        for job in jobs:
+            # Try to find hostname/IP from linked inventory object
+            hostname = ""
+            ip_address = ""
+            if job.object_id:
+                linked = session.query(InventoryObject).get(job.object_id)
+                if linked:
+                    obj_data = json.loads(linked.data)
+                    hostname = obj_data.get("hostname", "")
+                    ip_address = obj_data.get("ip_address", "")
+            # Fallback: look up by service name in server cache
+            if not hostname and job.service:
+                match = server_lookup.get(job.service)
+                if match:
+                    hostname = match["hostname"]
+                    ip_address = match["ip_address"]
+
+            data = {
+                "service_name": job.service or "",
+                "deployment_id": job.deployment_id or "",
+                "hostname": hostname,
+                "ip_address": ip_address,
+                "status": job.status or "completed",
+                "deployed_by": job.username or "",
+                "job_id": job.id,
+                "started_at": job.started_at or "",
+                "finished_at": job.finished_at or "",
+            }
+            _find_or_create_object(session, inv_type.id, data, "job_id", fields)
+            synced += 1
+
+        session.flush()
+        print(f"  Deployment sync: {synced} deployment(s)")
+
+
 SYNC_ADAPTERS = {
     "vultr_inventory": VultrInventorySync(),
     "service_discovery": ServiceDiscoverySync(),
+    "user_sync": UserSync(),
+    "deployment_sync": DeploymentSync(),
 }
 
 
@@ -143,3 +265,36 @@ def run_sync(session: Session, type_configs: list[dict]):
                 adapter.sync(session, config)
             except Exception as e:
                 print(f"ERROR: Sync failed for {config['slug']}: {e}")
+
+
+def run_sync_for_source(source_name: str):
+    """Re-run a single sync adapter by source name. Loads type configs from disk."""
+    from type_loader import load_type_configs
+
+    adapter = SYNC_ADAPTERS.get(source_name)
+    if not adapter:
+        return
+
+    configs = load_type_configs()
+    config = None
+    for c in configs:
+        sync_config = c.get("sync")
+        if not sync_config:
+            continue
+        src = sync_config.get("source") if isinstance(sync_config, dict) else sync_config
+        if src == source_name:
+            config = c
+            break
+
+    if not config:
+        return
+
+    session = SessionLocal()
+    try:
+        adapter.sync(session, config)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"ERROR: Sync failed for {source_name}: {e}")
+    finally:
+        session.close()

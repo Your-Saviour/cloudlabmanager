@@ -13,3 +13,7 @@ The client is a vanilla HTML/CSS/JS single-page application served by FastAPI at
 5. Navigate to **Services** to deploy CloudLab services
 6. Navigate to **Instances** to view running Vultr VMs
 7. Navigate to **Jobs** to see deployment history and live output
+8. Navigate to **Inventory** to browse and manage infrastructure objects (servers, services, users, deployments)
+9. Navigate to **Users** to invite and manage user accounts
+10. Navigate to **Roles** to create and assign permission roles
+11. Navigate to **Audit Log** to review user activity

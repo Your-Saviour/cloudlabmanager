@@ -14,6 +14,8 @@ const INVENTORY_ICONS = {
     server: "&#9635;",
     service: "&#11041;",
     credential: "&#128273;",
+    user: "&#9679;",
+    deployment: "&#9654;",
 };
 
 async function loadInventoryTypes() {
@@ -27,16 +29,303 @@ function getTypeConfig(slug) {
     return inventoryTypes.find(t => t.slug === slug);
 }
 
-function renderInventoryNav() {
-    const container = document.getElementById("inventory-nav");
-    if (!container) return;
-    container.innerHTML = inventoryTypes.map(t => {
-        const icon = INVENTORY_ICONS[t.slug] || "&#9670;";
-        return `<a href="#inventory-${t.slug}" data-nav data-perm="inventory.${t.slug}.view" class="nav-link">
-            <span class="nav-icon">${icon}</span>${t.label}s
-        </a>`;
-    }).join("");
-    updateNavPermissions();
+async function renderInventory(activeSubTab) {
+    app.innerHTML = `<div class="loading">Loading inventory...</div>`;
+
+    await loadInventoryTypes();
+
+    // Determine the active sub-tab
+    if (!activeSubTab) activeSubTab = inventoryTypes.length > 0 ? inventoryTypes[0].slug : "tags";
+
+    // Fetch counts for each type
+    const fetches = inventoryTypes.map(t =>
+        hasPermission(`inventory.${t.slug}.view`)
+            ? apiJson(`/api/inventory/${t.slug}?per_page=1`)
+            : Promise.resolve(null)
+    );
+    const results = await Promise.all(fetches);
+    const accentColors = ["accent-amber", "accent-blue", "accent-cyan", "accent-green"];
+    const showTags = hasPermission("inventory.tags.manage");
+
+    app.innerHTML = `
+        <div class="page-header view-enter stagger-1">
+            <h2>Inventory</h2>
+        </div>
+
+        <div class="stat-grid view-enter stagger-2">
+            ${inventoryTypes.map((t, i) => {
+                const typeData = results[i];
+                const count = typeData ? (typeData.total || 0) : 0;
+                return `<div class="stat-card ${accentColors[i % accentColors.length]}" style="cursor:pointer" data-subtab="${t.slug}">
+                    <div class="stat-value">${count}</div>
+                    <div class="stat-label">${t.label}s</div>
+                </div>`;
+            }).join("")}
+        </div>
+
+        <div class="inventory-subtabs view-enter stagger-3">
+            ${inventoryTypes.map(t =>
+                `<button class="inventory-subtab${activeSubTab === t.slug ? " active" : ""}" data-subtab="${t.slug}">${t.label}s</button>`
+            ).join("")}
+            ${showTags ? `<button class="inventory-subtab${activeSubTab === "tags" ? " active" : ""}" data-subtab="tags">Tags</button>` : ""}
+        </div>
+
+        <div id="inventory-subcontent" class="view-enter stagger-4"></div>
+    `;
+
+    // Render the active sub-tab content
+    const subContent = document.getElementById("inventory-subcontent");
+    if (activeSubTab === "tags") {
+        await renderTagsInline(subContent);
+    } else {
+        await renderInventoryListInline(subContent, activeSubTab);
+    }
+
+    // Sub-tab click handlers
+    document.querySelectorAll(".inventory-subtab").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const tab = btn.dataset.subtab;
+            navigate(tab === inventoryTypes[0]?.slug ? "inventory" : `inventory-${tab}`);
+        });
+    });
+
+    // Stat card click handlers
+    document.querySelectorAll(".stat-card[data-subtab]").forEach(card => {
+        card.addEventListener("click", () => {
+            const tab = card.dataset.subtab;
+            navigate(tab === inventoryTypes[0]?.slug ? "inventory" : `inventory-${tab}`);
+        });
+    });
+}
+
+async function renderInventoryListInline(container, typeSlug) {
+    container.innerHTML = `<div class="loading">Loading...</div>`;
+
+    const typeConfig = getTypeConfig(typeSlug);
+    if (!typeConfig) {
+        container.innerHTML = `<div class="empty-state"><div>Unknown inventory type: ${escapeHtml(typeSlug)}</div></div>`;
+        return;
+    }
+
+    const data = await apiJson(`/api/inventory/${typeSlug}`);
+    if (!data) return;
+
+    const objects = data.objects || [];
+    const fields = typeConfig.fields || [];
+    const actions = typeConfig.actions || [];
+    const columnFields = fields.filter(f => f.type !== "secret" && f.type !== "json" && f.type !== "text").slice(0, 6);
+    const canCreate = hasPermission(`inventory.${typeSlug}.create`);
+    const typeLevelActions = actions.filter(a => a.scope === "type");
+    const objectActions = actions.filter(a => a.scope !== "type");
+
+    let scriptsMap = {};
+    if (typeSlug === "service") {
+        const svcData = await apiJson("/api/services");
+        if (svcData && svcData.services) {
+            svcData.services.forEach(s => { scriptsMap[s.name] = s.scripts || []; });
+        }
+    }
+
+    container.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <div>
+                <h3>${escapeHtml(typeConfig.label)}s</h3>
+                <small>${objects.length} total</small>
+            </div>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                ${typeLevelActions.map(a =>
+                    `<button class="btn btn-primary btn-sm type-action-btn" data-action="${escapeHtml(a.name)}">${escapeHtml(a.label)}</button>`
+                ).join("")}
+                ${canCreate ? `<button class="btn btn-primary btn-sm" id="create-object-btn">New ${escapeHtml(typeConfig.label)}</button>` : ""}
+            </div>
+        </div>
+
+        ${objects.length === 0 ? `
+            <div class="empty-state">
+                <div class="empty-icon">&#9670;</div>
+                <div>No ${typeConfig.label.toLowerCase()}s found.</div>
+            </div>
+        ` : typeSlug === "service" ? renderServiceList(objects, objectActions, scriptsMap) : `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        ${columnFields.map(f => `<th>${escapeHtml(f.name.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()))}</th>`).join("")}
+                        <th>Tags</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${objects.map(obj => {
+                        const d = obj.data || {};
+                        const tags = obj.tags || [];
+                        return `<tr>
+                            ${columnFields.map(f => {
+                                let val = d[f.name];
+                                if (Array.isArray(val)) val = val.join(", ");
+                                if (f.name === "power_status" && val) {
+                                    return `<td>${val === "running"
+                                        ? '<span class="badge badge-running">running</span>'
+                                        : `<span class="badge badge-pending">${escapeHtml(String(val))}</span>`}</td>`;
+                                }
+                                if (f.name === "ip_address") return `<td style="font-family:var(--font-mono);font-size:0.8rem;">${escapeHtml(String(val || ""))}</td>`;
+                                return `<td>${escapeHtml(String(val || ""))}</td>`;
+                            }).join("")}
+                            <td>${tags.map(t => `<span class="tag-pill" style="--tag-color:${t.color || '#4a5a70'}">${escapeHtml(t.name)}</span>`).join(" ")}</td>
+                            <td class="instance-actions">
+                                ${renderObjActions(typeSlug, obj, objectActions)}
+                            </td>
+                        </tr>`;
+                    }).join("")}
+                </tbody>
+            </table>
+        `}
+    `;
+
+    // Event handlers
+    const createBtn = document.getElementById("create-object-btn");
+    if (createBtn) createBtn.addEventListener("click", () => navigate(`inventory-${typeSlug}-new`));
+
+    document.querySelectorAll(".type-action-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const actionName = btn.dataset.action;
+            const action = typeLevelActions.find(a => a.name === actionName);
+            if (!action) return;
+            const yes = await confirm(`Run ${action.label}?`, `This will execute ${action.label}.`);
+            if (!yes) return;
+            btn.setAttribute("aria-busy", "true");
+            const res = await apiJson(`/api/inventory/${typeSlug}/actions/${actionName}`, { method: "POST" });
+            if (res && res.job_id) navigate("job-" + res.job_id);
+            else btn.removeAttribute("aria-busy");
+        });
+    });
+
+    document.querySelectorAll(".ssh-btn").forEach(btn => {
+        btn.addEventListener("click", () => openSSHTerminal(btn.dataset.hostname, btn.dataset.ip));
+    });
+
+    document.querySelectorAll(".obj-action-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const objId = btn.dataset.id;
+            const actionName = btn.dataset.action;
+            const action = objectActions.find(a => a.name === actionName);
+            if (!action) return;
+            const yes = await confirm(`Run ${action.label}?`, "This action will be executed on the selected object.");
+            if (!yes) return;
+            btn.setAttribute("aria-busy", "true");
+            const res = await apiJson(`/api/inventory/${typeSlug}/${objId}/actions/${actionName}`, { method: "POST" });
+            if (res && res.job_id) navigate("job-" + res.job_id);
+            else btn.removeAttribute("aria-busy");
+        });
+    });
+
+    // Service-specific: run/stop/config/files buttons
+    bindServiceActionHandlers(typeSlug, objects, scriptsMap);
+}
+
+async function renderTagsInline(container) {
+    container.innerHTML = `<div class="loading">Loading tags...</div>`;
+    const data = await apiJson("/api/inventory/tags");
+    if (!data) return;
+
+    const tags = data.tags || [];
+
+    container.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h3>Tags</h3>
+            <button class="btn btn-primary btn-sm" id="create-tag-btn">New Tag</button>
+        </div>
+        ${tags.length === 0 ? `
+            <div class="empty-state">
+                <div class="empty-icon">&#9899;</div>
+                <div>No tags created yet.</div>
+            </div>
+        ` : `
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Tag</th>
+                        <th>Color</th>
+                        <th>Objects</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tags.map(t => `
+                        <tr>
+                            <td><span class="tag-pill" style="--tag-color:${t.color || '#4a5a70'}">${escapeHtml(t.name)}</span></td>
+                            <td><input type="color" value="${t.color || '#4a5a70'}" class="tag-color-input" data-id="${t.id}" data-name="${escapeHtml(t.name)}"></td>
+                            <td>${t.object_count || 0}</td>
+                            <td class="instance-actions">
+                                <button class="btn btn-danger btn-sm tag-delete-btn" data-id="${t.id}" data-name="${escapeHtml(t.name)}">Delete</button>
+                            </td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        `}
+    `;
+
+    document.getElementById("create-tag-btn").addEventListener("click", () => {
+        const overlay = document.createElement("div");
+        overlay.className = "confirm-overlay";
+        overlay.innerHTML = `
+            <div class="confirm-box input-modal">
+                <h4>Create Tag</h4>
+                <form id="tag-create-form">
+                    <div class="form-group">
+                        <label>Name *</label>
+                        <input type="text" name="name" required placeholder="Tag name">
+                    </div>
+                    <div class="form-group">
+                        <label>Color</label>
+                        <input type="color" name="color" value="#4a5a70">
+                    </div>
+                    <p class="form-error" id="tag-create-error" style="display:none;"></p>
+                    <div class="actions">
+                        <button type="button" class="btn" id="tag-create-cancel">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        overlay.querySelector("#tag-create-cancel").onclick = () => overlay.remove();
+        overlay.querySelector("#tag-create-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target);
+            const res = await api("/api/inventory/tags", {
+                method: "POST",
+                body: JSON.stringify({ name: fd.get("name"), color: fd.get("color") }),
+            });
+            if (!res) return;
+            if (res.ok) { overlay.remove(); renderTagsInline(container); }
+            else {
+                const err = await res.json();
+                const errEl = overlay.querySelector("#tag-create-error");
+                errEl.textContent = err.detail || "Failed";
+                errEl.style.display = "block";
+            }
+        });
+    });
+
+    document.querySelectorAll(".tag-color-input").forEach(input => {
+        input.addEventListener("change", async () => {
+            await api(`/api/inventory/tags/${input.dataset.id}`, {
+                method: "PUT",
+                body: JSON.stringify({ name: input.dataset.name, color: input.value }),
+            });
+            renderTagsInline(container);
+        });
+    });
+
+    document.querySelectorAll(".tag-delete-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const yes = await confirm(`Delete tag "${btn.dataset.name}"?`, "Objects will keep their data but lose this tag.");
+            if (!yes) return;
+            await api(`/api/inventory/tags/${btn.dataset.id}`, { method: "DELETE" });
+            renderTagsInline(container);
+        });
+    });
 }
 
 function setCurrentUser(user) {
@@ -307,7 +596,7 @@ async function renderDashboard() {
 
     await loadInventoryTypes();
 
-    // Fetch counts for each type + jobs
+    // Fetch counts for each type + jobs + service outputs
     const fetches = [apiJson("/api/jobs")];
     for (const t of inventoryTypes) {
         if (hasPermission(`inventory.${t.slug}.view`)) {
@@ -316,14 +605,39 @@ async function renderDashboard() {
             fetches.push(Promise.resolve(null));
         }
     }
+    if (hasPermission("services.view")) {
+        fetches.push(apiJson("/api/services/outputs"));
+    } else {
+        fetches.push(Promise.resolve(null));
+    }
+    if (hasPermission("costs.view")) {
+        fetches.push(apiJson("/api/costs"));
+    } else {
+        fetches.push(Promise.resolve(null));
+    }
     const results = await Promise.all(fetches);
     const jobsData = results[0];
     if (!jobsData) return;
+
+    const outputsData = results[results.length - 2];
+    const costData = results[results.length - 1];
 
     const jobs = jobsData.jobs || [];
     const running = jobs.filter(j => j.status === "running").length;
     const completed = jobs.filter(j => j.status === "completed").length;
     const failed = jobs.filter(j => j.status === "failed").length;
+
+    // Build quick links from service outputs
+    const quickLinks = [];
+    if (outputsData && outputsData.outputs) {
+        for (const [svcName, outputs] of Object.entries(outputsData.outputs)) {
+            for (const out of outputs) {
+                if (out.type === "url" && out.value) {
+                    quickLinks.push({ service: svcName, label: out.label || svcName, url: out.value });
+                }
+            }
+        }
+    }
 
     const showStopAll = hasPermission("system.stop_all");
     const accentColors = ["accent-amber", "accent-blue", "accent-cyan", "accent-green"];
@@ -355,9 +669,30 @@ async function renderDashboard() {
                 <div class="stat-value">${failed}</div>
                 <div class="stat-label">Failed</div>
             </div>
+            ${costData ? `<div class="stat-card accent-amber" style="cursor:pointer" onclick="window.location.hash='costs'">
+                <div class="stat-value">$${parseFloat(costData.total_monthly_cost || 0).toFixed(2)}</div>
+                <div class="stat-label">Monthly Cost</div>
+            </div>` : ""}
         </div>
 
+        ${quickLinks.length > 0 ? `
         <div class="view-enter stagger-3">
+            <div class="section-label">Quick Links</div>
+            <div class="quick-links-grid">
+                ${quickLinks.map(link => `
+                    <a href="${escapeHtml(link.url)}" target="_blank" rel="noopener" class="quick-link-card">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H3v10h10v-3"/><path d="M9 2h5v5"/><path d="M14 2L7 9"/></svg>
+                        <div class="quick-link-info">
+                            <div class="quick-link-label">${escapeHtml(link.label)}</div>
+                            <div class="quick-link-service">${escapeHtml(link.service)}</div>
+                        </div>
+                    </a>
+                `).join("")}
+            </div>
+        </div>
+        ` : ""}
+
+        <div class="view-enter stagger-${quickLinks.length > 0 ? "4" : "3"}">
             <div class="section-label">Recent Activity</div>
             ${jobs.length === 0 ? `
                 <div class="empty-state">
@@ -388,138 +723,6 @@ async function renderDashboard() {
             if (res) navigate("job-" + res.job_id);
         });
     }
-}
-
-async function renderInventoryList(typeSlug) {
-    app.innerHTML = `<div class="loading">Loading...</div>`;
-
-    await loadInventoryTypes();
-    const typeConfig = getTypeConfig(typeSlug);
-    if (!typeConfig) {
-        app.innerHTML = `<div class="empty-state"><div>Unknown inventory type: ${escapeHtml(typeSlug)}</div></div>`;
-        return;
-    }
-
-    const data = await apiJson(`/api/inventory/${typeSlug}`);
-    if (!data) return;
-
-    const objects = data.objects || [];
-    const fields = typeConfig.fields || [];
-    const actions = typeConfig.actions || [];
-
-    // Display columns: non-readonly fields, up to 6
-    const columnFields = fields.filter(f => f.type !== "secret" && f.type !== "json" && f.type !== "text").slice(0, 6);
-    const canCreate = hasPermission(`inventory.${typeSlug}.create`);
-    const typeLevelActions = actions.filter(a => a.scope === "type");
-    const objectActions = actions.filter(a => a.scope !== "type");
-
-    // For services, load scripts metadata
-    let scriptsMap = {};
-    if (typeSlug === "service") {
-        const svcData = await apiJson("/api/services");
-        if (svcData && svcData.services) {
-            svcData.services.forEach(s => { scriptsMap[s.name] = s.scripts || []; });
-        }
-    }
-
-    app.innerHTML = `
-        <div class="page-header view-enter stagger-1">
-            <div>
-                <h2>${escapeHtml(typeConfig.label)}s</h2>
-                <small>${objects.length} total</small>
-            </div>
-            <div style="display:flex;gap:0.5rem;align-items:center;">
-                ${typeLevelActions.map(a =>
-                    `<button class="btn btn-primary btn-sm type-action-btn" data-action="${escapeHtml(a.name)}">${escapeHtml(a.label)}</button>`
-                ).join("")}
-                ${canCreate ? `<button class="btn btn-primary btn-sm" id="create-object-btn">New ${escapeHtml(typeConfig.label)}</button>` : ""}
-            </div>
-        </div>
-
-        <div class="view-enter stagger-2">
-            ${objects.length === 0 ? `
-                <div class="empty-state">
-                    <div class="empty-icon">&#9670;</div>
-                    <div>No ${typeConfig.label.toLowerCase()}s found.</div>
-                </div>
-            ` : typeSlug === "service" ? renderServiceList(objects, objectActions, scriptsMap) : `
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            ${columnFields.map(f => `<th>${escapeHtml(f.name.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()))}</th>`).join("")}
-                            <th>Tags</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${objects.map(obj => {
-                            const d = obj.data || {};
-                            const tags = obj.tags || [];
-                            return `<tr>
-                                ${columnFields.map(f => {
-                                    let val = d[f.name];
-                                    if (Array.isArray(val)) val = val.join(", ");
-                                    if (f.name === "power_status" && val) {
-                                        return `<td>${val === "running"
-                                            ? '<span class="badge badge-running">running</span>'
-                                            : `<span class="badge badge-pending">${escapeHtml(String(val))}</span>`}</td>`;
-                                    }
-                                    if (f.name === "ip_address") return `<td style="font-family:var(--font-mono);font-size:0.8rem;">${escapeHtml(String(val || ""))}</td>`;
-                                    return `<td>${escapeHtml(String(val || ""))}</td>`;
-                                }).join("")}
-                                <td>${tags.map(t => `<span class="tag-pill" style="--tag-color:${t.color || '#4a5a70'}">${escapeHtml(t.name)}</span>`).join(" ")}</td>
-                                <td class="instance-actions">
-                                    ${renderObjActions(typeSlug, obj, objectActions)}
-                                </td>
-                            </tr>`;
-                        }).join("")}
-                    </tbody>
-                </table>
-            `}
-        </div>
-    `;
-
-    // Event handlers
-    const createBtn = document.getElementById("create-object-btn");
-    if (createBtn) createBtn.addEventListener("click", () => navigate(`inventory-${typeSlug}-new`));
-
-    document.querySelectorAll(".type-action-btn").forEach(btn => {
-        btn.addEventListener("click", async () => {
-            const actionName = btn.dataset.action;
-            const action = typeLevelActions.find(a => a.name === actionName);
-            if (!action) return;
-            const yes = await confirm(`Run ${action.label}?`, `This will execute ${action.label}.`);
-            if (!yes) return;
-            btn.setAttribute("aria-busy", "true");
-            const res = await apiJson(`/api/inventory/${typeSlug}/actions/${actionName}`, { method: "POST" });
-            if (res && res.job_id) navigate("job-" + res.job_id);
-            else btn.removeAttribute("aria-busy");
-        });
-    });
-
-    // SSH buttons
-    document.querySelectorAll(".ssh-btn").forEach(btn => {
-        btn.addEventListener("click", () => openSSHTerminal(btn.dataset.hostname, btn.dataset.ip));
-    });
-
-    // Destroy/action buttons
-    document.querySelectorAll(".obj-action-btn").forEach(btn => {
-        btn.addEventListener("click", async () => {
-            const objId = btn.dataset.id;
-            const actionName = btn.dataset.action;
-            const action = objectActions.find(a => a.name === actionName);
-            if (!action) return;
-            const yes = await confirm(`Run ${action.label}?`, "This action will be executed on the selected object.");
-            if (!yes) return;
-            btn.setAttribute("aria-busy", "true");
-            const res = await apiJson(`/api/inventory/${typeSlug}/${objId}/actions/${actionName}`, { method: "POST" });
-            if (res && res.job_id) navigate("job-" + res.job_id);
-            else btn.removeAttribute("aria-busy");
-        });
-    });
-
-    // Service-specific: run/stop buttons
-    bindServiceActionHandlers(typeSlug, objects, scriptsMap);
 }
 
 function renderObjActions(typeSlug, obj, actions) {
@@ -561,7 +764,12 @@ function renderServiceList(objects, actions, scriptsMap) {
             return `
                 <div class="service-row" style="animation-delay: ${0.1 + i * 0.04}s">
                     <div class="service-row-info">
-                        <div class="service-name">${escapeHtml(name)}</div>
+                        <div class="service-name">
+                            ${escapeHtml(name)}
+                            <button class="svc-outputs-toggle" data-name="${escapeHtml(name)}" title="View outputs">
+                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3l5 5-5 5"/></svg>
+                            </button>
+                        </div>
                         <div class="service-path">${escapeHtml(d.service_dir || "")}
                             ${tags.map(t => `<span class="tag-pill tag-pill-sm" style="--tag-color:${t.color || '#4a5a70'}">${escapeHtml(t.name)}</span>`).join(" ")}
                         </div>
@@ -584,7 +792,8 @@ function renderServiceList(objects, actions, scriptsMap) {
                         <button class="btn btn-primary btn-sm svc-run-btn" data-name="${escapeHtml(name)}" data-obj-id="${obj.id}">Run</button>` : ""}
                         ${canStop ? `<button class="btn btn-danger btn-sm svc-stop-btn" data-name="${escapeHtml(name)}" data-obj-id="${obj.id}">Stop</button>` : ""}
                     </div>
-                </div>`;
+                </div>
+                <div class="service-outputs-panel" id="svc-outputs-${escapeHtml(name)}" style="display:none;"></div>`;
         }).join("")}
     </div>`;
 }
@@ -634,6 +843,76 @@ function bindServiceActionHandlers(typeSlug, objects, scriptsMap) {
             const res = await apiJson(`/api/inventory/service/${objId}/actions/stop`, { method: "POST" });
             if (res && res.job_id) navigate("job-" + res.job_id);
             else btn.removeAttribute("aria-busy");
+        });
+    });
+    // Outputs toggle
+    document.querySelectorAll(".svc-outputs-toggle").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const name = btn.dataset.name;
+            const panel = document.getElementById(`svc-outputs-${name}`);
+            if (!panel) return;
+            if (panel.style.display !== "none") {
+                panel.style.display = "none";
+                btn.classList.remove("open");
+                return;
+            }
+            btn.classList.add("open");
+            panel.style.display = "block";
+            panel.innerHTML = `<div class="loading" style="padding:0.5rem;">Loading...</div>`;
+            const res = await apiJson(`/api/services/${encodeURIComponent(name)}/outputs`);
+            const outputs = (res && res.outputs) || [];
+            if (outputs.length === 0) {
+                panel.innerHTML = `<div class="svc-outputs-empty">No outputs yet</div>`;
+                return;
+            }
+            panel.innerHTML = `<div class="svc-outputs-list">
+                ${outputs.map((o, idx) => {
+                    if (o.type === "url") {
+                        return `<div class="svc-output-item">
+                            <span class="svc-output-label">${escapeHtml(o.label || o.name)}</span>
+                            <a class="svc-output-url svc-url-link" data-idx="${idx}" target="_blank" rel="noopener">${escapeHtml(o.value)}</a>
+                        </div>`;
+                    }
+                    if (o.type === "credential") {
+                        const id = `cred-${name}-${o.name}`;
+                        return `<div class="svc-output-item">
+                            <span class="svc-output-label">${escapeHtml(o.label || o.name)}${o.username ? ` (${escapeHtml(o.username)})` : ""}</span>
+                            <span class="svc-output-secret" id="${id}">
+                                <code class="secret-value" style="filter:blur(4px);user-select:none;">${escapeHtml(o.value || "")}</code>
+                                <button class="btn btn-ghost btn-xs reveal-btn" data-target="${id}">Reveal</button>
+                                <button class="btn btn-ghost btn-xs copy-btn" data-idx="${idx}">Copy</button>
+                            </span>
+                        </div>`;
+                    }
+                    return `<div class="svc-output-item">
+                        <span class="svc-output-label">${escapeHtml(o.label || o.name)}</span>
+                        <span>${escapeHtml(o.value || "")}</span>
+                    </div>`;
+                }).join("")}
+            </div>`;
+            // Set href attributes safely via DOM
+            panel.querySelectorAll(".svc-url-link").forEach(a => {
+                const o = outputs[parseInt(a.dataset.idx)];
+                if (o) a.href = o.value;
+            });
+            // Bind reveal/copy buttons
+            panel.querySelectorAll(".reveal-btn").forEach(rb => {
+                rb.addEventListener("click", () => {
+                    const target = document.getElementById(rb.dataset.target);
+                    const code = target.querySelector(".secret-value");
+                    if (code.style.filter) { code.style.filter = ""; code.style.userSelect = ""; rb.textContent = "Hide"; }
+                    else { code.style.filter = "blur(4px)"; code.style.userSelect = "none"; rb.textContent = "Reveal"; }
+                });
+            });
+            panel.querySelectorAll(".copy-btn").forEach(cb => {
+                cb.addEventListener("click", () => {
+                    const o = outputs[parseInt(cb.dataset.idx)];
+                    navigator.clipboard.writeText(o ? o.value || "" : "");
+                    cb.textContent = "Copied";
+                    setTimeout(() => cb.textContent = "Copy", 1500);
+                });
+            });
         });
     });
 }
@@ -1744,116 +2023,6 @@ async function renderInventoryCreate(typeSlug) {
     });
 }
 
-async function renderTagsManage() {
-    app.innerHTML = `<div class="loading">Loading tags...</div>`;
-    const data = await apiJson("/api/inventory/tags");
-    if (!data) return;
-
-    const tags = data.tags || [];
-
-    app.innerHTML = `
-        <div class="page-header view-enter stagger-1">
-            <h2>Tags</h2>
-            <button class="btn btn-primary btn-sm" id="create-tag-btn">New Tag</button>
-        </div>
-        <div class="view-enter stagger-2">
-            ${tags.length === 0 ? `
-                <div class="empty-state">
-                    <div class="empty-icon">&#9899;</div>
-                    <div>No tags created yet.</div>
-                </div>
-            ` : `
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Tag</th>
-                            <th>Color</th>
-                            <th>Objects</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tags.map(t => `
-                            <tr>
-                                <td><span class="tag-pill" style="--tag-color:${t.color || '#4a5a70'}">${escapeHtml(t.name)}</span></td>
-                                <td><input type="color" value="${t.color || '#4a5a70'}" class="tag-color-input" data-id="${t.id}" data-name="${escapeHtml(t.name)}"></td>
-                                <td>${t.object_count || 0}</td>
-                                <td class="instance-actions">
-                                    <button class="btn btn-danger btn-sm tag-delete-btn" data-id="${t.id}" data-name="${escapeHtml(t.name)}">Delete</button>
-                                </td>
-                            </tr>
-                        `).join("")}
-                    </tbody>
-                </table>
-            `}
-        </div>
-    `;
-
-    document.getElementById("create-tag-btn").addEventListener("click", () => {
-        const overlay = document.createElement("div");
-        overlay.className = "confirm-overlay";
-        overlay.innerHTML = `
-            <div class="confirm-box input-modal">
-                <h4>Create Tag</h4>
-                <form id="tag-create-form">
-                    <div class="form-group">
-                        <label>Name *</label>
-                        <input type="text" name="name" required placeholder="Tag name">
-                    </div>
-                    <div class="form-group">
-                        <label>Color</label>
-                        <input type="color" name="color" value="#4a5a70">
-                    </div>
-                    <p class="form-error" id="tag-create-error" style="display:none;"></p>
-                    <div class="actions">
-                        <button type="button" class="btn" id="tag-create-cancel">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Create</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-        overlay.querySelector("#tag-create-cancel").onclick = () => overlay.remove();
-        overlay.querySelector("#tag-create-form").addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const fd = new FormData(e.target);
-            const res = await api("/api/inventory/tags", {
-                method: "POST",
-                body: JSON.stringify({ name: fd.get("name"), color: fd.get("color") }),
-            });
-            if (!res) return;
-            if (res.ok) { overlay.remove(); renderTagsManage(); }
-            else {
-                const err = await res.json();
-                const errEl = overlay.querySelector("#tag-create-error");
-                errEl.textContent = err.detail || "Failed";
-                errEl.style.display = "block";
-            }
-        });
-    });
-
-    // Color change
-    document.querySelectorAll(".tag-color-input").forEach(input => {
-        input.addEventListener("change", async () => {
-            await api(`/api/inventory/tags/${input.dataset.id}`, {
-                method: "PUT",
-                body: JSON.stringify({ name: input.dataset.name, color: input.value }),
-            });
-            renderTagsManage();
-        });
-    });
-
-    // Delete
-    document.querySelectorAll(".tag-delete-btn").forEach(btn => {
-        btn.addEventListener("click", async () => {
-            const yes = await confirm(`Delete tag "${btn.dataset.name}"?`, "Objects will keep their data but lose this tag.");
-            if (!yes) return;
-            await api(`/api/inventory/tags/${btn.dataset.id}`, { method: "DELETE" });
-            renderTagsManage();
-        });
-    });
-}
-
 // --- Users Management ---
 
 async function renderUsers() {
@@ -2767,6 +2936,122 @@ async function renderResetPassword(token) {
     });
 }
 
+// --- Costs ---
+
+async function renderCosts() {
+    app.innerHTML = `<div class="loading">Loading cost data...</div>`;
+
+    const [costData, tagData, regionData] = await Promise.all([
+        apiJson("/api/costs"),
+        apiJson("/api/costs/by-tag"),
+        apiJson("/api/costs/by-region"),
+    ]);
+
+    if (!costData) return;
+
+    const instances = costData.instances || [];
+    const tags = (tagData && tagData.tags) || [];
+    const regions = (regionData && regionData.regions) || [];
+    const account = costData.account || {};
+    const showRefresh = hasPermission("costs.refresh");
+    const sourceLabel = costData.source === "playbook" ? "Vultr API" : "Computed from cache";
+
+    app.innerHTML = `
+        <div class="page-header view-enter stagger-1">
+            <h2>Costs</h2>
+            <div style="display:flex;gap:8px;align-items:center">
+                <span class="badge badge-neutral" style="font-size:11px">${escapeHtml(sourceLabel)}</span>
+                ${costData.cached_at ? `<span style="font-size:11px;opacity:0.5">Updated ${relativeTime(costData.cached_at)}</span>` : ""}
+                ${showRefresh ? `<button class="btn btn-primary btn-sm" id="cost-refresh-btn">Refresh</button>` : ""}
+            </div>
+        </div>
+
+        <div class="stat-grid view-enter stagger-2">
+            <div class="stat-card accent-amber">
+                <div class="stat-value">$${parseFloat(costData.total_monthly_cost || 0).toFixed(2)}</div>
+                <div class="stat-label">Monthly Cost</div>
+            </div>
+            <div class="stat-card accent-blue">
+                <div class="stat-value">${instances.length}</div>
+                <div class="stat-label">Active Instances</div>
+            </div>
+            <div class="stat-card accent-cyan">
+                <div class="stat-value">$${parseFloat(account.pending_charges || 0).toFixed(2)}</div>
+                <div class="stat-label">Pending Charges</div>
+            </div>
+            <div class="stat-card accent-green">
+                <div class="stat-value">$${Math.abs(parseFloat(account.balance || 0)).toFixed(2)}</div>
+                <div class="stat-label">Account Balance</div>
+            </div>
+        </div>
+
+        ${tags.length > 0 ? `
+        <div class="view-enter stagger-3">
+            <div class="section-label">Cost by Tag</div>
+            <p style="font-size:11px;opacity:0.5;margin:0 0 8px">Instances with multiple tags are counted under each tag.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Tag</th><th>Instances</th><th>Monthly Cost</th></tr></thead>
+                    <tbody>
+                        ${tags.map(t => `<tr>
+                            <td><span class="badge badge-neutral">${escapeHtml(t.tag)}</span></td>
+                            <td>${t.instance_count}</td>
+                            <td>$${parseFloat(t.monthly_cost).toFixed(2)}</td>
+                        </tr>`).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        ` : ""}
+
+        ${regions.length > 0 ? `
+        <div class="view-enter stagger-4">
+            <div class="section-label">Cost by Region</div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Region</th><th>Instances</th><th>Monthly Cost</th></tr></thead>
+                    <tbody>
+                        ${regions.map(r => `<tr>
+                            <td>${escapeHtml(r.region)}</td>
+                            <td>${r.instance_count}</td>
+                            <td>$${parseFloat(r.monthly_cost).toFixed(2)}</td>
+                        </tr>`).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        ` : ""}
+
+        <div class="view-enter stagger-5">
+            <div class="section-label">Per-Instance Breakdown</div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Label</th><th>Plan</th><th>Region</th><th>Tags</th><th>Status</th><th>Monthly</th><th>Hourly</th></tr></thead>
+                    <tbody>
+                        ${instances.length === 0 ? `<tr><td colspan="7" style="text-align:center;opacity:0.5">No instances found</td></tr>` :
+                        instances.sort((a, b) => parseFloat(b.monthly_cost) - parseFloat(a.monthly_cost)).map(inst => `<tr>
+                            <td><strong>${escapeHtml(inst.label)}</strong><div style="font-size:11px;opacity:0.5">${escapeHtml(inst.hostname || "")}</div></td>
+                            <td><code>${escapeHtml(inst.plan)}</code></td>
+                            <td>${escapeHtml(inst.region)}</td>
+                            <td>${(inst.tags || []).map(t => `<span class="badge badge-neutral" style="margin:1px">${escapeHtml(t)}</span>`).join(" ")}</td>
+                            <td>${badge(inst.power_status)}</td>
+                            <td>$${parseFloat(inst.monthly_cost).toFixed(2)}</td>
+                            <td>$${parseFloat(inst.hourly_cost).toFixed(4)}</td>
+                        </tr>`).join("")}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    if (showRefresh) {
+        document.getElementById("cost-refresh-btn").addEventListener("click", async () => {
+            const res = await apiJson("/api/costs/refresh", { method: "POST" });
+            if (res) navigate("job-" + res.job_id);
+        });
+    }
+}
+
 // --- Main render ---
 
 async function render() {
@@ -2828,13 +3113,17 @@ async function render() {
         } catch (e) { /* ignore */ }
     }
 
-    // Load inventory types for nav and ensure nav is rendered
+    // Load inventory types for nav
     await loadInventoryTypes();
-    renderInventoryNav();
 
     // Highlight active nav
     document.querySelectorAll("[data-nav]").forEach(a => {
-        a.classList.toggle("active", a.getAttribute("href") === "#" + view);
+        const href = a.getAttribute("href");
+        if (href === "#inventory") {
+            a.classList.toggle("active", view === "inventory" || view.startsWith("inventory-") || view === "tags");
+        } else {
+            a.classList.toggle("active", href === "#" + view);
+        }
     });
 
     if (view === "login") return renderLogin();
@@ -2843,7 +3132,8 @@ async function render() {
     if (view === "instances") return renderInstances();
     if (view === "services") return renderServices();
     if (view === "jobs") return renderJobs();
-    if (view === "tags") return renderTagsManage();
+    if (view === "costs") return renderCosts();
+    if (view === "tags") return renderInventory("tags");
     if (view.startsWith("job-")) return renderJobDetail(view.replace("job-", ""));
     if (view.startsWith("service-config-")) return renderServiceConfig(view.replace("service-config-", ""));
     if (view.startsWith("service-files-")) return renderServiceFiles(view.replace("service-files-", ""));
@@ -2854,7 +3144,8 @@ async function render() {
         const sshUser = parts[2] ? decodeURIComponent(parts[2]) : undefined;
         return renderSSHPage(sshHostname, sshIp, sshUser);
     }
-    // Inventory routes: inventory-{slug}, inventory-{slug}-new, inventory-{slug}-{id}
+    // Inventory routes: inventory, inventory-{slug}, inventory-{slug}-new, inventory-{slug}-{id}
+    if (view === "inventory") return renderInventory();
     if (view.startsWith("inventory-")) {
         const rest = view.replace("inventory-", "");
         // Check for "new" suffix
@@ -2863,8 +3154,8 @@ async function render() {
         // Check for numeric ID suffix
         const detailMatch = rest.match(/^(.+)-(\d+)$/);
         if (detailMatch) return renderInventoryDetail(detailMatch[1], parseInt(detailMatch[2]));
-        // Otherwise it's a list
-        return renderInventoryList(rest);
+        // Otherwise it's a sub-tab within inventory hub
+        return renderInventory(rest);
     }
     if (view === "users") return renderUsers();
     if (view === "roles") return renderRoles();

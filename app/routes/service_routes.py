@@ -41,6 +41,13 @@ async def stop_all(request: Request,
     return {"job_id": job.id, "status": job.status}
 
 
+@router.get("/outputs")
+async def all_service_outputs(request: Request,
+                              user: User = Depends(require_permission("services.view"))):
+    from service_outputs import get_all_service_outputs
+    return {"outputs": get_all_service_outputs()}
+
+
 @router.get("/active-deployments")
 async def active_deployments(request: Request,
                              user: User = Depends(require_permission("services.view"))):
@@ -63,6 +70,13 @@ async def get_service(name: str, request: Request,
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
     return service
+
+
+@router.get("/{name}/outputs")
+async def service_outputs(name: str, request: Request,
+                          user: User = Depends(require_permission("services.view"))):
+    from service_outputs import get_service_outputs
+    return {"outputs": get_service_outputs(name)}
 
 
 @router.post("/{name}/deploy")

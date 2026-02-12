@@ -114,26 +114,22 @@ def init_database():
     from database import create_tables, SessionLocal, User, Role
     from permissions import seed_permissions
 
-    # Load type configs first (needed for dynamic permission generation)
-    type_configs = load_inventory_types()
-
     if needs_migration():
         run_migration()
-        # Re-seed with inventory permissions after migration
-        session = SessionLocal()
-        try:
-            seed_permissions(session, type_configs)
-            session.commit()
-        finally:
-            session.close()
-    else:
-        create_tables()
-        session = SessionLocal()
-        try:
-            seed_permissions(session, type_configs)
-            session.commit()
-        finally:
-            session.close()
+
+    # Ensure all tables exist (including new inventory tables)
+    create_tables()
+
+    # Load type configs (needs inventory_types table to exist)
+    type_configs = load_inventory_types()
+
+    # Seed permissions (static + dynamic from inventory types)
+    session = SessionLocal()
+    try:
+        seed_permissions(session, type_configs)
+        session.commit()
+    finally:
+        session.close()
 
     # Run inventory sync
     run_inventory_sync(type_configs)

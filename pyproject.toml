@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "e2e: real Vultr deployment tests (run with -m e2e)",
+    "playwright: browser tests requiring a running server (run with -m playwright)",
+    "slow: tests taking >30 seconds",
+]
+timeout = 30
