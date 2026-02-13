@@ -14,7 +14,6 @@ class main:
             print("ERROR: Action YAML FILE NOT FOUND") 
             if action_file != "":
                 raise
-        #print(self.settings)
 
     def start(self):
         env = os.environ.copy()
@@ -69,7 +68,6 @@ class main:
                 print("STDERR:\n", p.stderr)
             return p
 
-       #except subprocess.CalledProcessError as e:
         except Exception as e:
             print("❌ RUN failed")
             print("returncode:", e.returncode)

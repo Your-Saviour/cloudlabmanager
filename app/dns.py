@@ -9,8 +9,6 @@ class main:
 
     def get_all_zones(self):
         page = self.client.zones.list()
-        #print("DNS INFO")
-        #print(page.result[0].name)
         cf_ids = {}
         for result in page.result:
             print(result)
