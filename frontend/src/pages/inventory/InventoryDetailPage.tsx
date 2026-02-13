@@ -275,14 +275,15 @@ export default function InventoryDetailPage() {
                           </Button>
                         )
                       }
+                      const isDestructive = action.destructive || action.name === 'destroy'
                       return (
                         <Button
                           key={action.name}
-                          variant="outline"
+                          variant={isDestructive ? "destructive" : "outline"}
                           size="sm"
-                          onClick={() => action.confirm ? setActionConfirm(action.name) : actionMutation.mutate(action.name)}
+                          onClick={() => (action.confirm || isDestructive) ? setActionConfirm(action.name) : actionMutation.mutate(action.name)}
                         >
-                          <Play className="mr-2 h-3 w-3" /> {action.label}
+                          {isDestructive ? <Trash2 className="mr-2 h-3 w-3" /> : <Play className="mr-2 h-3 w-3" />} {action.label}
                         </Button>
                       )
                     })}
@@ -324,14 +325,21 @@ export default function InventoryDetailPage() {
       />
 
       {/* Action confirm */}
-      <ConfirmDialog
-        open={!!actionConfirm}
-        onOpenChange={() => setActionConfirm(null)}
-        title="Confirm Action"
-        description={typeConfig?.actions.find((a) => a.name === actionConfirm)?.confirm || 'Run this action?'}
-        confirmLabel="Run"
-        onConfirm={() => actionConfirm && actionMutation.mutate(actionConfirm)}
-      />
+      {(() => {
+        const confirmAction = typeConfig?.actions.find((a) => a.name === actionConfirm)
+        const isDestructive = confirmAction?.destructive || confirmAction?.name === 'destroy'
+        return (
+          <ConfirmDialog
+            open={!!actionConfirm}
+            onOpenChange={() => setActionConfirm(null)}
+            title={isDestructive ? `Destroy ${obj.name}` : 'Confirm Action'}
+            description={confirmAction?.confirm || (isDestructive ? `Are you sure you want to destroy "${obj.name}"? This action cannot be undone.` : 'Run this action?')}
+            confirmLabel={isDestructive ? 'Destroy' : 'Run'}
+            variant={isDestructive ? 'destructive' : undefined}
+            onConfirm={() => actionConfirm && actionMutation.mutate(actionConfirm)}
+          />
+        )
+      })()}
     </div>
   )
 }

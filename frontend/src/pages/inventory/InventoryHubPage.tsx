@@ -87,6 +87,28 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
 
   const queryClient = useQueryClient()
   const hasSync = !!typeConfig?.sync
+  const [destroyTarget, setDestroyTarget] = useState<InventoryObject | null>(null)
+
+  const destroyMutation = useMutation({
+    mutationFn: async (obj: InventoryObject) => {
+      const { data } = await api.post(`/api/inventory/${typeSlug}/${obj.id}/actions/destroy`)
+      return data
+    },
+    onSuccess: (data) => {
+      setDestroyTarget(null)
+      if (data.job_id) {
+        toast.success('Destroy started')
+        navigate(`/jobs/${data.job_id}`)
+      } else {
+        toast.success('Destroyed')
+        queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
+      }
+    },
+    onError: () => {
+      setDestroyTarget(null)
+      toast.error('Destroy failed')
+    },
+  })
 
   const { data: objects = [], isLoading } = useQuery({
     queryKey: ['inventory', typeSlug],
@@ -206,6 +228,33 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
       })
     }
 
+    // Add Destroy action column if this type has a destroy action
+    const hasDestroy = typeConfig?.actions.some((a) => a.name === 'destroy' && a.scope === 'object')
+    if (hasDestroy) {
+      cols.push({
+        id: 'destroy',
+        header: '',
+        cell: ({ row }) => {
+          const d = row.original.data
+          const isRunning = d.power_status === 'running'
+          if (!isRunning) return null
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={(e) => {
+                e.stopPropagation()
+                setDestroyTarget(row.original)
+              }}
+            >
+              <Trash2 className="mr-1 h-3 w-3" /> Destroy
+            </Button>
+          )
+        },
+      })
+    }
+
     return cols
   }, [typeSlug, typeConfig])
 
@@ -239,6 +288,17 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
       ) : (
         <DataTable columns={columns} data={objects} searchKey="name" searchPlaceholder={`Search ${typeConfig?.label || typeSlug}...`} />
       )}
+
+      {/* Destroy confirm */}
+      <ConfirmDialog
+        open={!!destroyTarget}
+        onOpenChange={() => setDestroyTarget(null)}
+        title="Destroy Server"
+        description={`Are you sure you want to destroy "${destroyTarget?.name}"? This action cannot be undone.`}
+        confirmLabel="Destroy"
+        variant="destructive"
+        onConfirm={() => destroyTarget && destroyMutation.mutate(destroyTarget)}
+      />
     </div>
   )
 }

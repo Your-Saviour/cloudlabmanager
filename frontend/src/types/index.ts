@@ -50,6 +50,7 @@ export interface InventoryAction {
   type?: string
   confirm?: string
   permission?: string
+  destructive?: boolean
 }
 
 export interface InventoryObject {
