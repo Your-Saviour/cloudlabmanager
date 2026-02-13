@@ -36,6 +36,7 @@ def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
             "deployment_id": j.deployment_id,
             "user_id": j.user_id,
             "username": j.username,
+            "schedule_id": j.schedule_id,
         }
         if can_view_all or (can_view_own and j.user_id == user.id):
             jobs[j.id] = job_dict
@@ -92,6 +93,7 @@ async def get_job(job_id: str, request: Request, user: User = Depends(get_curren
                     "deployment_id": db_job.deployment_id,
                     "user_id": db_job.user_id,
                     "username": db_job.username,
+                    "schedule_id": db_job.schedule_id,
                 }
             raise HTTPException(status_code=403, detail="Permission denied")
 

@@ -180,6 +180,55 @@ class JobRecord(Base):
     username = Column(String(30), nullable=True)
     object_id = Column(Integer, ForeignKey("inventory_objects.id", ondelete="SET NULL"), nullable=True)
     type_slug = Column(String(50), nullable=True)
+    schedule_id = Column(Integer, ForeignKey("scheduled_jobs.id", ondelete="SET NULL"), nullable=True)
+
+
+class ScheduledJob(Base):
+    __tablename__ = "scheduled_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    description = Column(String(500), nullable=True)
+
+    # What to run
+    job_type = Column(String(30), nullable=False)  # "service_script", "inventory_action", "system_task"
+
+    # For service_script: service name + script name
+    service_name = Column(String(100), nullable=True)
+    script_name = Column(String(100), nullable=True)
+
+    # For inventory_action: type_slug + action_name + object_id
+    type_slug = Column(String(50), nullable=True)
+    action_name = Column(String(100), nullable=True)
+    object_id = Column(Integer, ForeignKey("inventory_objects.id", ondelete="SET NULL"), nullable=True)
+
+    # For system_task: task identifier (e.g., "refresh_instances", "refresh_costs")
+    system_task = Column(String(50), nullable=True)
+
+    # Schedule
+    cron_expression = Column(String(100), nullable=False)  # Standard 5-field cron
+    is_enabled = Column(Boolean, default=True, nullable=False)
+
+    # Inputs (JSON dict, passed as env vars for scripts)
+    inputs = Column(Text, nullable=True)  # JSON dict
+
+    # Execution tracking
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    last_job_id = Column(String(20), nullable=True)  # FK to jobs.id conceptually
+    last_status = Column(String(20), nullable=True)  # "completed", "failed", "running"
+    next_run_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Overlap policy
+    skip_if_running = Column(Boolean, default=True, nullable=False)
+
+    # Ownership & audit
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by])
+    inventory_object = relationship("InventoryObject", foreign_keys=[object_id])
 
 
 # --- Inventory models ---
@@ -259,6 +308,7 @@ def create_tables():
         "ALTER TABLE users ADD COLUMN ssh_public_key TEXT",
         "ALTER TABLE jobs ADD COLUMN object_id INTEGER REFERENCES inventory_objects(id) ON DELETE SET NULL",
         "ALTER TABLE jobs ADD COLUMN type_slug VARCHAR(50)",
+        "ALTER TABLE jobs ADD COLUMN schedule_id INTEGER REFERENCES scheduled_jobs(id) ON DELETE SET NULL",
     ]
     with engine.connect() as conn:
         for sql in migrations:

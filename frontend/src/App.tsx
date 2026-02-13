@@ -29,6 +29,7 @@ import RoleEditPage from '@/pages/roles/RoleEditPage'
 import AuditLogPage from '@/pages/audit/AuditLogPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import CostsPage from '@/pages/costs/CostsPage'
+import SchedulesPage from '@/pages/schedules/SchedulesPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -95,6 +96,7 @@ function AppRoutes() {
         <Route path="/inventory/:typeSlug/:objId" element={<InventoryDetailPage />} />
         <Route path="/jobs" element={<JobsListPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
+        <Route path="/schedules" element={<SchedulesPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/services/:name/config" element={<ServiceConfigPage />} />
         <Route path="/services/:name/files" element={<ServiceFilesPage />} />

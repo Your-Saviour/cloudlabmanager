@@ -42,6 +42,11 @@ STATIC_PERMISSION_DEFS = [
     # costs
     ("costs.view", "costs", "View Costs", "View cost breakdown and billing data"),
     ("costs.refresh", "costs", "Refresh Costs", "Trigger cost data refresh from Vultr"),
+    # schedules
+    ("schedules.view", "schedules", "View Schedules", "View scheduled job definitions"),
+    ("schedules.create", "schedules", "Create Schedules", "Create new scheduled jobs"),
+    ("schedules.edit", "schedules", "Edit Schedules", "Edit existing scheduled jobs"),
+    ("schedules.delete", "schedules", "Delete Schedules", "Delete scheduled jobs"),
     # inventory management
     ("inventory.tags.manage", "inventory", "Manage Tags", "Create, edit, and delete inventory tags"),
     ("inventory.acl.manage", "inventory", "Manage ACLs", "Set per-object and tag-level permissions"),

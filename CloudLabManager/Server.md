@@ -8,6 +8,7 @@ Go to [[Introduction]]
 - **Service Discovery**: Scan CloudLab services directory for deployable services
 - **Ansible Execution**: Run playbooks and scripts asynchronously via subprocess
 - **Job Tracking**: Track deployment jobs with live output capture and WebSocket streaming
+- **Job Scheduling**: Cron-based recurring job execution via background scheduler
 - **Instance Management**: Cache and serve Vultr inventory data
 - **Inventory System**: Type-driven object management with tags, ACLs, and sync adapters
 - **Audit Logging**: Record all user actions with timestamps and IP addresses
@@ -29,6 +30,7 @@ Go to [[Introduction]]
 | `inventory_sync.py` | Sync adapters: Vultr, service discovery, users, deployments |
 | `type_loader.py` | YAML inventory type loader with validation and change detection |
 | `ansible_runner.py` | Async Ansible execution, job management, config/file management, SSH credential resolution |
+| `scheduler.py` | Background cron scheduler — checks for due scheduled jobs every 30s, dispatches to AnsibleRunner |
 | `audit.py` | `log_action()` — writes to `audit_log` table |
 | `email_service.py` | Sendamatic API integration for invite and password reset emails |
 | `models.py` | Pydantic models for all request/response schemas |
@@ -49,6 +51,7 @@ Go to [[Introduction]]
 | `user_routes.py` | `/api/users` | User management, invites, profile, password change |
 | `role_routes.py` | `/api/roles` | Role CRUD, permission listing |
 | `inventory_routes.py` | `/api/inventory` | Types, objects, tags, ACLs, actions, WebSocket SSH |
+| `schedule_routes.py` | `/api/schedules` | Schedule CRUD, cron preview, execution history |
 | `audit_routes.py` | `/api/audit` | Audit log listing |
 
 ## Running

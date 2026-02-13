@@ -13,3 +13,4 @@ websockets
 sqlalchemy
 httpx
 slowapi
+croniter>=2.0.0

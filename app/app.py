@@ -9,6 +9,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import startup
 from ansible_runner import AnsibleRunner
+from scheduler import Scheduler
 from routes.auth_routes import router as auth_router
 from routes.instance_routes import router as instance_router
 from routes.service_routes import router as service_router
@@ -18,6 +19,7 @@ from routes.role_routes import router as role_router
 from routes.audit_routes import router as audit_router
 from routes.inventory_routes import router as inventory_router
 from routes.cost_routes import router as cost_router
+from routes.schedule_routes import router as schedule_router
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -28,7 +30,16 @@ async def lifespan(app: FastAPI):
     type_configs = await startup.main()
     app.state.ansible_runner = AnsibleRunner()
     app.state.inventory_types = type_configs or []
+
+    # Start background scheduler
+    scheduler = Scheduler(app.state.ansible_runner)
+    app.state.scheduler = scheduler
+    scheduler.start()
+
     yield
+
+    # Stop scheduler on shutdown
+    await scheduler.stop()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -59,6 +70,7 @@ app.include_router(role_router)
 app.include_router(audit_router)
 app.include_router(inventory_router)
 app.include_router(cost_router)
+app.include_router(schedule_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

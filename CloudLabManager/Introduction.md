@@ -37,3 +37,4 @@ On first boot you'll see a **Setup** page where you create an admin account and 
 9. Supports WebSocket SSH terminals to managed servers
 10. Logs all user actions to an audit trail
 11. Sends email notifications for invitations and password resets
+12. Schedules recurring jobs via cron expressions with execution history tracking

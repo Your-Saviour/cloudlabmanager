@@ -81,6 +81,7 @@ export interface Job {
   started_at: string
   finished_at?: string
   started_by?: string
+  schedule_id?: number
 }
 
 export interface Service {
@@ -159,3 +160,5 @@ export interface TagPermission {
   role_name: string
   permission: string
 }
+
+export type { ScheduledJob, CronPreview } from './schedule'

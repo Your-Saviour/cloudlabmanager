@@ -49,6 +49,10 @@ These are always present:
 | Roles | `roles.delete` | Delete custom roles |
 | System | `system.stop_all` | Stop all instances |
 | System | `system.audit_log` | View audit log |
+| Schedules | `schedules.view` | View scheduled job definitions |
+| Schedules | `schedules.create` | Create new scheduled jobs |
+| Schedules | `schedules.edit` | Edit existing scheduled jobs |
+| Schedules | `schedules.delete` | Delete scheduled jobs |
 | Inventory | `inventory.tags.manage` | Create/edit/delete tags |
 
 ### Dynamic Permissions

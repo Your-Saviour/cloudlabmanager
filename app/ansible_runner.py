@@ -796,6 +796,8 @@ class AnsibleRunner:
                     existing.object_id = object_id
                 if type_slug is not None:
                     existing.type_slug = type_slug
+                if job.schedule_id is not None:
+                    existing.schedule_id = job.schedule_id
             else:
                 record = JobRecord(
                     id=job.id,
@@ -811,6 +813,7 @@ class AnsibleRunner:
                     username=job.username,
                     object_id=object_id,
                     type_slug=type_slug,
+                    schedule_id=job.schedule_id,
                 )
                 session.add(record)
             session.commit()

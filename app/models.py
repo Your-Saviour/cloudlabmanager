@@ -63,6 +63,7 @@ class Job(BaseModel):
     deployment_id: Optional[str] = None
     user_id: Optional[int] = None
     username: Optional[str] = None
+    schedule_id: Optional[int] = None
 
 
 # --- New models for RBAC ---
@@ -227,3 +228,44 @@ class TagPermissionSet(BaseModel):
 
 class ObjectTagsUpdate(BaseModel):
     tag_ids: list[int]
+
+
+# --- Scheduled job models ---
+
+class ScheduledJobCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    job_type: str  # "service_script", "inventory_action", "system_task"
+    service_name: Optional[str] = None
+    script_name: Optional[str] = None
+    type_slug: Optional[str] = None
+    action_name: Optional[str] = None
+    object_id: Optional[int] = None
+    system_task: Optional[str] = None
+    cron_expression: str
+    is_enabled: bool = True
+    inputs: Optional[dict[str, Any]] = None
+    skip_if_running: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v):
+        if not 1 <= len(v.strip()) <= 100:
+            raise ValueError("Name must be 1-100 characters")
+        return v.strip()
+
+    @field_validator("job_type")
+    @classmethod
+    def validate_job_type(cls, v):
+        if v not in ("service_script", "inventory_action", "system_task"):
+            raise ValueError("job_type must be 'service_script', 'inventory_action', or 'system_task'")
+        return v
+
+
+class ScheduledJobUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    cron_expression: Optional[str] = None
+    is_enabled: Optional[bool] = None
+    inputs: Optional[dict[str, Any]] = None
+    skip_if_running: Optional[bool] = None

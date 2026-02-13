@@ -24,6 +24,7 @@ cloudlabmanager/
 │   ├── inventory_sync.py       # Sync adapters (Vultr, services, users, deployments)
 │   ├── type_loader.py          # YAML inventory type loader + validation
 │   ├── ansible_runner.py       # Async Ansible execution + job tracking
+│   ├── scheduler.py            # Background cron scheduler for recurring jobs
 │   ├── audit.py                # Audit logging to database
 │   ├── email_service.py        # Sendamatic email integration
 │   ├── models.py               # Pydantic request/response models
@@ -40,6 +41,7 @@ cloudlabmanager/
 │   │   ├── user_routes.py      # /api/users/* endpoints
 │   │   ├── role_routes.py      # /api/roles/* endpoints
 │   │   ├── inventory_routes.py # /api/inventory/* endpoints (types, objects, tags, ACLs, SSH)
+│   │   ├── schedule_routes.py  # /api/schedules/* endpoints
 │   │   └── audit_routes.py     # /api/audit/* endpoints
 │   └── static/
 │       ├── index.html          # SPA shell
@@ -88,6 +90,7 @@ cloudlabmanager/
 11. Ensures initial admin user has Super Admin role
 12. Writes vault password file if previously configured
 13. Creates `AnsibleRunner` instance in app state
+14. Starts background `Scheduler` (checks for due scheduled jobs every 30 seconds)
 
 ## Deployment Job Flow
 
@@ -118,6 +121,7 @@ All persistent state is stored in SQLite (`/data/cloudlab.db`) using SQLAlchemy 
 | `inventory_tags` | Tags for organization and access control |
 | `object_acl` | Per-object access control rules |
 | `tag_permissions` | Tag-based permission grants |
+| `scheduled_jobs` | Cron-based recurring job definitions |
 | `job_records` | Deployment and action job history |
 | `audit_log` | User action audit trail |
 | `app_metadata` | Key-value store (secret key, vault password, cache) |

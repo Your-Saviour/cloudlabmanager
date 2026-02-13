@@ -199,6 +199,73 @@ Job statuses: `running`, `completed`, `failed`
 
 Returns entries with: user, action, resource, details, IP address, timestamp.
 
+## Schedules
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/schedules` | `schedules.view` | List all scheduled jobs |
+| GET | `/api/schedules/preview` | `schedules.view` | Preview next N run times for a cron expression |
+| GET | `/api/schedules/{schedule_id}` | `schedules.view` | Get a single scheduled job |
+| GET | `/api/schedules/{schedule_id}/history` | `schedules.view` | List past executions for a schedule (paginated) |
+| POST | `/api/schedules` | `schedules.create` | Create a new scheduled job |
+| PUT | `/api/schedules/{schedule_id}` | `schedules.edit` | Update a scheduled job |
+| DELETE | `/api/schedules/{schedule_id}` | `schedules.delete` | Delete a scheduled job |
+
+### POST `/api/schedules`
+
+```json
+{
+  "name": "Refresh Instances Hourly",
+  "description": "Keep instance cache fresh",
+  "job_type": "system_task",
+  "system_task": "refresh_instances",
+  "cron_expression": "0 * * * *",
+  "is_enabled": true,
+  "skip_if_running": true
+}
+```
+
+Valid `job_type` values: `service_script`, `system_task`, `inventory_action`.
+
+- **`service_script`** — requires `service_name` and `script_name`
+- **`system_task`** — requires `system_task` (one of `refresh_instances`, `refresh_costs`)
+- **`inventory_action`** — requires `inventory_type_slug`, `inventory_object_id`, `inventory_action_name`
+
+### GET `/api/schedules/preview`
+
+Query params: `expression` (cron string), `count` (number of next runs, default 5).
+
+Returns:
+
+```json
+{
+  "expression": "*/5 * * * *",
+  "next_runs": ["2025-01-01T00:05:00+00:00", "2025-01-01T00:10:00+00:00", ...]
+}
+```
+
+### GET `/api/schedules/{schedule_id}/history`
+
+Query params: `page` (default 1), `per_page` (default 20).
+
+Returns:
+
+```json
+{
+  "schedule_name": "Refresh Instances Hourly",
+  "total": 42,
+  "jobs": [
+    {
+      "id": "abc123",
+      "status": "completed",
+      "started_at": "2025-01-01T00:00:00+00:00",
+      "finished_at": "2025-01-01T00:01:30+00:00",
+      "username": "scheduler:Refresh Instances Hourly"
+    }
+  ]
+}
+```
+
 ## Inventory
 
 See [[Inventory System]] for concepts. All inventory endpoints require authentication.

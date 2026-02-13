@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Hexagon,
+  Clock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
@@ -40,6 +41,7 @@ export function Sidebar() {
     { label: 'Services', href: '/services', icon: <Boxes className="h-4 w-4" />, permission: 'services.view' },
     { label: 'Inventory', href: '/inventory', icon: <Server className="h-4 w-4" /> },
     { label: 'Jobs', href: '/jobs', icon: <Play className="h-4 w-4" /> },
+    { label: 'Schedules', href: '/schedules', icon: <Clock className="h-4 w-4" />, permission: 'schedules.view' },
     { label: 'Costs', href: '/costs', icon: <DollarSign className="h-4 w-4" />, permission: 'costs.view' },
   ]
 

@@ -74,6 +74,14 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Edit role permissions (grouped by category)
 - Cannot modify or delete system roles
 
+### Schedules
+- List of all scheduled jobs with status badge (Enabled/Disabled), name, type, cron expression, last/next run times, and last status
+- **Create dialog** with conditional fields per job type: service/script dropdowns for service scripts, inventory type/action dropdowns for inventory actions, task selector for system tasks
+- Cron expression input with debounced preview showing next 5 run times
+- Edit, delete, and enable/disable toggle from actions dropdown
+- **Execution history dialog** — view past runs for a schedule with job ID links, status badges, and timestamps
+- Requires `schedules.*` permissions
+
 ### Audit Log
 - Paginated list of all user actions
 - Shows: user, action, resource, IP address, timestamp
