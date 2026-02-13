@@ -83,7 +83,7 @@ export default function ServiceConfigPage() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/services')}>
+        <Button variant="ghost" size="icon" onClick={() => navigate('/services')} aria-label="Back to services">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -106,7 +106,7 @@ export default function ServiceConfigPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-[200px_1fr] gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4">
           <Card>
             <CardContent className="pt-4">
               <nav className="space-y-1">
@@ -144,12 +144,14 @@ export default function ServiceConfigPage() {
                         value={content}
                         onChange={(e) => { setContent(e.target.value); setDirty(true) }}
                         spellCheck={false}
+                        aria-label={`Edit ${activeFile}`}
                       />
                       {dirty && (
                         <input
                           type="text"
                           className="mt-2 w-full bg-transparent border border-border rounded-md px-3 py-2 text-xs text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
                           placeholder="Change note (optional)"
+                          aria-label="Change note"
                           value={changeNote}
                           onChange={(e) => setChangeNote(e.target.value)}
                         />

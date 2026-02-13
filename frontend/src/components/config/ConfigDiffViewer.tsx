@@ -25,9 +25,10 @@ export default function ConfigDiffViewer({ serviceName, filename, versionId, onC
   })
 
   const getLineClass = (line: string) => {
+    if (line.startsWith('@@')) return 'text-blue-400'
+    if (line.startsWith('---') || line.startsWith('+++')) return 'text-muted-foreground font-semibold'
     if (line.startsWith('+')) return 'text-green-400 bg-green-400/10'
     if (line.startsWith('-')) return 'text-red-400 bg-red-400/10'
-    if (line.startsWith('@@')) return 'text-blue-400'
     return 'text-muted-foreground'
   }
 
@@ -44,7 +45,7 @@ export default function ConfigDiffViewer({ serviceName, filename, versionId, onC
             'Loading diff...'
           )}
         </span>
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose} aria-label="Close diff viewer">
           <X className="h-3 w-3" />
         </Button>
       </div>
