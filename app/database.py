@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from sqlalchemy import (
     create_engine, Column, Integer, String, Boolean, Text, DateTime,
-    ForeignKey, Table, event, text,
+    ForeignKey, Index, Table, event, text,
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -135,6 +135,28 @@ class AuditLog(Base):
     details = Column(Text, nullable=True)  # JSON text
     ip_address = Column(String(45), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+
+class ConfigVersion(Base):
+    __tablename__ = "config_versions"
+    __table_args__ = (
+        Index('ix_config_versions_lookup', 'service_name', 'filename', 'version_number'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    service_name = Column(String(100), nullable=False, index=True)
+    filename = Column(String(50), nullable=False)
+    content = Column(Text, nullable=False)
+    content_hash = Column(String(64), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    version_number = Column(Integer, nullable=False)
+    change_note = Column(String(500), nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by_username = Column(String(30), nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+    creator = relationship("User", foreign_keys=[created_by_id])
 
 
 class AppMetadata(Base):
@@ -301,6 +323,22 @@ class TagPermission(Base):
     role = relationship("Role")
 
 
+class HealthCheckResult(Base):
+    __tablename__ = "health_check_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    service_name = Column(String(100), nullable=False, index=True)
+    check_name = Column(String(100), nullable=False)
+    status = Column(String(20), nullable=False)  # "healthy", "unhealthy", "degraded", "unknown"
+    previous_status = Column(String(20), nullable=True)  # for transition detection
+    response_time_ms = Column(Integer, nullable=True)  # response time in milliseconds
+    status_code = Column(Integer, nullable=True)  # HTTP status code if applicable
+    error_message = Column(Text, nullable=True)  # error details if unhealthy
+    checked_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    check_type = Column(String(20), nullable=False)  # "http", "tcp", "icmp", "ssh_command"
+    target = Column(String(255), nullable=True)  # URL or host:port that was checked
+
+
 def create_tables():
     Base.metadata.create_all(bind=engine)
     # Migration: add new columns if missing (idempotent)
@@ -309,6 +347,7 @@ def create_tables():
         "ALTER TABLE jobs ADD COLUMN object_id INTEGER REFERENCES inventory_objects(id) ON DELETE SET NULL",
         "ALTER TABLE jobs ADD COLUMN type_slug VARCHAR(50)",
         "ALTER TABLE jobs ADD COLUMN schedule_id INTEGER REFERENCES scheduled_jobs(id) ON DELETE SET NULL",
+        "ALTER TABLE health_check_results ADD COLUMN previous_status VARCHAR(20)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

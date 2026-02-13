@@ -30,6 +30,7 @@ import AuditLogPage from '@/pages/audit/AuditLogPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import CostsPage from '@/pages/costs/CostsPage'
 import SchedulesPage from '@/pages/schedules/SchedulesPage'
+import HealthPage from '@/pages/health/HealthPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -108,6 +109,7 @@ function AppRoutes() {
         <Route path="/audit" element={<AuditLogPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/costs" element={<CostsPage />} />
+        <Route path="/health" element={<HealthPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>
 

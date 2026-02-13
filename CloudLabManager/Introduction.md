@@ -38,3 +38,4 @@ On first boot you'll see a **Setup** page where you create an admin account and 
 10. Logs all user actions to an audit trail
 11. Sends email notifications for invitations and password resets
 12. Schedules recurring jobs via cron expressions with execution history tracking
+13. Monitors deployed service health via configurable checks (HTTP, TCP, ICMP, SSH) with email alerts on state changes

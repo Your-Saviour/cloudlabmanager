@@ -74,6 +74,39 @@ def restore_persistent_data():
             print(f"Persistent: {clone_outputs} -> {persistent}")
 
 
+def seed_initial_config_versions():
+    """Create version 1 for existing config files that have no versions yet."""
+    from database import SessionLocal, ConfigVersion
+    from ansible_runner import SERVICES_DIR, ALLOWED_CONFIG_FILES, save_config_version
+
+    session = SessionLocal()
+    try:
+        if not os.path.isdir(SERVICES_DIR):
+            return
+        for dirname in os.listdir(SERVICES_DIR):
+            service_path = os.path.join(SERVICES_DIR, dirname)
+            if not os.path.isdir(service_path):
+                continue
+            for fname in ALLOWED_CONFIG_FILES:
+                fpath = os.path.join(service_path, fname)
+                if not os.path.isfile(fpath):
+                    continue
+                existing = session.query(ConfigVersion).filter_by(
+                    service_name=dirname, filename=fname).first()
+                if existing:
+                    continue
+                with open(fpath, "r") as f:
+                    content = f.read()
+                save_config_version(session, dirname, fname, content,
+                                    username="system", change_note="Initial version (seeded)")
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Could not seed config versions: {e}")
+    finally:
+        session.close()
+
+
 def load_inventory_types():
     """Load inventory type definitions from YAML and sync to DB.
     Returns the list of type configs for use by app.state."""
@@ -120,6 +153,9 @@ def init_database():
     # Ensure all tables exist (including new inventory tables)
     create_tables()
 
+    # Seed initial config versions for existing files
+    seed_initial_config_versions()
+
     # Load type configs (needs inventory_types table to exist)
     type_configs = load_inventory_types()
 
@@ -133,6 +169,11 @@ def init_database():
 
     # Run inventory sync
     run_inventory_sync(type_configs)
+
+    # Load health check configurations
+    from health_checker import load_health_configs
+    health_configs = load_health_configs()
+    print(f"  Health check configs: {len(health_configs)} service(s)")
 
     # Ensure "jake" has super-admin role (idempotent)
     session = SessionLocal()

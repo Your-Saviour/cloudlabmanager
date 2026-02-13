@@ -91,6 +91,27 @@ Returns: `{ "access_token": "...", "token_type": "bearer" }`
 | GET | `/api/services/{name}/configs/{filename}` | `services.config.view` | Read a config file |
 | PUT | `/api/services/{name}/configs/{filename}` | `services.config.edit` | Write a config file |
 
+### Config Version History
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/services/{name}/configs/{filename}/versions` | `services.config.view` | List all versions (newest first) |
+| GET | `/api/services/{name}/configs/{filename}/versions/{id}` | `services.config.view` | Get full content of a specific version |
+| GET | `/api/services/{name}/configs/{filename}/versions/{id}/diff` | `services.config.view` | Unified diff vs previous version (`?compare_to=` for custom comparison) |
+| POST | `/api/services/{name}/configs/{filename}/versions/{id}/restore` | `services.config.edit` | Restore a version (creates new version, writes to disk) |
+
+Equivalent endpoints exist under `/api/inventory/service/{obj_id}/configs/{filename}/versions/...` for inventory-based access.
+
+The PUT config endpoint (`/api/services/{name}/configs/{filename}`) now accepts an optional `change_note` field in the request body. Each save automatically creates a new version. The system retains the last 50 versions per file — older versions are pruned automatically.
+
+#### POST restore body
+
+```json
+{
+  "change_note": "Optional reason for restoring"
+}
+```
+
 ### Service File Management
 
 | Method | Endpoint | Permission | Description |
@@ -265,6 +286,43 @@ Returns:
   ]
 }
 ```
+
+## Health Checks
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/health/status` | `health.view` | Latest health status per service/check, grouped by service with overall status |
+| GET | `/api/health/history/{service_name}` | `health.view` | Historical results for a service |
+| GET | `/api/health/summary` | `health.view` | Compact summary counts (healthy/unhealthy/unknown) |
+| POST | `/api/health/reload` | `health.manage` | Reload health configs from disk |
+
+### GET `/api/health/status`
+
+Returns the latest check result per service, grouped by service with an overall status derived from individual checks (any unhealthy → unhealthy, any degraded → degraded). Services with health configs but no results yet show `"unknown"` status.
+
+### GET `/api/health/history/{service_name}`
+
+Query params:
+- `check_name` — filter by specific check name
+- `hours` — hours of history to return (default: 24)
+- `limit` — max results (default: 100)
+
+### GET `/api/health/summary`
+
+Returns compact counts for dashboard cards:
+
+```json
+{
+  "total": 7,
+  "healthy": 5,
+  "unhealthy": 1,
+  "unknown": 1
+}
+```
+
+### POST `/api/health/reload`
+
+Reloads `health.yaml` configs from the CloudLab services directory. Use after adding or modifying health check definitions.
 
 ## Inventory
 

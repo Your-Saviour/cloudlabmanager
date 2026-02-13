@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Server, Play, Activity, DollarSign, ArrowRight, Clock, ExternalLink, CheckCircle, XCircle, Database } from 'lucide-react'
+import { Server, Play, Activity, DollarSign, ArrowRight, Clock, ExternalLink, CheckCircle, XCircle, Database, HeartPulse } from 'lucide-react'
 import api from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { useHasPermission } from '@/lib/permissions'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { relativeTime } from '@/lib/utils'
@@ -11,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Job, Service } from '@/types'
+import type { HealthSummary, HealthStatusResponse } from '@/types/health'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -84,6 +86,24 @@ export default function DashboardPage() {
     enabled: inventoryTypes.length > 0,
   })
 
+  const { data: healthSummary } = useQuery({
+    queryKey: ['health-summary'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/health/summary')
+      return data as HealthSummary
+    },
+    refetchInterval: 15000,
+  })
+
+  const { data: healthStatus } = useQuery({
+    queryKey: ['health-status'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/health/status')
+      return data as HealthStatusResponse
+    },
+    refetchInterval: 15000,
+  })
+
   const runningJobs = jobs?.filter((j) => j.status === 'running') || []
   const completedJobs = jobs?.filter((j) => j.status === 'completed') || []
   const failedJobs = jobs?.filter((j) => j.status === 'failed') || []
@@ -152,6 +172,14 @@ export default function DashboardPage() {
           icon={<XCircle className="h-4 w-4" />}
           loading={jobsLoading}
         />
+        <StatCard
+          title="Service Health"
+          value={healthSummary
+            ? `${healthSummary.healthy}/${healthSummary.total}`
+            : '...'}
+          icon={<HeartPulse className="h-4 w-4" />}
+          loading={!healthSummary}
+        />
 
         {canViewCosts && (
           <StatCard
@@ -190,6 +218,49 @@ export default function DashboardPage() {
                   </CardContent>
                 </Card>
               </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Health Status Panel */}
+      {healthStatus?.services && healthStatus.services.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold">Service Health</h2>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/health')}>
+              View All <ArrowRight className="ml-1 h-3 w-3" />
+            </Button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {healthStatus.services.map((svc) => (
+              <Card
+                key={svc.service_name}
+                role="button"
+                tabIndex={0}
+                aria-label={`${svc.service_name} — ${svc.overall_status}`}
+                className={cn(
+                  "cursor-pointer transition-colors hover:border-primary/50",
+                  svc.overall_status === 'unhealthy' && "border-destructive/50",
+                  svc.overall_status === 'healthy' && "border-green-500/30",
+                )}
+                onClick={() => navigate('/health')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate('/health') }}
+              >
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <HealthDot status={svc.overall_status} />
+                      <span className="font-medium text-sm">{svc.service_name}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {svc.checks[0]?.response_time_ms != null
+                        ? `${svc.checks[0].response_time_ms}ms`
+                        : '—'}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </div>
@@ -236,6 +307,26 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function HealthDot({ status }: { status: string }) {
+  const colors = {
+    healthy: 'bg-green-500',
+    unhealthy: 'bg-red-500',
+    degraded: 'bg-yellow-500',
+    unknown: 'bg-gray-500',
+  }
+  return (
+    <span
+      className={cn(
+        "inline-block h-2.5 w-2.5 rounded-full",
+        colors[status as keyof typeof colors] || colors.unknown,
+        status === 'unhealthy' && "animate-pulse",
+      )}
+      role="img"
+      aria-label={status}
+    />
   )
 }
 

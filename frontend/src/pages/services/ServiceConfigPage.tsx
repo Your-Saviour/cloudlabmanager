@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Save, FileText } from 'lucide-react'
+import { ArrowLeft, Save, FileText, History } from 'lucide-react'
 import api from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
+import ConfigVersionHistory from '@/components/config/ConfigVersionHistory'
 
 interface ConfigFile {
   name: string
@@ -20,6 +22,7 @@ export default function ServiceConfigPage() {
   const [activeFile, setActiveFile] = useState<string>('')
   const [content, setContent] = useState('')
   const [dirty, setDirty] = useState(false)
+  const [changeNote, setChangeNote] = useState('')
 
   const { data: configData, isLoading } = useQuery({
     queryKey: ['service', name, 'configs'],
@@ -57,10 +60,15 @@ export default function ServiceConfigPage() {
   }, [fileContent])
 
   const saveMutation = useMutation({
-    mutationFn: () => api.put(`/api/services/${name}/configs/${activeFile}`, { content }),
+    mutationFn: () => api.put(`/api/services/${name}/configs/${activeFile}`, {
+      content,
+      change_note: changeNote || undefined,
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service', name, 'config', activeFile] })
+      queryClient.invalidateQueries({ queryKey: ['service', name, 'config', activeFile, 'versions'] })
       setDirty(false)
+      setChangeNote('')
       toast.success('Config saved')
     },
     onError: () => toast.error('Save failed'),
@@ -69,6 +77,7 @@ export default function ServiceConfigPage() {
   const selectFile = (fileName: string) => {
     setActiveFile(fileName)
     setDirty(false)
+    setChangeNote('')
   }
 
   return (
@@ -118,16 +127,47 @@ export default function ServiceConfigPage() {
           </Card>
           <Card>
             <CardContent className="pt-4">
-              {fileLoading ? (
-                <Skeleton className="h-96 w-full" />
-              ) : (
-                <textarea
-                  className="w-full h-[500px] bg-black/30 rounded-md p-4 font-mono text-xs text-foreground resize-none border border-border focus:outline-none focus:ring-1 focus:ring-primary"
-                  value={content}
-                  onChange={(e) => { setContent(e.target.value); setDirty(true) }}
-                  spellCheck={false}
-                />
-              )}
+              <Tabs defaultValue="editor">
+                <TabsList>
+                  <TabsTrigger value="editor">Editor</TabsTrigger>
+                  <TabsTrigger value="history">
+                    <History className="mr-1 h-3 w-3" /> History
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="editor" className="mt-4">
+                  {fileLoading ? (
+                    <Skeleton className="h-96 w-full" />
+                  ) : (
+                    <>
+                      <textarea
+                        className="w-full h-[500px] bg-black/30 rounded-md p-4 font-mono text-xs text-foreground resize-none border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                        value={content}
+                        onChange={(e) => { setContent(e.target.value); setDirty(true) }}
+                        spellCheck={false}
+                      />
+                      {dirty && (
+                        <input
+                          type="text"
+                          className="mt-2 w-full bg-transparent border border-border rounded-md px-3 py-2 text-xs text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                          placeholder="Change note (optional)"
+                          value={changeNote}
+                          onChange={(e) => setChangeNote(e.target.value)}
+                        />
+                      )}
+                    </>
+                  )}
+                </TabsContent>
+                <TabsContent value="history" className="mt-4">
+                  <ConfigVersionHistory
+                    serviceName={name!}
+                    filename={activeFile}
+                    onRestore={() => {
+                      queryClient.invalidateQueries({ queryKey: ['service', name, 'config', activeFile] })
+                      setDirty(false)
+                    }}
+                  />
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import re
 import uuid
@@ -16,6 +17,58 @@ ALLOWED_CONFIG_FILES = {"instance.yaml", "config.yaml", "scripts.yaml", "outputs
 ALLOWED_FILE_SUBDIRS = {"inputs", "outputs"}
 MAX_CONFIG_SIZE = 100 * 1024  # 100KB
 MAX_FILE_SIZE = 100 * 1024  # 100KB
+MAX_VERSIONS_PER_FILE = 50
+
+
+def save_config_version(session, service_name: str, filename: str, content: str,
+                        user_id: int | None = None, username: str | None = None,
+                        change_note: str | None = None, ip_address: str | None = None):
+    """Snapshot a config file's content as a new version. Prune old versions beyond MAX_VERSIONS_PER_FILE."""
+    from database import ConfigVersion
+
+    # Truncate change_note to DB column limit
+    if change_note and len(change_note) > 500:
+        change_note = change_note[:500]
+
+    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    # Determine next version number
+    latest = (session.query(ConfigVersion)
+              .filter_by(service_name=service_name, filename=filename)
+              .order_by(ConfigVersion.version_number.desc())
+              .first())
+    next_version = (latest.version_number + 1) if latest else 1
+
+    version = ConfigVersion(
+        service_name=service_name,
+        filename=filename,
+        content=content,
+        content_hash=content_hash,
+        size_bytes=len(content.encode("utf-8")),
+        version_number=next_version,
+        change_note=change_note,
+        created_by_id=user_id,
+        created_by_username=username,
+        ip_address=ip_address,
+    )
+    session.add(version)
+    session.flush()
+
+    # Prune: delete oldest versions beyond the limit
+    count = (session.query(ConfigVersion)
+             .filter_by(service_name=service_name, filename=filename)
+             .count())
+    if count > MAX_VERSIONS_PER_FILE:
+        excess = (session.query(ConfigVersion)
+                  .filter_by(service_name=service_name, filename=filename)
+                  .order_by(ConfigVersion.version_number.asc())
+                  .limit(count - MAX_VERSIONS_PER_FILE)
+                  .all())
+        for old in excess:
+            session.delete(old)
+        session.flush()
+
+    return version
 
 
 class AnsibleRunner:

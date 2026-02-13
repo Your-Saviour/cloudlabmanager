@@ -20,6 +20,8 @@ from routes.audit_routes import router as audit_router
 from routes.inventory_routes import router as inventory_router
 from routes.cost_routes import router as cost_router
 from routes.schedule_routes import router as schedule_router
+from routes.health_routes import router as health_router
+from health_checker import HealthPoller, load_health_configs
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -36,7 +38,16 @@ async def lifespan(app: FastAPI):
     app.state.scheduler = scheduler
     scheduler.start()
 
+    # Start health check poller
+    load_health_configs()
+    health_poller = HealthPoller()
+    app.state.health_poller = health_poller
+    health_poller.start()
+
     yield
+
+    # Stop health poller on shutdown
+    await health_poller.stop()
 
     # Stop scheduler on shutdown
     await scheduler.stop()
@@ -71,6 +82,7 @@ app.include_router(audit_router)
 app.include_router(inventory_router)
 app.include_router(cost_router)
 app.include_router(schedule_router)
+app.include_router(health_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

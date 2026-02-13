@@ -25,6 +25,7 @@ cloudlabmanager/
 │   ├── type_loader.py          # YAML inventory type loader + validation
 │   ├── ansible_runner.py       # Async Ansible execution + job tracking
 │   ├── scheduler.py            # Background cron scheduler for recurring jobs
+│   ├── health_checker.py       # Health check config loader and background poller
 │   ├── audit.py                # Audit logging to database
 │   ├── email_service.py        # Sendamatic email integration
 │   ├── models.py               # Pydantic request/response models
@@ -41,6 +42,7 @@ cloudlabmanager/
 │   │   ├── user_routes.py      # /api/users/* endpoints
 │   │   ├── role_routes.py      # /api/roles/* endpoints
 │   │   ├── inventory_routes.py # /api/inventory/* endpoints (types, objects, tags, ACLs, SSH)
+│   │   ├── health_routes.py    # /api/health/* endpoints
 │   │   ├── schedule_routes.py  # /api/schedules/* endpoints
 │   │   └── audit_routes.py     # /api/audit/* endpoints
 │   └── static/
@@ -89,8 +91,10 @@ cloudlabmanager/
 10. Runs inventory sync adapters (Vultr, services, users, deployments)
 11. Ensures initial admin user has Super Admin role
 12. Writes vault password file if previously configured
-13. Creates `AnsibleRunner` instance in app state
-14. Starts background `Scheduler` (checks for due scheduled jobs every 30 seconds)
+13. Loads health check configs from `services/*/health.yaml`
+14. Creates `AnsibleRunner` instance in app state
+15. Starts background `Scheduler` (checks for due scheduled jobs every 30 seconds)
+16. Starts background `HealthPoller` (checks service health at configured intervals)
 
 ## Deployment Job Flow
 
@@ -124,6 +128,8 @@ All persistent state is stored in SQLite (`/data/cloudlab.db`) using SQLAlchemy 
 | `scheduled_jobs` | Cron-based recurring job definitions |
 | `job_records` | Deployment and action job history |
 | `audit_log` | User action audit trail |
+| `health_check_results` | Health check polling results (status, response time, errors) |
+| `config_versions` | Service config file version history (content, hash, author, change notes) |
 | `app_metadata` | Key-value store (secret key, vault password, cache) |
 | `invite_tokens` | User invitation tokens (72h expiry) |
 | `password_reset_tokens` | Password reset tokens (1h expiry) |

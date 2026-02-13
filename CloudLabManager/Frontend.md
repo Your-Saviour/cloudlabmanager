@@ -82,6 +82,25 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - **Execution history dialog** — view past runs for a schedule with job ID links, status badges, and timestamps
 - Requires `schedules.*` permissions
 
+### Health
+- Dedicated `/health` page showing all monitored services
+- Summary badges: healthy, unhealthy, degraded, unknown counts
+- Expandable service cards with per-check detail table (name, type, target, status, response time, last checked, error)
+- Color-coded status indicators with pulse animation for unhealthy services
+- "Reload Configs" button (requires `health.manage` permission)
+- 15-second auto-refresh
+- Loading skeletons during data fetch
+- Empty state when no health checks are configured
+- Requires `health.view` permission
+
+### Dashboard Health Panel
+- "Service Health" stat card showing healthy/total count
+- Grid of service cards with status dot, service name, and response time
+- Color-coded borders (green for healthy, red for unhealthy)
+- Click navigates to `/health` page
+- "View All" button linking to health page
+- Only renders when health-checked services exist
+
 ### Audit Log
 - Paginated list of all user actions
 - Shows: user, action, resource, IP address, timestamp

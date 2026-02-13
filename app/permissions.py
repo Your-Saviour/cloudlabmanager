@@ -50,6 +50,9 @@ STATIC_PERMISSION_DEFS = [
     # inventory management
     ("inventory.tags.manage", "inventory", "Manage Tags", "Create, edit, and delete inventory tags"),
     ("inventory.acl.manage", "inventory", "Manage ACLs", "Set per-object and tag-level permissions"),
+    # health checks
+    ("health.view", "health", "View Health Checks", "View health check status and history"),
+    ("health.manage", "health", "Manage Health Checks", "Reload health configs and manage health check settings"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

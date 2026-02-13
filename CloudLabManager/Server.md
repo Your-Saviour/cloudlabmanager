@@ -12,6 +12,7 @@ Go to [[Introduction]]
 - **Instance Management**: Cache and serve Vultr inventory data
 - **Inventory System**: Type-driven object management with tags, ACLs, and sync adapters
 - **Audit Logging**: Record all user actions with timestamps and IP addresses
+- **Health Monitoring**: Background poller checks deployed service health (HTTP, TCP, ICMP, SSH) at configured intervals with email notifications on state changes
 - **Email**: Send invitation and password reset emails via Sendamatic
 - **Static File Serving**: Serve the frontend SPA
 
@@ -31,6 +32,7 @@ Go to [[Introduction]]
 | `type_loader.py` | YAML inventory type loader with validation and change detection |
 | `ansible_runner.py` | Async Ansible execution, job management, config/file management, SSH credential resolution |
 | `scheduler.py` | Background cron scheduler — checks for due scheduled jobs every 30s, dispatches to AnsibleRunner |
+| `health_checker.py` | Health check config loader (`load_health_configs`) and background `HealthPoller` (15s tick, interval-based scheduling, data retention cleanup) |
 | `audit.py` | `log_action()` — writes to `audit_log` table |
 | `email_service.py` | Sendamatic API integration for invite and password reset emails |
 | `models.py` | Pydantic models for all request/response schemas |
@@ -51,6 +53,7 @@ Go to [[Introduction]]
 | `user_routes.py` | `/api/users` | User management, invites, profile, password change |
 | `role_routes.py` | `/api/roles` | Role CRUD, permission listing |
 | `inventory_routes.py` | `/api/inventory` | Types, objects, tags, ACLs, actions, WebSocket SSH |
+| `health_routes.py` | `/api/health` | Health check status, history, summary, config reload |
 | `schedule_routes.py` | `/api/schedules` | Schedule CRUD, cron preview, execution history |
 | `audit_routes.py` | `/api/audit` | Audit log listing |
 

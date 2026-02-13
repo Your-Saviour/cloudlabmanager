@@ -62,6 +62,7 @@ _SESSION_LOCAL_MODULES = [
     "service_outputs",
     "inventory_sync",
     "migration",
+    "health_checker",
 ]
 
 
@@ -236,6 +237,7 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     from routes.instance_routes import router as instance_router
     from routes.audit_routes import router as audit_router
     from routes.schedule_routes import router as schedule_router
+    from routes.health_routes import router as health_router
 
     app = FastAPI()
     app.add_middleware(
@@ -259,6 +261,7 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     app.include_router(instance_router)
     app.include_router(audit_router)
     app.include_router(schedule_router)
+    app.include_router(health_router)
 
     return app
 

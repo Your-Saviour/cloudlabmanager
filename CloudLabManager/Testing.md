@@ -20,6 +20,7 @@ tests/
 │   ├── test_user_routes.py       # User management
 │   ├── test_role_routes.py       # Role management
 │   ├── test_service_routes.py    # Service deployment
+│   ├── test_config_versions.py   # Config version history API
 │   ├── test_inventory_routes.py  # Inventory CRUD and ACLs
 │   └── test_job_routes.py        # Job tracking
 ├── playwright/           # Browser UI tests

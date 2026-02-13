@@ -789,6 +789,7 @@ from pydantic import BaseModel as PydanticBaseModel
 
 class ConfigUpdate(PydanticBaseModel):
     content: str
+    change_note: str | None = None
 
 
 @router.get("/service/{obj_id}/configs")
@@ -853,6 +854,15 @@ async def write_service_config(obj_id: int, filename: str, body: ConfigUpdate,
     service_name = obj_data.get("name")
     runner = request.app.state.ansible_runner
     try:
+        # Save the new content as a version before writing to disk
+        from ansible_runner import save_config_version
+        save_config_version(
+            session, service_name, filename, body.content,
+            user_id=user.id, username=user.username,
+            change_note=body.change_note,
+            ip_address=request.client.host if request.client else None,
+        )
+
         runner.write_config_file(service_name, filename, body.content)
 
         log_action(session, user.id, user.username, "inventory.service.config.edit",
@@ -864,3 +874,193 @@ async def write_service_config(obj_id: int, filename: str, body: ConfigUpdate,
         raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# --- Config version history endpoints (inventory) ---
+
+
+def _resolve_service_name(session: Session, obj_id: int) -> str:
+    """Resolve service_name from an inventory object ID."""
+    obj = session.query(InventoryObject).filter_by(id=obj_id).first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Object not found")
+    obj_data = json.loads(obj.data)
+    service_name = obj_data.get("name")
+    if not service_name:
+        raise HTTPException(status_code=400, detail="No service name")
+    return service_name
+
+
+@router.get("/service/{obj_id}/configs/{filename}/versions")
+async def list_service_config_versions(obj_id: int, filename: str, request: Request,
+                                        user: User = Depends(get_current_user),
+                                        session: Session = Depends(get_db_session)):
+    """List all versions of a service config file, newest first."""
+    if not check_type_permission(session, user, "service", "config"):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    from database import ConfigVersion
+    from ansible_runner import ALLOWED_CONFIG_FILES
+
+    service_name = _resolve_service_name(session, obj_id)
+    if filename not in ALLOWED_CONFIG_FILES:
+        raise HTTPException(status_code=400, detail=f"File '{filename}' is not allowed")
+
+    versions = (session.query(ConfigVersion)
+                .filter_by(service_name=service_name, filename=filename)
+                .order_by(ConfigVersion.version_number.desc())
+                .all())
+
+    return {"versions": [
+        {
+            "id": v.id,
+            "version_number": v.version_number,
+            "content_hash": v.content_hash,
+            "size_bytes": v.size_bytes,
+            "change_note": v.change_note,
+            "created_by_username": v.created_by_username,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+        }
+        for v in versions
+    ]}
+
+
+@router.get("/service/{obj_id}/configs/{filename}/versions/{version_id}")
+async def get_service_config_version(obj_id: int, filename: str, version_id: int,
+                                      request: Request,
+                                      user: User = Depends(get_current_user),
+                                      session: Session = Depends(get_db_session)):
+    """Get the full content of a specific version."""
+    if not check_type_permission(session, user, "service", "config"):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    from database import ConfigVersion
+    from ansible_runner import ALLOWED_CONFIG_FILES as _ALLOWED
+    if filename not in _ALLOWED:
+        raise HTTPException(status_code=400, detail=f"File '{filename}' is not allowed")
+
+    service_name = _resolve_service_name(session, obj_id)
+
+    version = session.query(ConfigVersion).filter_by(
+        id=version_id, service_name=service_name, filename=filename).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return {
+        "id": version.id,
+        "version_number": version.version_number,
+        "content": version.content,
+        "content_hash": version.content_hash,
+        "size_bytes": version.size_bytes,
+        "change_note": version.change_note,
+        "created_by_username": version.created_by_username,
+        "created_at": version.created_at.isoformat() if version.created_at else None,
+    }
+
+
+@router.get("/service/{obj_id}/configs/{filename}/versions/{version_id}/diff")
+async def diff_service_config_version(obj_id: int, filename: str, version_id: int,
+                                       request: Request,
+                                       compare_to: int | None = None,
+                                       user: User = Depends(get_current_user),
+                                       session: Session = Depends(get_db_session)):
+    """Get unified diff between a version and its predecessor (or a specified version)."""
+    if not check_type_permission(session, user, "service", "config"):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    from ansible_runner import ALLOWED_CONFIG_FILES as _ALLOWED
+    if filename not in _ALLOWED:
+        raise HTTPException(status_code=400, detail=f"File '{filename}' is not allowed")
+
+    import difflib
+    from database import ConfigVersion
+
+    service_name = _resolve_service_name(session, obj_id)
+
+    version = session.query(ConfigVersion).filter_by(
+        id=version_id, service_name=service_name, filename=filename).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    if compare_to is not None:
+        other = session.query(ConfigVersion).filter_by(
+            id=compare_to, service_name=service_name, filename=filename).first()
+        if not other:
+            raise HTTPException(status_code=404, detail="Comparison version not found")
+    else:
+        other = (session.query(ConfigVersion)
+                 .filter_by(service_name=service_name, filename=filename)
+                 .filter(ConfigVersion.version_number < version.version_number)
+                 .order_by(ConfigVersion.version_number.desc())
+                 .first())
+
+    old_lines = (other.content.splitlines(keepends=True) if other else [])
+    new_lines = version.content.splitlines(keepends=True)
+
+    diff = list(difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=f"v{other.version_number}" if other else "(empty)",
+        tofile=f"v{version.version_number}",
+    ))
+
+    return {
+        "diff": "".join(diff),
+        "from_version": {"id": other.id, "version_number": other.version_number} if other else None,
+        "to_version": {"id": version.id, "version_number": version.version_number},
+    }
+
+
+class RestoreRequest(PydanticBaseModel):
+    change_note: str | None = None
+
+
+@router.post("/service/{obj_id}/configs/{filename}/versions/{version_id}/restore")
+async def restore_service_config_version(obj_id: int, filename: str, version_id: int,
+                                          body: RestoreRequest,
+                                          request: Request,
+                                          user: User = Depends(get_current_user),
+                                          session: Session = Depends(get_db_session)):
+    """Restore a previous version: write its content to disk and create a new version."""
+    if not check_type_permission(session, user, "service", "edit"):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    from ansible_runner import ALLOWED_CONFIG_FILES as _ALLOWED
+    if filename not in _ALLOWED:
+        raise HTTPException(status_code=400, detail=f"File '{filename}' is not allowed")
+
+    from database import ConfigVersion
+    from ansible_runner import save_config_version
+
+    service_name = _resolve_service_name(session, obj_id)
+
+    runner = request.app.state.ansible_runner
+    if not runner.get_service(service_name):
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    version = session.query(ConfigVersion).filter_by(
+        id=version_id, service_name=service_name, filename=filename).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    note = body.change_note or f"Restored from version {version.version_number}"
+
+    new_version = save_config_version(
+        session, service_name, filename, version.content,
+        user_id=user.id, username=user.username,
+        change_note=note,
+        ip_address=request.client.host if request.client else None,
+    )
+
+    runner.write_config_file(service_name, filename, version.content)
+
+    log_action(session, user.id, user.username, "inventory.service.config.restore",
+               f"inventory/service/{obj_id}/configs/{filename}",
+               details={"restored_version": version.version_number, "new_version": new_version.version_number},
+               ip_address=request.client.host if request.client else None)
+
+    return {
+        "status": "restored",
+        "restored_from_version": version.version_number,
+        "new_version_id": new_version.id,
+        "new_version_number": new_version.version_number,
+    }

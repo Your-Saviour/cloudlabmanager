@@ -1,19 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Optional
 from sqlalchemy.orm import Session
 from database import User
 from auth import get_current_user
 from permissions import require_permission
 from db_session import get_db_session
 from audit import log_action
+from ansible_runner import ALLOWED_CONFIG_FILES
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
 
 class ConfigUpdate(BaseModel):
     content: str
+    change_note: Optional[str] = None
 
 
 class RunScriptRequest(BaseModel):
@@ -175,6 +177,15 @@ async def write_config(name: str, filename: str, body: ConfigUpdate, request: Re
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
     try:
+        # Save the new content as a version before writing to disk
+        from ansible_runner import save_config_version
+        save_config_version(
+            session, name, filename, body.content,
+            user_id=user.id, username=user.username,
+            change_note=body.change_note,
+            ip_address=request.client.host if request.client else None,
+        )
+
         runner.write_config_file(name, filename, body.content)
 
         log_action(session, user.id, user.username, "service.config.edit",
@@ -186,6 +197,165 @@ async def write_config(name: str, filename: str, body: ConfigUpdate, request: Re
         raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# --- Config version history endpoints ---
+
+
+@router.get("/{name}/configs/{filename}/versions")
+async def list_config_versions(name: str, filename: str, request: Request,
+                                user: User = Depends(require_permission("services.config.view")),
+                                session: Session = Depends(get_db_session)):
+    """List all versions of a config file, newest first."""
+    from database import ConfigVersion
+
+    runner = request.app.state.ansible_runner
+    if not runner.get_service(name):
+        raise HTTPException(status_code=404, detail="Service not found")
+    if filename not in ALLOWED_CONFIG_FILES:
+        raise HTTPException(status_code=400, detail=f"File '{filename}' is not allowed")
+
+    versions = (session.query(ConfigVersion)
+                .filter_by(service_name=name, filename=filename)
+                .order_by(ConfigVersion.version_number.desc())
+                .all())
+
+    return {"versions": [
+        {
+            "id": v.id,
+            "version_number": v.version_number,
+            "content_hash": v.content_hash,
+            "size_bytes": v.size_bytes,
+            "change_note": v.change_note,
+            "created_by_username": v.created_by_username,
+            "created_at": v.created_at.isoformat() if v.created_at else None,
+        }
+        for v in versions
+    ]}
+
+
+@router.get("/{name}/configs/{filename}/versions/{version_id}")
+async def get_config_version(name: str, filename: str, version_id: int, request: Request,
+                              user: User = Depends(require_permission("services.config.view")),
+                              session: Session = Depends(get_db_session)):
+    """Get the full content of a specific version."""
+    if filename not in ALLOWED_CONFIG_FILES:
+        raise HTTPException(status_code=400, detail=f"File '{filename}' is not allowed")
+    from database import ConfigVersion
+
+    version = session.query(ConfigVersion).filter_by(
+        id=version_id, service_name=name, filename=filename).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    return {
+        "id": version.id,
+        "version_number": version.version_number,
+        "content": version.content,
+        "content_hash": version.content_hash,
+        "size_bytes": version.size_bytes,
+        "change_note": version.change_note,
+        "created_by_username": version.created_by_username,
+        "created_at": version.created_at.isoformat() if version.created_at else None,
+    }
+
+
+@router.get("/{name}/configs/{filename}/versions/{version_id}/diff")
+async def diff_config_version(name: str, filename: str, version_id: int,
+                               request: Request,
+                               compare_to: int | None = None,
+                               user: User = Depends(require_permission("services.config.view")),
+                               session: Session = Depends(get_db_session)):
+    """Get unified diff between a version and its predecessor (or a specified version).
+
+    Query params:
+      compare_to: version ID to compare against (default: previous version)
+    """
+    if filename not in ALLOWED_CONFIG_FILES:
+        raise HTTPException(status_code=400, detail=f"File '{filename}' is not allowed")
+    import difflib
+    from database import ConfigVersion
+
+    version = session.query(ConfigVersion).filter_by(
+        id=version_id, service_name=name, filename=filename).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    if compare_to is not None:
+        other = session.query(ConfigVersion).filter_by(
+            id=compare_to, service_name=name, filename=filename).first()
+        if not other:
+            raise HTTPException(status_code=404, detail="Comparison version not found")
+    else:
+        other = (session.query(ConfigVersion)
+                 .filter_by(service_name=name, filename=filename)
+                 .filter(ConfigVersion.version_number < version.version_number)
+                 .order_by(ConfigVersion.version_number.desc())
+                 .first())
+
+    old_lines = (other.content.splitlines(keepends=True) if other else [])
+    new_lines = version.content.splitlines(keepends=True)
+
+    diff = list(difflib.unified_diff(
+        old_lines, new_lines,
+        fromfile=f"v{other.version_number}" if other else "(empty)",
+        tofile=f"v{version.version_number}",
+    ))
+
+    return {
+        "diff": "".join(diff),
+        "from_version": {"id": other.id, "version_number": other.version_number} if other else None,
+        "to_version": {"id": version.id, "version_number": version.version_number},
+    }
+
+
+class RestoreRequest(BaseModel):
+    change_note: str | None = None
+
+
+@router.post("/{name}/configs/{filename}/versions/{version_id}/restore")
+async def restore_config_version(name: str, filename: str, version_id: int,
+                                  body: RestoreRequest,
+                                  request: Request,
+                                  user: User = Depends(require_permission("services.config.edit")),
+                                  session: Session = Depends(get_db_session)):
+    """Restore a previous version: write its content to disk and create a new version."""
+    if filename not in ALLOWED_CONFIG_FILES:
+        raise HTTPException(status_code=400, detail=f"File '{filename}' is not allowed")
+    from database import ConfigVersion
+    from ansible_runner import save_config_version
+
+    runner = request.app.state.ansible_runner
+    if not runner.get_service(name):
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    version = session.query(ConfigVersion).filter_by(
+        id=version_id, service_name=name, filename=filename).first()
+    if not version:
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    note = body.change_note or f"Restored from version {version.version_number}"
+
+    new_version = save_config_version(
+        session, name, filename, version.content,
+        user_id=user.id, username=user.username,
+        change_note=note,
+        ip_address=request.client.host if request.client else None,
+    )
+
+    runner.write_config_file(name, filename, version.content)
+
+    log_action(session, user.id, user.username, "service.config.restore",
+               f"services/{name}/configs/{filename}",
+               details={"restored_version": version.version_number, "new_version": new_version.version_number},
+               ip_address=request.client.host if request.client else None)
+
+    return {
+        "status": "restored",
+        "restored_from_version": version.version_number,
+        "new_version_id": new_version.id,
+        "new_version_number": new_version.version_number,
+    }
 
 
 # --- File management endpoints ---

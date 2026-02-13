@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Hexagon,
   Clock,
+  HeartPulse,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
@@ -43,6 +44,7 @@ export function Sidebar() {
     { label: 'Jobs', href: '/jobs', icon: <Play className="h-4 w-4" /> },
     { label: 'Schedules', href: '/schedules', icon: <Clock className="h-4 w-4" />, permission: 'schedules.view' },
     { label: 'Costs', href: '/costs', icon: <DollarSign className="h-4 w-4" />, permission: 'costs.view' },
+    { label: 'Health', href: '/health', icon: <HeartPulse className="h-4 w-4" />, permission: 'health.view' },
   ]
 
   const adminNav: NavItem[] = [

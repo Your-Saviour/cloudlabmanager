@@ -36,6 +36,7 @@ cloudlabmanager/
 │   │   ├── job_routes.py      # /api/jobs/*
 │   │   ├── user_routes.py     # /api/users/*
 │   │   ├── role_routes.py     # /api/roles/*
+│   │   ├── health_routes.py   # /api/health/*
 │   │   ├── schedule_routes.py # /api/schedules/*
 │   │   └── audit_routes.py    # /api/audit/*
 │   ├── static/                # Frontend SPA
@@ -49,6 +50,7 @@ cloudlabmanager/
 │   ├── type_loader.py         # YAML inventory type loader
 │   ├── ansible_runner.py      # Async Ansible execution + job tracking
 │   ├── scheduler.py           # Background cron scheduler for recurring jobs
+│   ├── health_checker.py      # Health check config loader + background poller
 │   ├── audit.py               # Audit logging
 │   ├── email_service.py       # Sendamatic email integration
 │   ├── models.py              # Pydantic request/response models
@@ -115,6 +117,6 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 
 ## Database
 
-SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`.
+SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`.
 
 See `app/database.py` for full schema.

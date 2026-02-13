@@ -1,78 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CloudLab Manager</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;400;500;600;700;800&family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/lib/xterm.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0/lib/addon-fit.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0/lib/addon-web-links.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudLab Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="/assets/index-r3nmDkKb.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-tQZ5ysQc.css">
 </head>
-<body>
-    <div class="scanline-overlay"></div>
-
-    <nav id="main-nav">
-        <div class="nav-inner">
-            <div class="nav-brand">
-                <div class="brand-icon">
-                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                        <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                        <path d="M14 2V26M2 8L26 20M26 8L2 20" stroke="currentColor" stroke-width="0.75" opacity="0.4"/>
-                        <circle cx="14" cy="14" r="3" fill="currentColor" opacity="0.8"/>
-                    </svg>
-                </div>
-                <div class="brand-text">
-                    <span class="brand-name">CLOUDLAB</span>
-                    <span class="brand-sub">MANAGER</span>
-                </div>
-            </div>
-            <div class="nav-links" id="nav-links">
-                <a href="#dashboard" data-nav class="nav-link">
-                    <span class="nav-icon">&#9670;</span>Dashboard
-                </a>
-                <a href="#inventory" data-nav class="nav-link">
-                    <span class="nav-icon">&#9635;</span>Inventory
-                </a>
-                <a href="#jobs" data-nav class="nav-link">
-                    <span class="nav-icon">&#9654;</span>Jobs
-                </a>
-                <a href="#costs" data-nav data-perm="costs.view" class="nav-link">
-                    <span class="nav-icon">&#36;</span>Costs
-                </a>
-                <a href="#users" data-nav data-perm="users.view" class="nav-link nav-admin">
-                    <span class="nav-icon">&#9679;</span>Users
-                </a>
-                <a href="#roles" data-nav data-perm="roles.view" class="nav-link nav-admin">
-                    <span class="nav-icon">&#9670;</span>Roles
-                </a>
-                <a href="#audit" data-nav data-perm="system.audit_log" class="nav-link nav-admin">
-                    <span class="nav-icon">&#9656;</span>Audit
-                </a>
-                <div class="nav-spacer"></div>
-                <div class="nav-user-menu" id="nav-user-menu">
-                    <button class="nav-user-btn" id="nav-user-btn">
-                        <span class="nav-user-name" id="nav-user-name"></span>
-                        <span class="nav-user-arrow">&#9662;</span>
-                    </button>
-                    <div class="nav-user-dropdown" id="nav-user-dropdown">
-                        <a href="#profile" class="nav-dropdown-item">Profile</a>
-                        <div class="nav-dropdown-divider"></div>
-                        <a href="#" id="logout-link" class="nav-dropdown-item nav-dropdown-danger">Logout</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <main id="app">
-        <!-- Views rendered here by JS -->
-    </main>
-
-    <script src="/static/app.js"></script>
+<body class="dark bg-background text-foreground antialiased">
+  <div id="root"></div>
 </body>
 </html>
