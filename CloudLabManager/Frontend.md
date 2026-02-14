@@ -102,7 +102,13 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Only renders when health-checked services exist
 
 ### Audit Log
-- Paginated list of all user actions
+- Cursor-paginated list of all user actions with filtering, search, and export
+- **Filter bar**: user dropdown, action category dropdown, date-from/date-to pickers, full-text search input, clear button
+- Filter dropdowns populated from `/api/audit/filters` endpoint
+- Search input debounced at 300ms to avoid excessive API calls
+- **Export dropdown**: download filtered results as CSV or JSON
+- Total entry count badge shown next to export button
+- **Pagination**: cursor-based with Previous/Next buttons and cursor stack for backward navigation
 - Shows: user, action, resource, IP address, timestamp
 - Requires `system.audit_log` permission
 

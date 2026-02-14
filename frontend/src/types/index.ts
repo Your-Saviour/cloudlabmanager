@@ -123,6 +123,19 @@ export interface AuditEntry {
   ip_address?: string
 }
 
+export interface AuditFilters {
+  usernames: string[]
+  action_categories: string[]
+  actions: string[]
+}
+
+export interface AuditListResponse {
+  entries: AuditEntry[]
+  total: number
+  next_cursor: number | null
+  per_page: number
+}
+
 export interface ACLEntry {
   id: number
   user_id: number

@@ -216,9 +216,65 @@ Job statuses: `running`, `completed`, `failed`
 
 | Method | Endpoint | Permission | Description |
 |--------|----------|------------|-------------|
-| GET | `/api/audit` | `system.audit_log` | List audit log entries (paginated) |
+| GET | `/api/audit` | `system.audit_log` | List audit log entries (cursor-paginated, filterable) |
+| GET | `/api/audit/filters` | `system.audit_log` | Get available filter options (usernames, categories, actions) |
+| GET | `/api/audit/export` | `system.audit_log` | Export matching entries as CSV or JSON |
 
 Returns entries with: user, action, resource, details, IP address, timestamp.
+
+### GET `/api/audit`
+
+Query parameters:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cursor` | int | Cursor for pagination (entry ID to start after) |
+| `per_page` | int | Results per page (1–200, default 50) |
+| `action` | string | Exact action match |
+| `action_prefix` | string | Action prefix match (e.g. `service` matches `service.deploy`, `service.stop`) |
+| `username` | string | Exact username match |
+| `user_id` | int | Exact user ID match |
+| `date_from` | string | ISO 8601 start date |
+| `date_to` | string | ISO 8601 end date |
+| `search` | string | Case-insensitive full-text search across action, resource, and details |
+
+Response:
+
+```json
+{
+  "entries": [...],
+  "total": 142,
+  "next_cursor": 95,
+  "per_page": 50
+}
+```
+
+`total` reflects all matching entries (not just the current page). `next_cursor` is `null` when there are no more pages.
+
+### GET `/api/audit/filters`
+
+Returns available values for building filter dropdowns:
+
+```json
+{
+  "usernames": ["admin", "jake"],
+  "action_categories": ["auth", "service", "user", "schedule"],
+  "actions": ["auth.login", "service.deploy", "service.stop", "user.create"]
+}
+```
+
+`action_categories` are derived from the first segment of dotted action names.
+
+### GET `/api/audit/export`
+
+Accepts all the same filter parameters as `GET /api/audit`, plus:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `format` | string | `csv` or `json` (default `csv`) |
+| `limit` | int | Max entries to export (1–50,000, default 10,000) |
+
+Returns a streaming download with `Content-Disposition` header. The export is logged as an `audit.export` entry in the audit log.
 
 ## Schedules
 
