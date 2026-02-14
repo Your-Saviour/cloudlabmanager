@@ -38,6 +38,7 @@ cloudlabmanager/
 │   │   ├── role_routes.py     # /api/roles/*
 │   │   ├── health_routes.py   # /api/health/*
 │   │   ├── schedule_routes.py # /api/schedules/*
+│   │   ├── notification_routes.py # /api/notifications/*
 │   │   └── audit_routes.py    # /api/audit/*
 │   ├── static/                # Frontend SPA
 │   ├── app.py                 # FastAPI entry point
@@ -53,6 +54,7 @@ cloudlabmanager/
 │   ├── health_checker.py      # Health check config loader + background poller
 │   ├── audit.py               # Audit logging
 │   ├── email_service.py       # Sendamatic email integration
+│   ├── notification_service.py# Notification dispatch engine
 │   ├── models.py              # Pydantic request/response models
 │   ├── db_session.py          # DB session dependency
 │   ├── migration.py           # JSON→SQLite migration
@@ -101,6 +103,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 - **DB sessions**: Use `session: Session = Depends(get_db_session)` — auto-commits on success, rolls back on error
 - **Inventory types**: Defined in YAML files, loaded by `type_loader.py`, synced by `inventory_sync.py`
 - **Dynamic permissions**: Generated from inventory type configs as `inventory.{slug}.{action}`
+- **Notification permissions**: `notifications.view`, `notifications.rules.view`, `notifications.rules.manage`, `notifications.channels.manage`
 
 ## Environment Variables
 
@@ -117,6 +120,6 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 
 ## Database
 
-SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`.
+SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `notifications`, `notification_rules`, `notification_channels`.
 
 See `app/database.py` for full schema.

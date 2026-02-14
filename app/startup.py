@@ -107,6 +107,48 @@ def seed_initial_config_versions():
         session.close()
 
 
+def seed_default_notification_rules():
+    """Create default notification rules for the super-admin role if none exist."""
+    from database import SessionLocal, NotificationRule, Role
+
+    session = SessionLocal()
+    try:
+        # Only seed if no rules exist yet
+        existing = session.query(NotificationRule).first()
+        if existing:
+            return
+
+        super_admin = session.query(Role).filter_by(name="super-admin").first()
+        if not super_admin:
+            return
+
+        defaults = [
+            NotificationRule(
+                name="Job failures (in-app)",
+                event_type="job.failed",
+                channel="in_app",
+                role_id=super_admin.id,
+                is_enabled=True,
+            ),
+            NotificationRule(
+                name="Health state changes (in-app)",
+                event_type="health.state_change",
+                channel="in_app",
+                role_id=super_admin.id,
+                is_enabled=True,
+            ),
+        ]
+        for rule in defaults:
+            session.add(rule)
+        session.commit()
+        print(f"  Seeded {len(defaults)} default notification rule(s)")
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Could not seed default notification rules: {e}")
+    finally:
+        session.close()
+
+
 def load_inventory_types():
     """Load inventory type definitions from YAML and sync to DB.
     Returns the list of type configs for use by app.state."""
@@ -186,6 +228,9 @@ def init_database():
             print("Assigned super-admin role to user 'jake'")
     finally:
         session.close()
+
+    # Seed default notification rules (idempotent — only if no rules exist)
+    seed_default_notification_rules()
 
     return type_configs
 

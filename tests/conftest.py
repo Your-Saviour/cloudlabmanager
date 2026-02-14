@@ -67,6 +67,8 @@ _SESSION_LOCAL_MODULES = [
     "dry_run",
     "drift_checker",
     "routes.drift_routes",
+    "notification_service",
+    "routes.notification_routes",
 ]
 
 
@@ -243,6 +245,7 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     from routes.schedule_routes import router as schedule_router
     from routes.health_routes import router as health_router
     from routes.drift_routes import router as drift_router
+    from routes.notification_routes import router as notification_router
     from drift_checker import DriftPoller
 
     app = FastAPI()
@@ -270,6 +273,7 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     app.include_router(schedule_router)
     app.include_router(health_router)
     app.include_router(drift_router)
+    app.include_router(notification_router)
 
     return app
 

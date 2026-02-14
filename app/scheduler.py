@@ -206,16 +206,40 @@ class Scheduler:
             for schedule in running_schedules:
                 if not schedule.last_job_id:
                     continue
+                new_status = None
                 # Check in-memory first
                 if schedule.last_job_id in self.runner.jobs:
                     job = self.runner.jobs[schedule.last_job_id]
                     if job.status != "running":
                         schedule.last_status = job.status
+                        new_status = job.status
                 else:
                     # Check DB
                     record = session.query(JobRecord).filter_by(id=schedule.last_job_id).first()
                     if record and record.status != "running":
                         schedule.last_status = record.status
+                        new_status = record.status
+
+                # Fire notification for completed/failed scheduled jobs
+                if new_status in ("completed", "failed"):
+                    from notification_service import notify, EVENT_SCHEDULE_COMPLETED, EVENT_SCHEDULE_FAILED
+
+                    event_type = EVENT_SCHEDULE_COMPLETED if new_status == "completed" else EVENT_SCHEDULE_FAILED
+                    severity = "success" if new_status == "completed" else "error"
+
+                    try:
+                        await notify(event_type, {
+                            "title": f"Scheduled job {new_status}: {schedule.name}",
+                            "body": f"Scheduled job '{schedule.name}' (job {schedule.last_job_id}) has {new_status}.",
+                            "severity": severity,
+                            "action_url": f"/jobs/{schedule.last_job_id}" if schedule.last_job_id else "/schedules",
+                            "service_name": schedule.service_name,
+                            "schedule_name": schedule.name,
+                            "status": new_status,
+                        })
+                    except Exception:
+                        logger.exception("Failed to notify for schedule %d", schedule.id)
+
             session.commit()
         except Exception:
             session.rollback()

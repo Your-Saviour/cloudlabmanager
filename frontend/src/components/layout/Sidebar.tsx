@@ -14,6 +14,7 @@ import {
   Clock,
   HeartPulse,
   GitCompare,
+  Bell,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
@@ -53,6 +54,7 @@ export function Sidebar() {
     { label: 'Users', href: '/users', icon: <Users className="h-4 w-4" />, permission: 'users.view' },
     { label: 'Roles', href: '/roles', icon: <Shield className="h-4 w-4" />, permission: 'roles.view' },
     { label: 'Audit Log', href: '/audit', icon: <ScrollText className="h-4 w-4" />, permission: 'system.audit_log' },
+    { label: 'Notifications', href: '/notifications/rules', icon: <Bell className="h-4 w-4" />, permission: 'notifications.rules.view' },
   ]
 
   return (

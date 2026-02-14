@@ -57,6 +57,11 @@ STATIC_PERMISSION_DEFS = [
     # drift detection
     ("drift.view", "drift", "View Drift Reports", "View drift detection status and reports"),
     ("drift.manage", "drift", "Manage Drift Detection", "Trigger drift checks and manage drift settings"),
+    # notifications
+    ("notifications.view", "notifications", "View Notifications", "View in-app notifications"),
+    ("notifications.rules.view", "notifications", "View Notification Rules", "View notification rule configurations"),
+    ("notifications.rules.manage", "notifications", "Manage Notification Rules", "Create, edit, and delete notification rules"),
+    ("notifications.channels.manage", "notifications", "Manage Notification Channels", "Configure notification channels (Slack webhooks, etc.)"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

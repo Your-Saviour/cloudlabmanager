@@ -283,6 +283,10 @@ class HealthPoller:
         finally:
             session.close()
 
+        # Also clean up old notifications
+        from notification_service import cleanup_old_notifications
+        cleanup_old_notifications()
+
     async def _tick(self):
         """Check all services and run due health checks."""
         configs = get_health_configs()
@@ -484,6 +488,26 @@ class HealthPoller:
                 )
                 await self._maybe_notify(service_name, check_name, previous_status,
                                           current_status, result, service_config)
+
+                # Also fire through the notification system
+                from notification_service import notify, EVENT_HEALTH_STATE_CHANGE
+
+                direction = "recovered" if current_status == "healthy" else "down"
+                severity = "success" if current_status == "healthy" else "error"
+
+                try:
+                    await notify(EVENT_HEALTH_STATE_CHANGE, {
+                        "title": f"Health {direction}: {service_name}/{check_name}",
+                        "body": f"{service_name}/{check_name} changed from {previous_status} to {current_status}.",
+                        "severity": severity,
+                        "action_url": "/health",
+                        "service_name": service_name,
+                        "check_name": check_name,
+                        "old_status": previous_status,
+                        "new_status": current_status,
+                    })
+                except Exception as e:
+                    logger.exception("Failed to dispatch health notification for %s/%s", service_name, check_name)
 
         except Exception:
             session.rollback()

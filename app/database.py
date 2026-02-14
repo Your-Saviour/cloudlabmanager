@@ -354,6 +354,54 @@ class HealthCheckResult(Base):
     target = Column(String(255), nullable=True)  # URL or host:port that was checked
 
 
+class NotificationChannel(Base):
+    __tablename__ = "notification_channels"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_type = Column(String(20), nullable=False)  # "slack", "email" (future extensibility)
+    name = Column(String(100), nullable=False)          # e.g. "Main Slack Channel"
+    config = Column(Text, nullable=False)               # JSON: {"webhook_url": "https://..."} for Slack
+    is_enabled = Column(Boolean, default=True, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class NotificationRule(Base):
+    __tablename__ = "notification_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    event_type = Column(String(50), nullable=False)       # "job.completed", "job.failed", "health.state_change", "schedule.completed", "schedule.failed"
+    channel = Column(String(20), nullable=False)           # "in_app", "email", "slack"
+    channel_id = Column(Integer, ForeignKey("notification_channels.id", ondelete="CASCADE"), nullable=True)  # NULL for in_app/email
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    filters = Column(Text, nullable=True)                  # JSON: {"service_name": "n8n-server", "status": "failed"} — optional filters
+    is_enabled = Column(Boolean, default=True, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    role = relationship("Role")
+    notification_channel = relationship("NotificationChannel")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=True)
+    event_type = Column(String(50), nullable=False)       # same event_type as rules
+    severity = Column(String(20), default="info", nullable=False)  # "info", "success", "warning", "error"
+    action_url = Column(String(500), nullable=True)       # e.g. "/jobs/abc123" — frontend route to navigate to
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+    user = relationship("User")
+
+
 def create_tables():
     Base.metadata.create_all(bind=engine)
     # Migration: add new columns if missing (idempotent)

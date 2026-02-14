@@ -547,6 +547,102 @@ Returns the cached Vultr plans list used for cost estimation (including dry-run 
 }
 ```
 
+## Notifications
+
+### User Notifications
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/notifications` | `notifications.view` | List user's notifications (paginated, newest first) |
+| GET | `/api/notifications/count` | `notifications.view` | Get unread count for current user |
+| POST | `/api/notifications/{id}/read` | `notifications.view` | Mark a single notification as read |
+| POST | `/api/notifications/read-all` | `notifications.view` | Mark all user notifications as read |
+| DELETE | `/api/notifications/cleanup` | `notifications.rules.manage` | Delete notifications older than 30 days |
+
+### GET `/api/notifications`
+
+Query params: `limit` (default 50), `offset` (default 0), `unread_only` (boolean, default false).
+
+Returns notifications scoped to the authenticated user, newest first.
+
+### GET `/api/notifications/count`
+
+Returns:
+
+```json
+{
+  "unread": 3
+}
+```
+
+### Notification Rules (Admin)
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/notifications/rules/event-types` | `notifications.rules.view` | List available event types for UI dropdowns |
+| GET | `/api/notifications/rules` | `notifications.rules.view` | List all notification rules |
+| POST | `/api/notifications/rules` | `notifications.rules.manage` | Create a rule |
+| PUT | `/api/notifications/rules/{id}` | `notifications.rules.manage` | Update a rule |
+| DELETE | `/api/notifications/rules/{id}` | `notifications.rules.manage` | Delete a rule |
+
+### POST `/api/notifications/rules`
+
+```json
+{
+  "name": "Alert admins on job failures",
+  "event_type": "job.failed",
+  "channel": "in_app",
+  "channel_id": null,
+  "role_id": 1,
+  "filters": "{\"service_name\": \"n8n-server\"}",
+  "is_enabled": true
+}
+```
+
+- `channel` — `in_app`, `email`, or `slack`
+- `channel_id` — required when channel is `slack` (FK to notification_channels)
+- `role_id` — target role; all active users with this role receive the notification
+- `filters` — optional JSON string for context matching
+
+### GET `/api/notifications/rules/event-types`
+
+Returns available event types:
+
+```json
+[
+  { "value": "job.completed", "label": "Job Completed" },
+  { "value": "job.failed", "label": "Job Failed" },
+  { "value": "health.state_change", "label": "Health State Change" },
+  { "value": "schedule.completed", "label": "Schedule Completed" },
+  { "value": "schedule.failed", "label": "Schedule Failed" }
+]
+```
+
+### Notification Channels (Admin)
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/notifications/channels` | `notifications.channels.manage` | List channels |
+| POST | `/api/notifications/channels` | `notifications.channels.manage` | Create a channel |
+| PUT | `/api/notifications/channels/{id}` | `notifications.channels.manage` | Update a channel |
+| DELETE | `/api/notifications/channels/{id}` | `notifications.channels.manage` | Delete a channel |
+| POST | `/api/notifications/channels/{id}/test` | `notifications.channels.manage` | Send test notification |
+
+### POST `/api/notifications/channels`
+
+```json
+{
+  "name": "Team Alerts",
+  "channel_type": "slack",
+  "config": { "webhook_url": "https://hooks.slack.com/services/T.../B.../xxx" },
+  "is_enabled": true
+}
+```
+
+### POST `/api/notifications/channels/{id}/test`
+
+Sends a test message to the configured channel. Returns `200` on success or an error if the webhook is unreachable.
+
 ## Inventory
 
 See [[Inventory System]] for concepts. All inventory endpoints require authentication.

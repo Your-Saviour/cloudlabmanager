@@ -271,3 +271,69 @@ class ScheduledJobUpdate(BaseModel):
     is_enabled: Optional[bool] = None
     inputs: Optional[dict[str, Any]] = None
     skip_if_running: Optional[bool] = None
+
+
+# --- Notification models ---
+
+class NotificationOut(BaseModel):
+    id: int
+    title: str
+    body: Optional[str]
+    event_type: str
+    severity: str
+    action_url: Optional[str]
+    is_read: bool
+    created_at: str
+
+
+class NotificationCountOut(BaseModel):
+    unread: int
+
+
+class NotificationRuleCreate(BaseModel):
+    name: str
+    event_type: str
+    channel: str           # "in_app", "email", "slack"
+    channel_id: Optional[int] = None
+    role_id: int
+    filters: Optional[dict] = None
+    is_enabled: bool = True
+
+
+class NotificationRuleUpdate(BaseModel):
+    name: Optional[str] = None
+    event_type: Optional[str] = None
+    channel: Optional[str] = None
+    channel_id: Optional[int] = None
+    role_id: Optional[int] = None
+    filters: Optional[dict] = None
+    is_enabled: Optional[bool] = None
+
+
+class NotificationRuleOut(BaseModel):
+    id: int
+    name: str
+    event_type: str
+    channel: str
+    channel_id: Optional[int]
+    role_id: int
+    role_name: Optional[str] = None
+    filters: Optional[dict]
+    is_enabled: bool
+    created_at: str
+
+
+class NotificationChannelCreate(BaseModel):
+    channel_type: str      # "slack"
+    name: str
+    config: dict           # {"webhook_url": "https://hooks.slack.com/..."}
+    is_enabled: bool = True
+
+
+class NotificationChannelOut(BaseModel):
+    id: int
+    channel_type: str
+    name: str
+    config: dict
+    is_enabled: bool
+    created_at: str

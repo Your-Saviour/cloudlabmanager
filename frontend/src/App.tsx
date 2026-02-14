@@ -32,6 +32,7 @@ import CostsPage from '@/pages/costs/CostsPage'
 import SchedulesPage from '@/pages/schedules/SchedulesPage'
 import HealthPage from '@/pages/health/HealthPage'
 import DriftPage from '@/pages/drift/DriftPage'
+import NotificationRulesPage from '@/pages/notifications/NotificationRulesPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -112,6 +113,7 @@ function AppRoutes() {
         <Route path="/costs" element={<CostsPage />} />
         <Route path="/health" element={<HealthPage />} />
         <Route path="/drift" element={<DriftPage />} />
+        <Route path="/notifications/rules" element={<NotificationRulesPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>
 

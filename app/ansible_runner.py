@@ -433,6 +433,7 @@ class AnsibleRunner:
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job, object_id=object_id, type_slug=type_slug)
+        await self._notify_job(job)
 
         # Post-action: keep instances cache and inventory objects in sync
         if ok and type_slug == "server":
@@ -552,6 +553,7 @@ class AnsibleRunner:
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
+        await self._notify_job(job)
 
     async def deploy_service(self, name: str,
                              user_id: int | None = None, username: str | None = None) -> Job:
@@ -679,6 +681,7 @@ class AnsibleRunner:
             job.status = "failed"
             job.finished_at = datetime.now(timezone.utc).isoformat()
             self._persist_job(job)
+            await self._notify_job(job)
             return
 
         script_path = f"/services/{name}/deploy.sh"
@@ -691,6 +694,7 @@ class AnsibleRunner:
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
+        await self._notify_job(job)
 
     async def _run_stop(self, job: Job):
         name = job.service
@@ -700,6 +704,7 @@ class AnsibleRunner:
             job.status = "failed"
             job.finished_at = datetime.now(timezone.utc).isoformat()
             self._persist_job(job)
+            await self._notify_job(job)
             return
 
         # Generate inventory then stop instances matching this service
@@ -722,6 +727,7 @@ class AnsibleRunner:
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
+        await self._notify_job(job)
 
     async def _run_stop_all(self, job: Job):
         job.output.append("--- Generating inventory ---")
@@ -742,6 +748,7 @@ class AnsibleRunner:
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
+        await self._notify_job(job)
 
     async def _run_refresh(self, job: Job):
         job.output.append("--- Generating inventory ---")
@@ -785,6 +792,7 @@ class AnsibleRunner:
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
+        await self._notify_job(job)
 
     async def refresh_costs(self, user_id: int | None = None, username: str | None = None) -> Job:
         job_id = str(uuid.uuid4())[:8]
@@ -841,6 +849,7 @@ class AnsibleRunner:
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
+        await self._notify_job(job)
 
     async def _run_stop_instance(self, job: Job, label: str, region: str):
         job.output.append(f"--- Destroying instance: {label} ({region}) ---")
@@ -890,6 +899,7 @@ class AnsibleRunner:
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
+        await self._notify_job(job)
 
     def _sync_service_outputs(self, job: Job, service_name: str):
         """Read service outputs and sync credentials to inventory after a successful deploy."""
@@ -901,6 +911,27 @@ class AnsibleRunner:
                 job.output.append(f"[Service outputs synced for {service_name}]")
         except Exception as e:
             job.output.append(f"[Warning: Could not sync service outputs: {e}]")
+
+    async def _notify_job(self, job: Job):
+        """Fire a notification for a completed/failed job."""
+        from notification_service import notify, EVENT_JOB_COMPLETED, EVENT_JOB_FAILED
+
+        event_type = EVENT_JOB_COMPLETED if job.status == "completed" else EVENT_JOB_FAILED
+        severity = "success" if job.status == "completed" else "error"
+        action_label = job.script or job.action
+
+        try:
+            await notify(event_type, {
+                "title": f"Job {job.status}: {job.service} / {action_label}",
+                "body": f"Job {job.id} ({action_label}) on {job.service} has {job.status}.",
+                "severity": severity,
+                "action_url": f"/jobs/{job.id}",
+                "service_name": job.service,
+                "status": job.status,
+                "job_id": job.id,
+            })
+        except Exception as e:
+            print(f"[notification] Failed to notify for job {job.id}: {e}")
 
     def _persist_job(self, job: Job, object_id: int | None = None, type_slug: str | None = None):
         from database import SessionLocal, JobRecord

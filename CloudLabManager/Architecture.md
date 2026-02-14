@@ -29,6 +29,7 @@ cloudlabmanager/
 │   ├── drift_checker.py        # Infrastructure drift detection poller and notifications
 │   ├── audit.py                # Audit logging to database
 │   ├── email_service.py        # Sendamatic email integration
+│   ├── notification_service.py # Notification dispatch engine (rule-based routing)
 │   ├── models.py               # Pydantic request/response models
 │   ├── config.py               # YAML config loader
 │   ├── actions.py              # Startup action engine (ENV, CLONE, RUN, RETURN)
@@ -48,6 +49,7 @@ cloudlabmanager/
 │   │   ├── health_routes.py    # /api/health/* endpoints
 │   │   ├── drift_routes.py     # /api/drift/* endpoints
 │   │   ├── schedule_routes.py  # /api/schedules/* endpoints
+│   │   ├── notification_routes.py # /api/notifications/* endpoints
 │   │   └── audit_routes.py     # /api/audit/* endpoints
 │   └── static/
 │       ├── index.html          # SPA shell
@@ -137,6 +139,9 @@ All persistent state is stored in SQLite (`/data/cloudlab.db`) using SQLAlchemy 
 | `health_check_results` | Health check polling results (status, response time, errors) |
 | `drift_reports` | Infrastructure drift detection results (status, summary, full report JSON) |
 | `config_versions` | Service config file version history (content, hash, author, change notes) |
+| `notifications` | Per-user in-app notifications (title, body, severity, read status) |
+| `notification_rules` | Event-to-channel routing rules (event type, channel, role target, filters) |
+| `notification_channels` | External notification channels (Slack webhooks, etc.) |
 | `app_metadata` | Key-value store (secret key, vault password, cache) |
 | `invite_tokens` | User invitation tokens (72h expiry) |
 | `password_reset_tokens` | Password reset tokens (1h expiry) |
