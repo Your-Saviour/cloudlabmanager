@@ -39,3 +39,4 @@ On first boot you'll see a **Setup** page where you create an admin account and 
 11. Sends email notifications for invitations and password resets
 12. Schedules recurring jobs via cron expressions with execution history tracking
 13. Monitors deployed service health via configurable checks (HTTP, TCP, ICMP, SSH) with email alerts on state changes
+14. Detects infrastructure drift by comparing desired state against actual Vultr instances and Cloudflare DNS, with email notifications on state transitions

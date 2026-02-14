@@ -119,6 +119,17 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - "View All" button linking to health page
 - Only renders when health-checked services exist
 
+### Drift Detection
+- Dedicated `/drift` page showing infrastructure drift status
+- Summary cards: total defined, in sync (green), drifted (amber), missing (red), orphaned (orange)
+- Instance table with expandable rows showing configuration diffs, DNS details, and expected/actual state
+- Orphaned instances section with orange-bordered cards (hostname, Vultr ID, plan, region, tags)
+- "Check Now" button triggers immediate drift check (requires `drift.manage` permission)
+- Report history section (collapsible) showing past reports with timestamps and status
+- 30-second auto-refresh
+- Empty state with "Run First Check" button when no reports exist
+- Sidebar link with `GitCompare` icon (requires `drift.view` permission)
+
 ### Audit Log
 - Cursor-paginated list of all user actions with filtering, search, and export
 - **Filter bar**: user dropdown, action category dropdown, date-from/date-to pickers, full-text search input, clear button

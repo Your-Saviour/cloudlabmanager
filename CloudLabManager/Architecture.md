@@ -26,6 +26,7 @@ cloudlabmanager/
 │   ├── ansible_runner.py       # Async Ansible execution + job tracking
 │   ├── scheduler.py            # Background cron scheduler for recurring jobs
 │   ├── health_checker.py       # Health check config loader and background poller
+│   ├── drift_checker.py        # Infrastructure drift detection poller and notifications
 │   ├── audit.py                # Audit logging to database
 │   ├── email_service.py        # Sendamatic email integration
 │   ├── models.py               # Pydantic request/response models
@@ -45,6 +46,7 @@ cloudlabmanager/
 │   │   ├── role_routes.py      # /api/roles/* endpoints
 │   │   ├── inventory_routes.py # /api/inventory/* endpoints (types, objects, tags, ACLs, SSH)
 │   │   ├── health_routes.py    # /api/health/* endpoints
+│   │   ├── drift_routes.py     # /api/drift/* endpoints
 │   │   ├── schedule_routes.py  # /api/schedules/* endpoints
 │   │   └── audit_routes.py     # /api/audit/* endpoints
 │   └── static/
@@ -97,7 +99,8 @@ cloudlabmanager/
 14. Creates `AnsibleRunner` instance in app state
 15. Starts background `Scheduler` (checks for due scheduled jobs every 30 seconds)
 16. Starts background `HealthPoller` (checks service health at configured intervals)
-17. Populates plans cache if empty (immediate `refresh_costs()`) and starts periodic plans/cost cache refresh (every 6 hours)
+17. Starts background `DriftPoller` (compares desired vs actual infrastructure state every 5 minutes)
+18. Populates plans cache if empty (immediate `refresh_costs()`) and starts periodic plans/cost cache refresh (every 6 hours)
 
 ## Deployment Job Flow
 
@@ -132,6 +135,7 @@ All persistent state is stored in SQLite (`/data/cloudlab.db`) using SQLAlchemy 
 | `job_records` | Deployment and action job history |
 | `audit_log` | User action audit trail |
 | `health_check_results` | Health check polling results (status, response time, errors) |
+| `drift_reports` | Infrastructure drift detection results (status, summary, full report JSON) |
 | `config_versions` | Service config file version history (content, hash, author, change notes) |
 | `app_metadata` | Key-value store (secret key, vault password, cache) |
 | `invite_tokens` | User invitation tokens (72h expiry) |

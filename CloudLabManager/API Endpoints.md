@@ -369,7 +369,7 @@ Returns a streaming download with `Content-Disposition` header. The export is lo
 Valid `job_type` values: `service_script`, `system_task`, `inventory_action`.
 
 - **`service_script`** — requires `service_name` and `script_name`
-- **`system_task`** — requires `system_task` (one of `refresh_instances`, `refresh_costs`)
+- **`system_task`** — requires `system_task` (one of `refresh_instances`, `refresh_costs`, `drift_check`)
 - **`inventory_action`** — requires `inventory_type_slug`, `inventory_object_id`, `inventory_action_name`
 
 ### GET `/api/schedules/preview`
@@ -443,6 +443,62 @@ Returns compact counts for dashboard cards:
 ### POST `/api/health/reload`
 
 Reloads `health.yaml` configs from the CloudLab services directory. Use after adding or modifying health check definitions.
+
+## Drift Detection
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/drift/status` | `drift.view` | Latest drift report with full instance, orphaned, and DNS data |
+| GET | `/api/drift/summary` | `drift.view` | Compact summary for dashboard cards |
+| GET | `/api/drift/history` | `drift.view` | Paginated list of past drift reports |
+| GET | `/api/drift/reports/{id}` | `drift.view` | Full detail of a specific report |
+| POST | `/api/drift/check` | `drift.manage` | Trigger an immediate drift check |
+| GET | `/api/drift/settings` | `drift.manage` | Get notification settings |
+| PUT | `/api/drift/settings` | `drift.manage` | Update notification settings |
+
+### GET `/api/drift/status`
+
+Returns the latest drift report including per-instance status (in_sync, drifted, missing), DNS check results, orphaned instances, and orphaned DNS records.
+
+### GET `/api/drift/summary`
+
+Compact summary counts for dashboard cards:
+
+```json
+{
+  "status": "drifted",
+  "total_defined": 3,
+  "in_sync": 2,
+  "drifted": 1,
+  "missing": 0,
+  "orphaned": 0,
+  "dns_in_sync": 2,
+  "dns_drifted": 1,
+  "dns_missing": 0,
+  "orphaned_dns": 0,
+  "checked_at": "2026-02-15T12:00:00+00:00"
+}
+```
+
+### GET `/api/drift/history`
+
+Query params: `limit` (default 20), `offset` (default 0).
+
+### POST `/api/drift/check`
+
+Triggers an immediate drift check. Returns immediately — the check runs asynchronously. If a check is already in progress, the request is silently skipped.
+
+### PUT `/api/drift/settings`
+
+```json
+{
+  "enabled": true,
+  "recipients": ["admin@example.com"],
+  "notify_on": ["drifted", "missing", "orphaned"]
+}
+```
+
+Notifications are sent only on state transitions (clean → drifted or drifted → clean). Add `"resolved"` to `notify_on` to receive notifications when drift is resolved.
 
 ## Costs
 

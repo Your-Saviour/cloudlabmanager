@@ -23,7 +23,9 @@ from routes.inventory_routes import router as inventory_router
 from routes.cost_routes import router as cost_router
 from routes.schedule_routes import router as schedule_router
 from routes.health_routes import router as health_router
+from routes.drift_routes import router as drift_router
 from health_checker import HealthPoller, load_health_configs
+from drift_checker import DriftPoller
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -60,6 +62,11 @@ async def lifespan(app: FastAPI):
     app.state.health_poller = health_poller
     health_poller.start()
 
+    # Start drift detection poller
+    drift_poller = DriftPoller()
+    app.state.drift_poller = drift_poller
+    drift_poller.start()
+
     # Seed plans cache if empty, and start periodic refresh
     from database import SessionLocal, AppMetadata
     session = SessionLocal()
@@ -81,6 +88,9 @@ async def lifespan(app: FastAPI):
         await cost_refresh_task
     except asyncio.CancelledError:
         pass
+
+    # Stop drift poller on shutdown
+    await drift_poller.stop()
 
     # Stop health poller on shutdown
     await health_poller.stop()
@@ -119,6 +129,7 @@ app.include_router(inventory_router)
 app.include_router(cost_router)
 app.include_router(schedule_router)
 app.include_router(health_router)
+app.include_router(drift_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

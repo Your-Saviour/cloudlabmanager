@@ -116,6 +116,14 @@ class Scheduler:
                     user_id=schedule.created_by,
                     username=sched_username,
                 )
+            elif schedule.system_task == "drift_check":
+                from drift_checker import run_drift_check
+                await run_drift_check(triggered_by="schedule")
+                # drift_check manages its own state; no JobRecord returned
+                schedule.last_run_at = datetime.now(timezone.utc)
+                schedule.last_status = "completed"
+                schedule.next_run_at = self._next_run(schedule.cron_expression)
+                return
 
         elif schedule.job_type == "inventory_action":
             job = await self._dispatch_inventory_action(schedule, inputs)

@@ -13,6 +13,7 @@ import {
   Hexagon,
   Clock,
   HeartPulse,
+  GitCompare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
@@ -45,6 +46,7 @@ export function Sidebar() {
     { label: 'Schedules', href: '/schedules', icon: <Clock className="h-4 w-4" />, permission: 'schedules.view' },
     { label: 'Costs', href: '/costs', icon: <DollarSign className="h-4 w-4" />, permission: 'costs.view' },
     { label: 'Health', href: '/health', icon: <HeartPulse className="h-4 w-4" />, permission: 'health.view' },
+    { label: 'Drift Detection', href: '/drift', icon: <GitCompare className="h-4 w-4" />, permission: 'drift.view' },
   ]
 
   const adminNav: NavItem[] = [

@@ -53,6 +53,9 @@ STATIC_PERMISSION_DEFS = [
     # health checks
     ("health.view", "health", "View Health Checks", "View health check status and history"),
     ("health.manage", "health", "Manage Health Checks", "Reload health configs and manage health check settings"),
+    # drift detection
+    ("drift.view", "drift", "View Drift Reports", "View drift detection status and reports"),
+    ("drift.manage", "drift", "Manage Drift Detection", "Trigger drift checks and manage drift settings"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

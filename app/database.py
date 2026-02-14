@@ -323,6 +323,19 @@ class TagPermission(Base):
     role = relationship("Role")
 
 
+class DriftReport(Base):
+    __tablename__ = "drift_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    status = Column(String(20), nullable=False)  # "clean", "drifted", "error"
+    previous_status = Column(String(20), nullable=True)  # for transition detection
+    summary = Column(Text, nullable=False)  # JSON: counts of in_sync, drifted, missing, orphaned
+    report_data = Column(Text, nullable=False)  # Full JSON report from Ansible playbook
+    checked_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    triggered_by = Column(String(50), nullable=True)  # "poller", "manual", "schedule"
+    error_message = Column(Text, nullable=True)
+
+
 class HealthCheckResult(Base):
     __tablename__ = "health_check_results"
 
@@ -348,6 +361,7 @@ def create_tables():
         "ALTER TABLE jobs ADD COLUMN type_slug VARCHAR(50)",
         "ALTER TABLE jobs ADD COLUMN schedule_id INTEGER REFERENCES scheduled_jobs(id) ON DELETE SET NULL",
         "ALTER TABLE health_check_results ADD COLUMN previous_status VARCHAR(20)",
+        "ALTER TABLE drift_reports ADD COLUMN previous_status VARCHAR(20)",
     ]
     with engine.connect() as conn:
         for sql in migrations:
