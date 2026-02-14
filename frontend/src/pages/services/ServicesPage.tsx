@@ -36,6 +36,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { DryRunPreview } from '@/components/services/DryRunPreview'
 import type { InventoryObject, ServiceScript, ScriptInput } from '@/types'
 
 export default function ServicesPage() {
@@ -55,6 +56,11 @@ export default function ServicesPage() {
     script: ServiceScript
   } | null>(null)
   const [scriptInputs, setScriptInputs] = useState<Record<string, any>>({})
+  const [dryRunModal, setDryRunModal] = useState<{
+    serviceName: string
+    objId: number
+    script: ServiceScript
+  } | null>(null)
 
   // Get service inventory objects
   const { data: serviceObjects = [], isLoading: objectsLoading } = useQuery({
@@ -109,7 +115,10 @@ export default function ServicesPage() {
   })
 
   const handleRunScript = (serviceName: string, objId: number, script: ServiceScript) => {
-    if (script.inputs && script.inputs.length > 0) {
+    if (script.name === 'deploy') {
+      // Show dry-run preview first
+      setDryRunModal({ serviceName, objId, script })
+    } else if (script.inputs && script.inputs.length > 0) {
       // Show input modal
       const defaults: Record<string, any> = {}
       script.inputs.forEach((inp) => {
@@ -400,6 +409,23 @@ export default function ServicesPage() {
         variant="destructive"
         onConfirm={() => stopAllMutation.mutate()}
       />
+
+      {/* Dry Run Preview Modal */}
+      {dryRunModal && (
+        <DryRunPreview
+          serviceName={dryRunModal.serviceName}
+          open={true}
+          onOpenChange={(open) => { if (!open) setDryRunModal(null) }}
+          onConfirm={() => {
+            runActionMutation.mutate({
+              objId: dryRunModal.objId,
+              actionName: 'run_script',
+              body: { script: dryRunModal.script.name, inputs: {} },
+            })
+            setDryRunModal(null)
+          }}
+        />
+      )}
 
       {/* Script Input Modal */}
       <Dialog open={!!scriptModal} onOpenChange={() => setScriptModal(null)}>

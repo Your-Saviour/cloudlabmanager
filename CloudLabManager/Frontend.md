@@ -42,7 +42,25 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Card grid showing each deployable service
 - Each card shows instance specs (label, plan, region) from instance.yaml
 - "Deploy" and "Stop" buttons with confirmation dialogs
-- Clicking Deploy starts a job and navigates to the job detail view
+- Clicking Deploy opens a **Dry-Run Preview** modal before executing (see below)
+- Non-deploy scripts (e.g., add-users) bypass the preview and use the existing input modal or direct execution flow
+
+### Dry-Run Preview
+- Triggered when clicking Deploy on any service — intercepts the deploy action
+- Fetches `POST /api/services/{name}/dry-run` and displays the execution plan
+- **Loading state**: skeleton placeholders while the dry-run runs
+- **Cost estimate**: large dollar amount with per-instance breakdown (mirrors CostsPage styling)
+- **Instance specs**: table showing label, hostname, plan, region, OS for each instance
+- **DNS records**: predicted A records that will be created in Cloudflare
+- **SSH keys**: key type, location, and name from instance.yaml
+- **Validation checks**: each check shown with pass/warn/fail status badge
+- **Overall status badge**: green (pass), yellow (warn), or red (fail)
+- Deploy button is **disabled** when any validation has `fail` status
+- Deploy button uses `variant="destructive"` styling when there are warnings
+- Cancel closes the modal with no action; Deploy closes the modal and proceeds with the original deploy flow
+- Error state shown if the dry-run API returns an error
+- Uses wider modal (`max-w-2xl`) to accommodate tables and multiple sections
+- Component: `components/services/DryRunPreview.tsx`
 
 ### Config Editor
 - Edit service configuration files (instance.yaml, config.yaml, scripts.yaml) in-browser

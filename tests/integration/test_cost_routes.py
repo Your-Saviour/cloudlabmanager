@@ -204,3 +204,39 @@ class TestRefreshCosts:
     async def test_requires_refresh_permission(self, client, regular_auth_headers):
         resp = await client.post("/api/costs/refresh", headers=regular_auth_headers)
         assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# GET /api/costs/plans
+# ---------------------------------------------------------------------------
+
+class TestGetPlans:
+    async def test_returns_plans_data(self, client, auth_headers, db_session):
+        _seed_instances_and_plans(db_session)
+        AppMetadata.set(db_session, "plans_cache_time", "2026-02-12T10:00:00Z")
+        db_session.commit()
+
+        resp = await client.get("/api/costs/plans", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 2
+        assert data["cached_at"] == "2026-02-12T10:00:00Z"
+        assert len(data["plans"]) == 2
+        ids = [p["id"] for p in data["plans"]]
+        assert "vc2-1c-1gb" in ids
+
+    async def test_returns_empty_when_no_cache(self, client, auth_headers):
+        resp = await client.get("/api/costs/plans", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 0
+        assert data["plans"] == []
+        assert data["cached_at"] is None
+
+    async def test_requires_permission(self, client, regular_auth_headers):
+        resp = await client.get("/api/costs/plans", headers=regular_auth_headers)
+        assert resp.status_code == 403
+
+    async def test_requires_auth(self, client):
+        resp = await client.get("/api/costs/plans")
+        assert resp.status_code in (401, 403)

@@ -63,6 +63,8 @@ _SESSION_LOCAL_MODULES = [
     "inventory_sync",
     "migration",
     "health_checker",
+    "plan_pricing",
+    "dry_run",
 ]
 
 

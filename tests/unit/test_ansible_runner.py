@@ -224,3 +224,105 @@ class TestResolveSSHCredentials:
 
         runner = AnsibleRunner()
         assert runner.resolve_ssh_credentials("anyhost") is None
+
+
+# ---------------------------------------------------------------------------
+# read_service_instance_config / read_service_config / get_all_instance_configs
+# ---------------------------------------------------------------------------
+
+class TestReadServiceInstanceConfig:
+    def test_reads_valid_yaml(self, mock_services_dir, monkeypatch):
+        import ansible_runner
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(mock_services_dir))
+
+        # Write a proper instance.yaml
+        (mock_services_dir / "test-service" / "instance.yaml").write_text(
+            yaml.dump({"keyLocation": "/k", "name": "n", "instances": [{"label": "x"}]})
+        )
+
+        runner = AnsibleRunner()
+        config = runner.read_service_instance_config("test-service")
+        assert config is not None
+        assert config["keyLocation"] == "/k"
+        assert len(config["instances"]) == 1
+
+    def test_returns_none_for_missing_service(self, mock_services_dir, monkeypatch):
+        import ansible_runner
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(mock_services_dir))
+
+        runner = AnsibleRunner()
+        assert runner.read_service_instance_config("nonexistent") is None
+
+    def test_returns_none_for_invalid_yaml(self, mock_services_dir, monkeypatch):
+        import ansible_runner
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(mock_services_dir))
+
+        (mock_services_dir / "test-service" / "instance.yaml").write_text("{{invalid")
+
+        runner = AnsibleRunner()
+        assert runner.read_service_instance_config("test-service") is None
+
+
+class TestReadServiceConfig:
+    def test_reads_valid_yaml(self, mock_services_dir, monkeypatch):
+        import ansible_runner
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(mock_services_dir))
+
+        runner = AnsibleRunner()
+        config = runner.read_service_config("test-service")
+        assert config is not None
+        assert config["setting"] == "value"
+
+    def test_returns_none_for_missing_service(self, mock_services_dir, monkeypatch):
+        import ansible_runner
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(mock_services_dir))
+
+        runner = AnsibleRunner()
+        assert runner.read_service_config("nonexistent") is None
+
+
+class TestGetAllInstanceConfigs:
+    def test_reads_all_services(self, tmp_path, monkeypatch):
+        import ansible_runner
+        services = tmp_path / "services"
+        services.mkdir()
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(services))
+
+        # Create two services with instance.yaml
+        for name in ["svc-a", "svc-b"]:
+            svc = services / name
+            svc.mkdir()
+            (svc / "instance.yaml").write_text(
+                yaml.dump({"instances": [{"label": name}]})
+            )
+
+        runner = AnsibleRunner()
+        configs = runner.get_all_instance_configs()
+        assert len(configs) == 2
+        assert "svc-a" in configs
+        assert "svc-b" in configs
+
+    def test_skips_services_without_instance_yaml(self, tmp_path, monkeypatch):
+        import ansible_runner
+        services = tmp_path / "services"
+        services.mkdir()
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(services))
+
+        svc_with = services / "has-config"
+        svc_with.mkdir()
+        (svc_with / "instance.yaml").write_text(yaml.dump({"instances": []}))
+
+        svc_without = services / "no-config"
+        svc_without.mkdir()
+
+        runner = AnsibleRunner()
+        configs = runner.get_all_instance_configs()
+        assert "has-config" in configs
+        assert "no-config" not in configs
+
+    def test_empty_when_no_dir(self, tmp_path, monkeypatch):
+        import ansible_runner
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(tmp_path / "nope"))
+
+        runner = AnsibleRunner()
+        assert runner.get_all_instance_configs() == {}

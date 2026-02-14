@@ -14,6 +14,18 @@ from health_checker import get_health_configs, load_health_configs
 router = APIRouter(prefix="/api/health", tags=["health"])
 
 
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset.
+
+    SQLite drops timezone info, so naive datetimes from the DB are assumed UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 @router.get("/status")
 async def get_health_status(
     session: Session = Depends(get_db_session),
@@ -70,7 +82,7 @@ async def get_health_status(
             "status_code": r.status_code,
             "error_message": r.error_message,
             "target": r.target,
-            "checked_at": r.checked_at.isoformat() if r.checked_at else None,
+            "checked_at": _utc_iso(r.checked_at),
         })
 
         # Compute overall status: any unhealthy -> unhealthy, any degraded -> degraded
@@ -142,7 +154,7 @@ async def get_health_history(
                 "status_code": r.status_code,
                 "error_message": r.error_message,
                 "target": r.target,
-                "checked_at": r.checked_at.isoformat() if r.checked_at else None,
+                "checked_at": _utc_iso(r.checked_at),
             }
             for r in results
         ],
@@ -161,6 +173,17 @@ async def reload_health_configs(
         "services": list(configs.keys()),
         "count": len(configs),
     }
+
+
+@router.post("/recheck")
+async def recheck_health(
+    request: Request,
+    user=Depends(require_permission("health.manage")),
+):
+    """Force re-run all health checks immediately."""
+    poller = request.app.state.health_poller
+    await poller.run_now()
+    return {"message": "Health checks completed"}
 
 
 @router.get("/summary")

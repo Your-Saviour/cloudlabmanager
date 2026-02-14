@@ -31,6 +31,8 @@ cloudlabmanager/
 │   ├── models.py               # Pydantic request/response models
 │   ├── config.py               # YAML config loader
 │   ├── actions.py              # Startup action engine (ENV, CLONE, RUN, RETURN)
+│   ├── plan_pricing.py          # Vultr plan cost lookup from cached data
+│   ├── dry_run.py               # Pre-deployment validation engine and preview builder
 │   ├── dns.py                  # Cloudflare DNS integration
 │   ├── data.py                 # Legacy JSON utilities (migration only)
 │   ├── reset_password.py       # CLI password reset script
@@ -95,6 +97,7 @@ cloudlabmanager/
 14. Creates `AnsibleRunner` instance in app state
 15. Starts background `Scheduler` (checks for due scheduled jobs every 30 seconds)
 16. Starts background `HealthPoller` (checks service health at configured intervals)
+17. Populates plans cache if empty (immediate `refresh_costs()`) and starts periodic plans/cost cache refresh (every 6 hours)
 
 ## Deployment Job Flow
 

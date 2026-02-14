@@ -78,6 +78,7 @@ Returns: `{ "access_token": "...", "token_type": "bearer" }`
 | GET | `/api/services` | `services.view` | List all deployable services |
 | GET | `/api/services/active-deployments` | `services.view` | List services with active deployments |
 | GET | `/api/services/{name}` | `services.view` | Get service detail (parsed instance.yaml) |
+| POST | `/api/services/{name}/dry-run` | `services.deploy` | Preview deployment plan with cost estimate and validation |
 | POST | `/api/services/{name}/deploy` | `services.deploy` | Start a deployment job |
 | POST | `/api/services/{name}/run` | `services.deploy` | Run a named script from scripts.yaml |
 | POST | `/api/services/{name}/stop` | `services.stop` | Stop instances for this service |
@@ -134,6 +135,69 @@ Services with a `scripts.yaml` file can define multiple runnable scripts. Use `P
   }
 }
 ```
+
+### Deployment Dry-Run
+
+`POST /api/services/{name}/dry-run` runs validation and cost estimation without executing any Ansible playbooks. Returns an execution preview showing what a deployment would do.
+
+Response:
+
+```json
+{
+  "instances": [
+    {
+      "label": "Jump Host",
+      "hostname": "jumphost1",
+      "plan": "vc2-1c-1gb",
+      "region": "mel",
+      "os": "Ubuntu 24.04 LTS x64",
+      "tags": ["jump-hosts"]
+    }
+  ],
+  "dns_records": [
+    { "type": "A", "hostname": "jumphost1.ye-et.com" }
+  ],
+  "ssh_keys": {
+    "type": "ed25519",
+    "location": "/services/jump-hosts/outputs/sshkey",
+    "name": "jump-hosts"
+  },
+  "cost_estimate": {
+    "total_monthly": 5.0,
+    "instances": [...],
+    "plans_cache_available": true
+  },
+  "validations": [
+    { "check": "vault_available", "status": "pass", "message": "..." },
+    { "check": "instance_yaml_valid", "status": "pass", "message": "..." },
+    { "check": "valid_region", "status": "pass", "message": "..." },
+    { "check": "valid_plan", "status": "pass", "message": "..." },
+    { "check": "duplicate_hostname", "status": "pass", "message": "..." },
+    { "check": "deploy_script_exists", "status": "pass", "message": "..." },
+    { "check": "cross_service_hostname", "status": "pass", "message": "..." },
+    { "check": "port_conflicts", "status": "pass", "message": "..." },
+    { "check": "os_availability", "status": "pass", "message": "..." }
+  ],
+  "permissions_check": { "has_permission": true },
+  "summary": { "status": "pass" }
+}
+```
+
+Summary status values: `pass` (all checks passed), `warn` (no failures but some warnings), `fail` (one or more failures). The frontend disables the deploy button when status is `fail`.
+
+Validation checks performed:
+- **vault_available** — vault password is configured
+- **instance_yaml_valid** — required fields present (keyLocation, name, temp_inventory, instances)
+- **instances_have_required_fields** — each instance has label, hostname, plan, region, os
+- **valid_region** — regions exist in Vultr (warns if not found)
+- **valid_plan** — plan IDs exist in plans cache (warns if not found)
+- **duplicate_hostname** — hostnames not already running in instances cache
+- **deploy_script_exists** — deploy.sh exists for the service
+- **cross_service_hostname** — no other service configs define the same hostname
+- **port_conflicts** — best-effort detection of port overlaps on shared hosts
+- **os_availability** — requested OS exists in cached OS list
+
+Logged as `service.dry_run` in the audit log.
 
 ### Service Discovery
 
@@ -379,6 +443,30 @@ Returns compact counts for dashboard cards:
 ### POST `/api/health/reload`
 
 Reloads `health.yaml` configs from the CloudLab services directory. Use after adding or modifying health check definitions.
+
+## Costs
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/costs` | `costs.view` | Cost breakdown with per-instance details |
+| GET | `/api/costs/by-tag` | `costs.view` | Costs grouped by instance tag |
+| GET | `/api/costs/by-region` | `costs.view` | Costs grouped by Vultr region |
+| GET | `/api/costs/plans` | `costs.view` | Cached Vultr plans list with pricing |
+| POST | `/api/costs/refresh` | `costs.refresh` | Trigger cost data refresh from Vultr |
+
+### GET `/api/costs/plans`
+
+Returns the cached Vultr plans list used for cost estimation (including dry-run previews). The cache is refreshed automatically every 6 hours and on startup if empty.
+
+```json
+{
+  "plans": [
+    { "id": "vc2-1c-1gb", "vcpu_count": 1, "ram": 1024, "disk": 25, "bandwidth": 1, "monthly_cost": 5.0, "hourly_cost": 0.007 }
+  ],
+  "count": 42,
+  "cached_at": "2026-02-15T00:00:00+00:00"
+}
+```
 
 ## Inventory
 

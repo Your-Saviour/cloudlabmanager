@@ -33,7 +33,7 @@ FROM dhi.io/python:3-debian13-sfw-dev AS runtime-stage
 
 EXPOSE 8000
 
-RUN apt update -y && apt install git openssh-client sshpass -y
+RUN apt update -y && apt install git openssh-client sshpass ca-certificates -y && update-ca-certificates
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -48,7 +48,7 @@ COPY /app .
 COPY --from=frontend-build /frontend/dist/ ./static/
 
 # Install ansible collections
-RUN ansible-galaxy collection install vultr.cloud community.general community.docker community.crypto
+RUN ansible-galaxy collection install vultr.cloud community.general community.docker community.crypto community.dns
 
 # Create directories that symlinks will target
 RUN mkdir -p /inventory /outputs

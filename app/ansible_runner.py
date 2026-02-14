@@ -236,6 +236,59 @@ class AnsibleRunner:
         shutil.copy2(real_path, real_path + ".backup")
         os.remove(real_path)
 
+    # --- Service config readers ---
+
+    def read_service_instance_config(self, name: str) -> dict | None:
+        """Parse a service's instance.yaml and return as dict, or None if missing."""
+        path = os.path.join(SERVICES_DIR, name, "instance.yaml")
+        real_path = os.path.realpath(path)
+        allowed_base = os.path.realpath(SERVICES_DIR)
+        if not real_path.startswith(allowed_base + "/"):
+            return None
+        if not os.path.isfile(real_path):
+            return None
+        try:
+            with open(real_path, "r") as f:
+                return yaml.safe_load(f)
+        except Exception:
+            return None
+
+    def get_all_instance_configs(self) -> dict[str, dict]:
+        """Read instance.yaml from every service and return {service_name: parsed_yaml}."""
+        configs = {}
+        if not os.path.isdir(SERVICES_DIR):
+            return configs
+        for dirname in sorted(os.listdir(SERVICES_DIR)):
+            service_path = os.path.join(SERVICES_DIR, dirname)
+            if not os.path.isdir(service_path):
+                continue
+            instance_path = os.path.join(service_path, "instance.yaml")
+            if not os.path.isfile(instance_path):
+                continue
+            try:
+                with open(instance_path, "r") as f:
+                    data = yaml.safe_load(f)
+                if data:
+                    configs[dirname] = data
+            except Exception:
+                continue
+        return configs
+
+    def read_service_config(self, name: str) -> dict | None:
+        """Parse a service's config.yaml and return as dict, or None if missing."""
+        path = os.path.join(SERVICES_DIR, name, "config.yaml")
+        real_path = os.path.realpath(path)
+        allowed_base = os.path.realpath(SERVICES_DIR)
+        if not real_path.startswith(allowed_base + "/"):
+            return None
+        if not os.path.isfile(real_path):
+            return None
+        try:
+            with open(real_path, "r") as f:
+                return yaml.safe_load(f)
+        except Exception:
+            return None
+
     # --- SSH credential resolution ---
 
     def resolve_ssh_credentials(self, hostname: str) -> dict | None:
@@ -763,6 +816,7 @@ class AnsibleRunner:
                             with open(plans_file, "r") as f:
                                 plans_data = json.load(f)
                             AppMetadata.set(session, "plans_cache", plans_data)
+                            AppMetadata.set(session, "plans_cache_time", datetime.now(timezone.utc).isoformat())
 
                         session.commit()
                         job.output.append("[Cost data cached successfully]")

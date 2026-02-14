@@ -120,6 +120,22 @@ async def get_costs_by_region(user: User = Depends(require_permission("costs.vie
         session.close()
 
 
+@router.get("/plans")
+async def get_plans(user: User = Depends(require_permission("costs.view"))):
+    """Return the cached Vultr plans list with pricing data."""
+    session = SessionLocal()
+    try:
+        plans_cache = AppMetadata.get(session, "plans_cache") or []
+        plans_cache_time = AppMetadata.get(session, "plans_cache_time")
+        return {
+            "plans": plans_cache,
+            "count": len(plans_cache),
+            "cached_at": plans_cache_time,
+        }
+    finally:
+        session.close()
+
+
 @router.post("/refresh")
 async def refresh_costs(request: Request,
                         user: User = Depends(require_permission("costs.refresh")),

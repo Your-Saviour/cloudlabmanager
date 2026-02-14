@@ -1,4 +1,6 @@
 import os
+import asyncio
+import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -25,6 +27,20 @@ from health_checker import HealthPoller, load_health_configs
 
 
 limiter = Limiter(key_func=get_remote_address)
+logger = logging.getLogger(__name__)
+
+COST_REFRESH_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
+
+
+async def _periodic_cost_refresh(runner):
+    """Refresh cost/plans cache every 6 hours."""
+    while True:
+        await asyncio.sleep(COST_REFRESH_INTERVAL)
+        try:
+            logger.info("Starting periodic cost/plans cache refresh")
+            await runner.refresh_costs()
+        except Exception as e:
+            logger.error(f"Periodic cost refresh failed: {e}")
 
 
 @asynccontextmanager
@@ -44,7 +60,27 @@ async def lifespan(app: FastAPI):
     app.state.health_poller = health_poller
     health_poller.start()
 
+    # Seed plans cache if empty, and start periodic refresh
+    from database import SessionLocal, AppMetadata
+    session = SessionLocal()
+    try:
+        plans_cache = AppMetadata.get(session, "plans_cache")
+    finally:
+        session.close()
+    if not plans_cache:
+        logger.info("Plans cache empty — triggering initial cost refresh")
+        await app.state.ansible_runner.refresh_costs()
+
+    cost_refresh_task = asyncio.create_task(_periodic_cost_refresh(app.state.ansible_runner))
+
     yield
+
+    # Stop periodic cost refresh
+    cost_refresh_task.cancel()
+    try:
+        await cost_refresh_task
+    except asyncio.CancelledError:
+        pass
 
     # Stop health poller on shutdown
     await health_poller.stop()

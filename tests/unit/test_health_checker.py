@@ -627,3 +627,253 @@ class TestHealthCheckResultModel:
         assert fetched.status_code is None
         assert fetched.target is None
         assert fetched.error_message == "Connection refused"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests — service discovery (Issue #1)
+# ---------------------------------------------------------------------------
+
+class TestServiceDiscoveryByInstanceYaml:
+    """Regression: service dir name differing from Vultr tags must still match.
+
+    The health poller keys configs by directory name (e.g. 'jump-hosts') but
+    Vultr tags may differ (e.g. 'jump-host'). The poller must cross-reference
+    instance.yaml to bridge the gap.
+    """
+
+    def test_discovers_service_via_instance_yaml_tag(self, db_session, tmp_path, monkeypatch):
+        """Dir 'jump-hosts' with tag 'jump-host' must be found via instance.yaml."""
+        from health_checker import HealthPoller
+        from database import AppMetadata
+        import health_checker
+
+        # Inventory cache has a host tagged 'jump-host' (singular)
+        cache_data = {
+            "all": {
+                "hosts": {
+                    "jump-mel-1": {
+                        "ansible_host": "1.2.3.4",
+                        "vultr_tags": ["jump-host", "bastion"],
+                        "ansible_ssh_private_key_file": "/keys/id_rsa",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache_data)
+        db_session.commit()
+
+        # Create instance.yaml for 'jump-hosts' (plural) service dir
+        svc_dir = tmp_path / "jump-hosts"
+        svc_dir.mkdir()
+        (svc_dir / "instance.yaml").write_text(
+            "instances:\n"
+            "  - label: jump-mel-1\n"
+            "    hostname: jump-mel-1\n"
+            "    tags:\n"
+            "      - jump-host\n"
+            "      - bastion\n"
+        )
+
+        monkeypatch.setattr(health_checker, "SERVICES_DIR", str(tmp_path))
+
+        # Only mock config.yml lookup, let real filesystem handle instance.yaml
+        real_isfile = os.path.isfile
+        def fake_isfile(path):
+            if path == "/app/cloudlab/config.yml":
+                return False
+            return real_isfile(path)
+
+        poller = HealthPoller()
+        with patch("health_checker.os.path.isfile", side_effect=fake_isfile):
+            deployed = poller._get_deployed_services()
+
+        # 'jump-hosts' (the directory name) must resolve
+        assert "jump-hosts" in deployed
+        assert deployed["jump-hosts"]["ip"] == "1.2.3.4"
+
+    def test_discovers_service_via_instance_yaml_hostname(self, db_session, tmp_path, monkeypatch):
+        """Service with unique hostname in instance.yaml must be found."""
+        from health_checker import HealthPoller
+        from database import AppMetadata
+        import health_checker
+
+        cache_data = {
+            "all": {
+                "hosts": {
+                    "my-unique-host": {
+                        "ansible_host": "5.6.7.8",
+                        "vultr_tags": ["unrelated-tag"],
+                        "ansible_ssh_private_key_file": "/keys/id_rsa",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache_data)
+        db_session.commit()
+
+        svc_dir = tmp_path / "my-service"
+        svc_dir.mkdir()
+        (svc_dir / "instance.yaml").write_text(
+            "instances:\n"
+            "  - label: my-unique-host\n"
+            "    hostname: my-unique-host\n"
+            "    tags:\n"
+            "      - unrelated-tag\n"
+        )
+
+        monkeypatch.setattr(health_checker, "SERVICES_DIR", str(tmp_path))
+
+        real_isfile = os.path.isfile
+        def fake_isfile(path):
+            if path == "/app/cloudlab/config.yml":
+                return False
+            return real_isfile(path)
+
+        poller = HealthPoller()
+        with patch("health_checker.os.path.isfile", side_effect=fake_isfile):
+            deployed = poller._get_deployed_services()
+
+        assert "my-service" in deployed
+        assert deployed["my-service"]["ip"] == "5.6.7.8"
+
+    def test_skips_when_no_instance_yaml(self, db_session, tmp_path, monkeypatch):
+        """Services without instance.yaml should not appear in deployed."""
+        from health_checker import HealthPoller
+        from database import AppMetadata
+        import health_checker
+
+        cache_data = {"all": {"hosts": {}}}
+        AppMetadata.set(db_session, "instances_cache", cache_data)
+        db_session.commit()
+
+        svc_dir = tmp_path / "no-instance"
+        svc_dir.mkdir()
+        (svc_dir / "health.yaml").write_text("checks:\n  - name: c\n    type: http\n")
+
+        monkeypatch.setattr(health_checker, "SERVICES_DIR", str(tmp_path))
+
+        poller = HealthPoller()
+        with patch("health_checker.os.path.isfile", return_value=False):
+            deployed = poller._get_deployed_services()
+
+        assert "no-instance" not in deployed
+
+    def test_skips_instance_yaml_lookup_when_already_matched(self, db_session, tmp_path, monkeypatch):
+        """If dir name already matches a tag, skip the instance.yaml lookup."""
+        from health_checker import HealthPoller
+        from database import AppMetadata
+        import health_checker
+
+        cache_data = {
+            "all": {
+                "hosts": {
+                    "host-1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_tags": ["exact-match"],
+                        "ansible_ssh_private_key_file": "/keys/id_rsa",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache_data)
+        db_session.commit()
+
+        # Service dir name matches a tag exactly — no instance.yaml needed
+        svc_dir = tmp_path / "exact-match"
+        svc_dir.mkdir()
+
+        monkeypatch.setattr(health_checker, "SERVICES_DIR", str(tmp_path))
+
+        poller = HealthPoller()
+        with patch("health_checker.os.path.isfile", return_value=False):
+            deployed = poller._get_deployed_services()
+
+        assert "exact-match" in deployed
+        assert deployed["exact-match"]["ip"] == "10.0.0.1"
+
+    def test_undeployed_instance_yaml_no_match(self, db_session, tmp_path, monkeypatch):
+        """instance.yaml exists but its hosts aren't in the cache — not deployed."""
+        from health_checker import HealthPoller
+        from database import AppMetadata
+        import health_checker
+
+        cache_data = {"all": {"hosts": {}}}
+        AppMetadata.set(db_session, "instances_cache", cache_data)
+        db_session.commit()
+
+        svc_dir = tmp_path / "offline-svc"
+        svc_dir.mkdir()
+        (svc_dir / "instance.yaml").write_text(
+            "instances:\n"
+            "  - hostname: not-running\n"
+            "    tags:\n"
+            "      - not-running\n"
+        )
+
+        monkeypatch.setattr(health_checker, "SERVICES_DIR", str(tmp_path))
+
+        poller = HealthPoller()
+        with patch("health_checker.os.path.isfile", return_value=False):
+            deployed = poller._get_deployed_services()
+
+        assert "offline-svc" not in deployed
+
+
+# ---------------------------------------------------------------------------
+# Regression tests — run_now / recheck (Issue #4)
+# ---------------------------------------------------------------------------
+
+class TestHealthPollerRunNow:
+    """Regression: manual recheck must clear timers and run all checks."""
+
+    async def test_run_now_clears_timers_and_runs_tick(self, monkeypatch):
+        from health_checker import HealthPoller
+        import health_checker
+
+        poller = HealthPoller()
+        poller._last_check_times = {"svc:check": time.time()}
+
+        configs = {
+            "test-svc": {
+                "checks": [{"name": "web", "type": "http", "path": "/"}],
+                "interval": 9999,  # Very long interval — would normally skip
+            }
+        }
+        monkeypatch.setattr(health_checker, "_health_configs", configs)
+
+        with patch.object(poller, "_get_deployed_services", return_value={
+            "test-svc": {"hostname": "h", "ip": "1.2.3.4", "fqdn": "h.example.com", "key_path": ""}
+        }):
+            with patch.object(poller, "_run_check", new_callable=AsyncMock) as mock_run:
+                await poller.run_now()
+
+        # Timers cleared, so even a 9999s interval check must run
+        assert poller._last_check_times == {} or "test-svc:web" in poller._last_check_times
+        mock_run.assert_called_once()
+
+    async def test_run_now_runs_all_services(self, monkeypatch):
+        from health_checker import HealthPoller
+        import health_checker
+
+        poller = HealthPoller()
+        poller._last_check_times = {
+            "svc-a:check": time.time(),
+            "svc-b:check": time.time(),
+        }
+
+        configs = {
+            "svc-a": {"checks": [{"name": "check", "type": "http"}], "interval": 60},
+            "svc-b": {"checks": [{"name": "check", "type": "tcp"}], "interval": 60},
+        }
+        monkeypatch.setattr(health_checker, "_health_configs", configs)
+
+        deployed = {
+            "svc-a": {"hostname": "a", "ip": "1.1.1.1", "fqdn": "a.example.com", "key_path": ""},
+            "svc-b": {"hostname": "b", "ip": "2.2.2.2", "fqdn": "b.example.com", "key_path": ""},
+        }
+
+        with patch.object(poller, "_get_deployed_services", return_value=deployed):
+            with patch.object(poller, "_run_check", new_callable=AsyncMock) as mock_run:
+                await poller.run_now()
+
+        assert mock_run.call_count == 2

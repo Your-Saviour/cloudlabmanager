@@ -15,6 +15,7 @@ import type { HealthStatusResponse, ServiceHealth, HealthCheck } from '@/types/h
 export default function HealthPage() {
   const canManage = useHasPermission('health.manage')
   const [reloading, setReloading] = useState(false)
+  const [rechecking, setRechecking] = useState(false)
 
   const { data: healthStatus, isLoading, refetch } = useQuery({
     queryKey: ['health-status'],
@@ -44,16 +45,37 @@ export default function HealthPage() {
     }
   }
 
+  const handleRecheck = async () => {
+    setRechecking(true)
+    try {
+      await api.post('/api/health/recheck')
+      refetch()
+      toast.success('Health checks completed')
+    } catch {
+      toast.error('Failed to run health checks')
+    } finally {
+      setRechecking(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Service Health" description="Live health monitoring for deployed services">
         {canManage && (
-          <Button variant="outline" size="sm" onClick={handleReload} disabled={reloading}>
-            {reloading
-              ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-              : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
-            Reload Configs
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleRecheck} disabled={rechecking}>
+              {rechecking
+                ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
+              Recheck Now
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleReload} disabled={reloading}>
+              {reloading
+                ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
+              Reload Configs
+            </Button>
+          </div>
         )}
       </PageHeader>
 

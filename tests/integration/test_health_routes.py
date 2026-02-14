@@ -1,6 +1,6 @@
 """Integration tests for /api/health routes."""
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone, timedelta
 
 
@@ -271,3 +271,98 @@ class TestHealthSummary:
         assert data["healthy"] == 1
         assert data["unhealthy"] == 1
         assert data["unknown"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Regression: checked_at timestamps must include UTC offset (Issue #3)
+# ---------------------------------------------------------------------------
+
+class TestHealthTimestampUtc:
+    """Regression: naive datetimes from SQLite must be serialized with UTC offset.
+
+    SQLite strips timezone info. Without re-attaching UTC, JavaScript interprets
+    the ISO string as local time, showing wrong relative times (e.g. +10h in AEST).
+    """
+
+    async def test_status_checked_at_includes_utc_offset(self, client, auth_headers, db_session):
+        from database import HealthCheckResult
+
+        record = HealthCheckResult(
+            service_name="tz-test",
+            check_name="web",
+            status="healthy",
+            check_type="http",
+            checked_at=datetime(2026, 2, 14, 12, 0, 0),  # naive — no tzinfo
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        configs = {
+            "tz-test": {
+                "checks": [{"name": "web", "type": "http"}],
+                "interval": 60,
+                "notifications": {"enabled": False},
+            }
+        }
+        with patch("health_checker.get_health_configs", return_value=configs), \
+             patch("routes.health_routes.get_health_configs", return_value=configs):
+            resp = await client.get("/api/health/status", headers=auth_headers)
+
+        data = resp.json()
+        svc = next(s for s in data["services"] if s["service_name"] == "tz-test")
+        checked_at = svc["checks"][0]["checked_at"]
+
+        # Must contain a UTC offset — either +00:00 or Z
+        assert "+00:00" in checked_at or checked_at.endswith("Z"), \
+            f"checked_at missing UTC offset: {checked_at}"
+
+    async def test_history_checked_at_includes_utc_offset(self, client, auth_headers, db_session):
+        from database import HealthCheckResult
+
+        record = HealthCheckResult(
+            service_name="tz-test-hist",
+            check_name="web",
+            status="healthy",
+            check_type="http",
+            checked_at=datetime(2026, 2, 14, 12, 0, 0),  # naive
+        )
+        db_session.add(record)
+        db_session.commit()
+
+        resp = await client.get("/api/health/history/tz-test-hist", headers=auth_headers)
+
+        data = resp.json()
+        checked_at = data["results"][0]["checked_at"]
+        assert "+00:00" in checked_at or checked_at.endswith("Z"), \
+            f"checked_at missing UTC offset: {checked_at}"
+
+
+# ---------------------------------------------------------------------------
+# Regression: POST /api/health/recheck endpoint (Issue #4)
+# ---------------------------------------------------------------------------
+
+class TestHealthRecheck:
+    """Regression: manual recheck endpoint must exist and trigger checks."""
+
+    async def test_recheck_requires_auth(self, client):
+        resp = await client.post("/api/health/recheck")
+        assert resp.status_code in (401, 403)
+
+    async def test_recheck_requires_manage_permission(self, client, regular_auth_headers):
+        resp = await client.post("/api/health/recheck",
+                                  headers=regular_auth_headers)
+        assert resp.status_code == 403
+
+    async def test_recheck_calls_run_now(self, client, auth_headers):
+        mock_poller = MagicMock()
+        mock_poller.run_now = AsyncMock()
+
+        with patch("routes.health_routes.Request") as _:
+            # Patch app.state.health_poller via the test app
+            client._transport.app.state.health_poller = mock_poller
+            resp = await client.post("/api/health/recheck", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["message"] == "Health checks completed"
+        mock_poller.run_now.assert_called_once()

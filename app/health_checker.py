@@ -244,6 +244,11 @@ class HealthPoller:
             self._task = None
         logger.info("Health poller stopped")
 
+    async def run_now(self):
+        """Force-run all health checks immediately, ignoring interval timers."""
+        self._last_check_times.clear()
+        await self._tick()
+
     async def _loop(self):
         """Main loop — checks every 15 seconds which services are due."""
         while self._running:
@@ -289,6 +294,7 @@ class HealthPoller:
         tasks = []
         for service_name, config in configs.items():
             if service_name not in deployed:
+                logger.debug("Skipping health checks for '%s': not found in deployed services", service_name)
                 continue
 
             host_info = deployed[service_name]
@@ -310,6 +316,11 @@ class HealthPoller:
         """Get deployed services with their hostnames and IPs from inventory cache.
 
         Returns dict: service_name -> {"hostname": ..., "ip": ..., "fqdn": ..., "key_path": ...}
+
+        Matches services by:
+        1. Vultr tags from the inventory cache
+        2. Hostname from the inventory cache
+        3. Service directory name mapped to its instance.yaml tags
         """
         session = SessionLocal()
         try:
@@ -350,6 +361,40 @@ class HealthPoller:
                     "fqdn": fqdn,
                     "key_path": key_path,
                 }
+
+            # Map service directory names to deployed instances via instance.yaml tags
+            # This handles cases where the service dir name differs from its Vultr tags
+            # (e.g. service dir "jump-hosts" with tag "jump-host")
+            if os.path.isdir(SERVICES_DIR):
+                for dirname in os.listdir(SERVICES_DIR):
+                    if dirname in deployed:
+                        continue  # Already matched
+                    instance_path = os.path.join(SERVICES_DIR, dirname, "instance.yaml")
+                    if not os.path.isfile(instance_path):
+                        continue
+                    try:
+                        with open(instance_path) as f:
+                            inst_config = yaml.safe_load(f)
+                        if not inst_config:
+                            continue
+                        # Check if any instance tags match a deployed host
+                        for instance in inst_config.get("instances", []):
+                            inst_hostname = instance.get("hostname", "")
+                            inst_tags = instance.get("tags", [])
+                            # Try matching by hostname first
+                            if inst_hostname in deployed:
+                                deployed[dirname] = deployed[inst_hostname]
+                                break
+                            # Then try matching by tag
+                            for tag in inst_tags:
+                                if tag in deployed:
+                                    deployed[dirname] = deployed[tag]
+                                    break
+                            else:
+                                continue
+                            break  # Found a match
+                    except Exception:
+                        logger.debug("Could not read instance config: %s", instance_path)
 
             return deployed
         finally:

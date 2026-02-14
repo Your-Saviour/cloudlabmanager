@@ -81,6 +81,25 @@ async def service_outputs(name: str, request: Request,
     return {"outputs": get_service_outputs(name)}
 
 
+@router.post("/{name}/dry-run")
+async def dry_run_service(name: str, request: Request,
+                          user: User = Depends(require_permission("services.deploy")),
+                          session: Session = Depends(get_db_session)):
+    runner = request.app.state.ansible_runner
+    service = runner.get_service(name)
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    from dry_run import run_dry_run
+    result = await run_dry_run(name, user, session)
+
+    log_action(session, user.id, user.username, "service.dry_run", f"services/{name}",
+               details={"status": result.summary.get("status", "unknown")},
+               ip_address=request.client.host if request.client else None)
+
+    return result.to_dict()
+
+
 @router.post("/{name}/deploy")
 async def deploy_service(name: str, request: Request,
                          user: User = Depends(require_permission("services.deploy")),

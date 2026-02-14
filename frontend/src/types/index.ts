@@ -174,4 +174,50 @@ export interface TagPermission {
   permission: string
 }
 
+export interface DryRunResult {
+  service_name: string
+  status: 'pass' | 'warn' | 'fail'
+  cost_estimate: {
+    total_monthly_cost: number
+    currency: string
+    plans_cache_available: boolean
+    instances: DryRunInstance[]
+  }
+  dns_records: DryRunDnsRecord[]
+  ssh_keys: {
+    key_type: string
+    key_name: string
+    key_location: string
+    note: string
+  }
+  validations: DryRunValidation[]
+  permissions: {
+    has_deploy_permission: boolean
+    required_permissions: string[]
+  }
+}
+
+export interface DryRunInstance {
+  hostname: string
+  plan: string
+  region: string
+  os: string
+  monthly_cost: number
+  hourly_cost: number
+}
+
+export interface DryRunDnsRecord {
+  type: string
+  record: string
+  zone: string
+  fqdn: string
+  note: string
+}
+
+export interface DryRunValidation {
+  check: string
+  status: 'pass' | 'warn' | 'fail'
+  message: string
+}
+
 export type { ScheduledJob, CronPreview } from './schedule'
