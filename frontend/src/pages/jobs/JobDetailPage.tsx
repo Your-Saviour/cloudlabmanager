@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, RotateCcw } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
 import { useJobStream } from '@/hooks/useJobStream'
 import { formatDate } from '@/lib/utils'
+import api from '@/lib/api'
+import { toast } from 'sonner'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +18,17 @@ export default function JobDetailPage() {
   const outputRef = useRef<HTMLDivElement>(null)
 
   const { output, status, job } = useJobStream(jobId || '')
+
+  const rerunMutation = useMutation({
+    mutationFn: () => api.post(`/api/jobs/${jobId}/rerun`),
+    onSuccess: (res) => {
+      toast.success('Job rerun started')
+      navigate(`/jobs/${res.data.job_id}`)
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || 'Failed to rerun job')
+    },
+  })
 
   useEffect(() => {
     if (outputRef.current) {
@@ -31,7 +45,7 @@ export default function JobDetailPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-semibold tracking-tight">
               {job?.service || 'Job'} - {job?.action || ''}
             </h1>
@@ -42,12 +56,38 @@ export default function JobDetailPage() {
               </Badge>
             )}
             {status === 'running' && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+            {job && status !== 'running' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => rerunMutation.mutate()}
+                disabled={rerunMutation.isPending}
+              >
+                {rerunMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                {rerunMutation.isPending ? 'Rerunning...' : 'Rerun'}
+              </Button>
+            )}
           </div>
           {job && (
             <p className="text-sm text-muted-foreground mt-1">
               Started {formatDate(job.started_at)}
               {job.started_by && ` by ${job.started_by}`}
               {job.finished_at && ` | Finished ${formatDate(job.finished_at)}`}
+            </p>
+          )}
+          {job?.parent_job_id && (
+            <p className="text-sm text-muted-foreground">
+              Rerun of{' '}
+              <button
+                className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm font-mono"
+                onClick={() => navigate(`/jobs/${job.parent_job_id}`)}
+              >
+                {job.parent_job_id}
+              </button>
             </p>
           )}
         </div>

@@ -203,6 +203,8 @@ class JobRecord(Base):
     object_id = Column(Integer, ForeignKey("inventory_objects.id", ondelete="SET NULL"), nullable=True)
     type_slug = Column(String(50), nullable=True)
     schedule_id = Column(Integer, ForeignKey("scheduled_jobs.id", ondelete="SET NULL"), nullable=True)
+    inputs = Column(Text, nullable=True)  # JSON dict of original inputs
+    parent_job_id = Column(String(20), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
 
 
 class ScheduledJob(Base):
@@ -362,6 +364,8 @@ def create_tables():
         "ALTER TABLE jobs ADD COLUMN schedule_id INTEGER REFERENCES scheduled_jobs(id) ON DELETE SET NULL",
         "ALTER TABLE health_check_results ADD COLUMN previous_status VARCHAR(20)",
         "ALTER TABLE drift_reports ADD COLUMN previous_status VARCHAR(20)",
+        "ALTER TABLE jobs ADD COLUMN inputs TEXT",
+        "ALTER TABLE jobs ADD COLUMN parent_job_id VARCHAR(20) REFERENCES jobs(id) ON DELETE SET NULL",
     ]
     with engine.connect() as conn:
         for sql in migrations:

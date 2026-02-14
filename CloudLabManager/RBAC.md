@@ -38,6 +38,7 @@ These are always present:
 | Jobs | `jobs.view_own` | View own jobs |
 | Jobs | `jobs.view_all` | View all jobs |
 | Jobs | `jobs.cancel` | Cancel running jobs |
+| Jobs | `jobs.rerun` | Rerun completed or failed jobs |
 | Users | `users.view` | View user list |
 | Users | `users.create` | Invite new users |
 | Users | `users.edit` | Edit user profiles |

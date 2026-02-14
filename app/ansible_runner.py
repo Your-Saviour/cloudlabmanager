@@ -336,6 +336,12 @@ class AnsibleRunner:
             started_at=datetime.now(timezone.utc).isoformat(),
             user_id=user_id,
             username=username,
+            inputs={
+                "action_name": action_name,
+                "action_type": action_def.get("type", "script"),
+                "type_slug": type_slug,
+                **(action_def.get("_inputs", {})),
+            },
         )
         self.jobs[job_id] = job
 
@@ -529,6 +535,7 @@ class AnsibleRunner:
             started_at=datetime.now(timezone.utc).isoformat(),
             user_id=user_id,
             username=username,
+            inputs={"script": script_name, **inputs},
         )
         self.jobs[job_id] = job
 
@@ -557,6 +564,7 @@ class AnsibleRunner:
             started_at=datetime.now(timezone.utc).isoformat(),
             user_id=user_id,
             username=username,
+            inputs={},
         )
         self.jobs[job_id] = job
 
@@ -574,6 +582,7 @@ class AnsibleRunner:
             started_at=datetime.now(timezone.utc).isoformat(),
             user_id=user_id,
             username=username,
+            inputs={},
         )
         self.jobs[job_id] = job
 
@@ -590,6 +599,7 @@ class AnsibleRunner:
             started_at=datetime.now(timezone.utc).isoformat(),
             user_id=user_id,
             username=username,
+            inputs={},
         )
         self.jobs[job_id] = job
 
@@ -607,6 +617,7 @@ class AnsibleRunner:
             started_at=datetime.now(timezone.utc).isoformat(),
             user_id=user_id,
             username=username,
+            inputs={"label": label, "region": region},
         )
         self.jobs[job_id] = job
 
@@ -623,6 +634,7 @@ class AnsibleRunner:
             started_at=datetime.now(timezone.utc).isoformat(),
             user_id=user_id,
             username=username,
+            inputs={},
         )
         self.jobs[job_id] = job
 
@@ -784,6 +796,7 @@ class AnsibleRunner:
             started_at=datetime.now(timezone.utc).isoformat(),
             user_id=user_id,
             username=username,
+            inputs={},
         )
         self.jobs[job_id] = job
 
@@ -899,6 +912,8 @@ class AnsibleRunner:
                 existing.finished_at = job.finished_at
                 existing.output = json.dumps(job.output)
                 existing.deployment_id = job.deployment_id
+                existing.inputs = json.dumps(job.inputs) if job.inputs else None
+                existing.parent_job_id = job.parent_job_id
                 if object_id is not None:
                     existing.object_id = object_id
                 if type_slug is not None:
@@ -921,6 +936,8 @@ class AnsibleRunner:
                     object_id=object_id,
                     type_slug=type_slug,
                     schedule_id=job.schedule_id,
+                    inputs=json.dumps(job.inputs) if job.inputs else None,
+                    parent_job_id=job.parent_job_id,
                 )
                 session.add(record)
             session.commit()

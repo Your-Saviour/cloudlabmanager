@@ -5,7 +5,8 @@ from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
 from database import User, SessionLocal, JobRecord
 from auth import get_current_user
-from permissions import has_permission
+from permissions import has_permission, require_permission
+from audit import log_action
 from db_session import get_db_session
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -37,6 +38,8 @@ def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
             "user_id": j.user_id,
             "username": j.username,
             "schedule_id": j.schedule_id,
+            "inputs": json.loads(j.inputs) if j.inputs else None,
+            "parent_job_id": j.parent_job_id,
         }
         if can_view_all or (can_view_own and j.user_id == user.id):
             jobs[j.id] = job_dict
@@ -94,12 +97,117 @@ async def get_job(job_id: str, request: Request, user: User = Depends(get_curren
                     "user_id": db_job.user_id,
                     "username": db_job.username,
                     "schedule_id": db_job.schedule_id,
+                    "inputs": json.loads(db_job.inputs) if db_job.inputs else None,
+                    "parent_job_id": db_job.parent_job_id,
                 }
             raise HTTPException(status_code=403, detail="Permission denied")
 
         raise HTTPException(status_code=404, detail="Job not found")
     finally:
         session.close()
+
+
+@router.post("/{job_id}/rerun")
+async def rerun_job(job_id: str, request: Request,
+                    user: User = Depends(require_permission("jobs.rerun")),
+                    session: Session = Depends(get_db_session)):
+    runner = request.app.state.ansible_runner
+
+    # Look up original job (prefer DB since it has persisted inputs)
+    db_job = session.query(JobRecord).filter_by(id=job_id).first()
+    if not db_job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Enforce visibility: user must be able to view the original job
+    can_view_all = has_permission(session, user.id, "jobs.view_all")
+    can_view_own = has_permission(session, user.id, "jobs.view_own")
+    if not can_view_all and not (can_view_own and db_job.user_id == user.id):
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if db_job.status == "running":
+        raise HTTPException(status_code=400, detail="Cannot rerun a running job")
+
+    original_inputs = json.loads(db_job.inputs) if db_job.inputs else {}
+    new_job = None
+
+    # Dispatch based on original action type
+    if db_job.action == "deploy":
+        new_job = await runner.deploy_service(
+            db_job.service, user_id=user.id, username=user.username
+        )
+
+    elif db_job.action == "script":
+        script_name = db_job.script or original_inputs.pop("script", "deploy")
+        new_job = await runner.run_script(
+            db_job.service, script_name, original_inputs,
+            user_id=user.id, username=user.username
+        )
+
+    elif db_job.action == "stop":
+        new_job = await runner.stop_service(
+            db_job.service, user_id=user.id, username=user.username
+        )
+
+    elif db_job.action == "stop_all":
+        new_job = await runner.stop_all(
+            user_id=user.id, username=user.username
+        )
+
+    elif db_job.action == "destroy_instance":
+        label = original_inputs.get("label", db_job.service)
+        region = original_inputs.get("region", "")
+        if not region:
+            raise HTTPException(status_code=400, detail="Cannot rerun: missing region info")
+        new_job = await runner.stop_instance(
+            label, region, user_id=user.id, username=user.username
+        )
+
+    elif db_job.action == "refresh":
+        if db_job.service == "costs":
+            new_job = await runner.refresh_costs(
+                user_id=user.id, username=user.username
+            )
+        else:
+            new_job = await runner.refresh_instances(
+                user_id=user.id, username=user.username
+            )
+
+    else:
+        # Generic inventory action - reconstruct from stored metadata
+        action_name = original_inputs.get("action_name", db_job.action)
+        action_type = original_inputs.get("action_type", "script")
+        type_slug = original_inputs.get("type_slug", db_job.type_slug or "")
+
+        # Build a minimal action_def
+        action_def = {
+            "name": action_name,
+            "type": action_type,
+        }
+
+        # Extract user inputs (everything except our metadata keys)
+        user_inputs = {k: v for k, v in original_inputs.items()
+                       if k not in ("action_name", "action_type", "type_slug")}
+        if user_inputs:
+            action_def["_inputs"] = user_inputs
+
+        obj_data = {"name": db_job.service}
+        new_job = await runner.run_action(
+            action_def, obj_data, type_slug,
+            user_id=user.id, username=user.username,
+            object_id=db_job.object_id
+        )
+
+    if not new_job:
+        raise HTTPException(status_code=400, detail="Could not determine how to rerun this job")
+
+    # Link the new job to the original
+    new_job.parent_job_id = job_id
+
+    log_action(session, user.id, user.username, "job.rerun", f"jobs/{job_id}",
+               details={"original_job_id": job_id, "new_job_id": new_job.id},
+               ip_address=request.client.host if request.client else None)
+
+    return {"job_id": new_job.id, "parent_job_id": job_id}
 
 
 @router.get("/{job_id}/stream")

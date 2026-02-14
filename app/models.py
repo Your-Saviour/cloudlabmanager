@@ -64,6 +64,8 @@ class Job(BaseModel):
     user_id: Optional[int] = None
     username: Optional[str] = None
     schedule_id: Optional[int] = None
+    inputs: Optional[dict] = None
+    parent_job_id: Optional[str] = None
 
 
 # --- New models for RBAC ---

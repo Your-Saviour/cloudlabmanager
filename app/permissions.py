@@ -23,6 +23,7 @@ STATIC_PERMISSION_DEFS = [
     ("jobs.view_own", "jobs", "View Own Jobs", "View jobs started by this user"),
     ("jobs.view_all", "jobs", "View All Jobs", "View jobs started by any user"),
     ("jobs.cancel", "jobs", "Cancel Jobs", "Cancel running jobs"),
+    ("jobs.rerun", "jobs", "Rerun Jobs", "Rerun completed or failed jobs"),
     # users
     ("users.view", "users", "View Users", "View user accounts"),
     ("users.create", "users", "Create Users", "Invite new users"),

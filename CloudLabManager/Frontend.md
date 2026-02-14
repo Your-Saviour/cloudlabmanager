@@ -79,6 +79,8 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Full ansible output displayed in a terminal-style `<pre>` block
 - Auto-scrolling, auto-updating (polls every 1s while job is running)
 - Status badge updates when job completes
+- **Rerun button** — appears for completed or failed jobs (hidden while running). Clicking it creates a new job with the same inputs and navigates to the new job's detail page. Requires `jobs.rerun` permission (enforced server-side; unauthorized users see an error toast).
+- **Parent job link** — when a job was created via rerun, displays "Rerun of {parent_job_id}" as a clickable link that navigates to the original job
 
 ### User Management
 - List of all users with status (active, invited, inactive)

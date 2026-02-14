@@ -209,6 +209,7 @@ A directory in `cloudlab/services/` is considered a deployable service if it con
 |--------|----------|------------|-------------|
 | GET | `/api/jobs` | `jobs.view_own` / `jobs.view_all` | List jobs (filterable by user/service) |
 | GET | `/api/jobs/{id}` | `jobs.view_own` / `jobs.view_all` | Get job detail including full output |
+| POST | `/api/jobs/{id}/rerun` | `jobs.rerun` | Rerun a completed or failed job |
 | DELETE | `/api/jobs/{id}` | `jobs.cancel` | Cancel a running job |
 | WebSocket | `/api/jobs/ws/{id}` | Yes | Real-time job output streaming |
 
@@ -224,11 +225,33 @@ A directory in `cloudlab/services/` is considered a deployable service if it con
   "finished_at": null,
   "output": ["$ ansible-playbook ...", "PLAY [Create instances] ..."],
   "user_id": 1,
-  "username": "jake"
+  "username": "jake",
+  "inputs": {},
+  "parent_job_id": null
 }
 ```
 
 Job statuses: `running`, `completed`, `failed`
+
+- `inputs` — JSON object containing the original parameters used to create the job. For deploy/stop/refresh jobs this is `{}`. For script jobs it contains the script name and user-provided inputs. Pre-existing jobs (created before this feature) return `null`.
+- `parent_job_id` — ID of the original job if this job was created via rerun. `null` for first-run jobs.
+
+### POST `/api/jobs/{id}/rerun`
+
+Reruns a completed or failed job using its stored inputs. The original job must not be running (returns 400 if it is). Creates a new job linked to the original via `parent_job_id`.
+
+Supported action types: `deploy`, `script`, `stop`, `stop_all`, `destroy_instance`, `refresh`, and inventory actions.
+
+Returns:
+
+```json
+{
+  "job_id": "e5f6g7h8",
+  "parent_job_id": "a1b2c3d4"
+}
+```
+
+Logged as `job.rerun` in the audit log.
 
 ## Users
 
