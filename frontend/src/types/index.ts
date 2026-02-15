@@ -83,6 +83,9 @@ export interface Job {
   started_by?: string
   username?: string
   schedule_id?: number
+  webhook_id?: number
+  schedule_name?: string | null
+  webhook_name?: string | null
   inputs?: Record<string, unknown>
   parent_job_id?: string
   object_id?: number

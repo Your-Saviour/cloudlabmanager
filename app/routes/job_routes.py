@@ -3,13 +3,74 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
-from database import User, SessionLocal, JobRecord
+from database import User, SessionLocal, JobRecord, ScheduledJob, WebhookEndpoint
 from auth import get_current_user
 from permissions import has_permission, require_permission
 from audit import log_action
 from db_session import get_db_session
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+
+def _resolve_provenance(job_dict: dict, session: Session) -> None:
+    """Add schedule_name and webhook_name to a job dict, mutating in place."""
+    job_dict.setdefault("webhook_id", None)
+    schedule_id = job_dict.get("schedule_id")
+    webhook_id = job_dict.get("webhook_id")
+    username = job_dict.get("username", "") or ""
+
+    job_dict["schedule_name"] = None
+    job_dict["webhook_name"] = None
+
+    if schedule_id:
+        sched = session.query(ScheduledJob).filter_by(id=schedule_id).first()
+        job_dict["schedule_name"] = sched.name if sched else "(deleted)"
+    elif username.startswith("scheduler:"):
+        job_dict["schedule_name"] = "(deleted)"
+
+    if webhook_id:
+        wh = session.query(WebhookEndpoint).filter_by(id=webhook_id).first()
+        job_dict["webhook_name"] = wh.name if wh else "(deleted)"
+    elif username.startswith("webhook:"):
+        job_dict["webhook_name"] = "(deleted)"
+
+
+def _resolve_provenance_batch(jobs: list[dict], session: Session) -> None:
+    """Batch-resolve schedule and webhook names for a list of job dicts."""
+    schedule_ids = {j["schedule_id"] for j in jobs if j.get("schedule_id")}
+    webhook_ids = {j.get("webhook_id") for j in jobs if j.get("webhook_id")}
+
+    sched_names = {}
+    if schedule_ids:
+        scheds = session.query(ScheduledJob.id, ScheduledJob.name).filter(
+            ScheduledJob.id.in_(schedule_ids)
+        ).all()
+        sched_names = {s.id: s.name for s in scheds}
+
+    wh_names = {}
+    if webhook_ids:
+        whs = session.query(WebhookEndpoint.id, WebhookEndpoint.name).filter(
+            WebhookEndpoint.id.in_(webhook_ids)
+        ).all()
+        wh_names = {w.id: w.name for w in whs}
+
+    for j in jobs:
+        j.setdefault("webhook_id", None)
+        username = j.get("username", "") or ""
+
+        if j.get("schedule_id"):
+            j["schedule_name"] = sched_names.get(j["schedule_id"], "(deleted)")
+        elif username.startswith("scheduler:"):
+            j["schedule_name"] = "(deleted)"
+        else:
+            j["schedule_name"] = None
+
+        if j.get("webhook_id"):
+            j["webhook_name"] = wh_names.get(j["webhook_id"], "(deleted)")
+        elif username.startswith("webhook:"):
+            j["webhook_name"] = "(deleted)"
+        else:
+            j["webhook_name"] = None
 
 
 def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
@@ -42,6 +103,7 @@ def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
             "parent_job_id": j.parent_job_id,
             "object_id": j.object_id,
             "type_slug": j.type_slug,
+            "webhook_id": j.webhook_id,
         }
         if can_view_all or (can_view_own and j.user_id == user.id):
             jobs[j.id] = job_dict
@@ -53,6 +115,7 @@ def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
             jobs[jid] = job_dict
 
     sorted_jobs = sorted(jobs.values(), key=lambda j: j.get("started_at", ""), reverse=True)
+    _resolve_provenance_batch(sorted_jobs, session)
     return sorted_jobs
 
 
@@ -86,14 +149,16 @@ async def get_job(job_id: str, request: Request, user: User = Depends(get_curren
         if job_id in runner.jobs:
             job = runner.jobs[job_id]
             if can_view_all or (can_view_own and job.user_id == user.id):
-                return job.model_dump()
+                job_dict = job.model_dump()
+                _resolve_provenance(job_dict, session)
+                return job_dict
             raise HTTPException(status_code=403, detail="Permission denied")
 
         # Check persisted
         db_job = session.query(JobRecord).filter_by(id=job_id).first()
         if db_job:
             if can_view_all or (can_view_own and db_job.user_id == user.id):
-                return {
+                job_dict = {
                     "id": db_job.id,
                     "service": db_job.service,
                     "action": db_job.action,
@@ -110,7 +175,10 @@ async def get_job(job_id: str, request: Request, user: User = Depends(get_curren
                     "parent_job_id": db_job.parent_job_id,
                     "object_id": db_job.object_id,
                     "type_slug": db_job.type_slug,
+                    "webhook_id": db_job.webhook_id,
                 }
+                _resolve_provenance(job_dict, session)
+                return job_dict
             raise HTTPException(status_code=403, detail="Permission denied")
 
         raise HTTPException(status_code=404, detail="Job not found")

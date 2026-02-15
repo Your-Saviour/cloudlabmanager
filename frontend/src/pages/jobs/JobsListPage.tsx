@@ -46,19 +46,34 @@ export default function JobsListPage() {
         accessorKey: 'action',
         header: 'Action',
         cell: ({ row }) => {
-          const action = row.original.action
-          const isBulk = action.startsWith('bulk_')
+          const job = row.original
+          const isBulk = job.action.startsWith('bulk_')
           return (
             <div className="flex items-center gap-2">
-              <span>{action}</span>
+              <span>{job.action}</span>
               {isBulk && (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                   bulk
                 </Badge>
               )}
-              {row.original.deployment_id && (
+              {job.deployment_id && (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
-                  {row.original.deployment_id}
+                  {job.deployment_id}
+                </Badge>
+              )}
+              {(job.schedule_id || job.schedule_name) && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  schedule
+                </Badge>
+              )}
+              {(job.webhook_id || job.webhook_name) && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  webhook
+                </Badge>
+              )}
+              {job.parent_job_id && !job.schedule_id && !job.webhook_id && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  rerun
                 </Badge>
               )}
             </div>

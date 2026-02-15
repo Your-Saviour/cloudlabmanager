@@ -259,7 +259,11 @@ A directory in `cloudlab/services/` is considered a deployable service if it con
   "inputs": {},
   "parent_job_id": null,
   "object_id": 5,
-  "type_slug": "server"
+  "type_slug": "server",
+  "schedule_id": null,
+  "webhook_id": null,
+  "schedule_name": null,
+  "webhook_name": null
 }
 ```
 
@@ -269,6 +273,10 @@ Job statuses: `running`, `completed`, `failed`
 - `parent_job_id` — ID of the parent job. Set when created via rerun or as a child of a bulk operation. `null` for standalone jobs. Filter child jobs with `GET /api/jobs?parent_job_id={id}`.
 - `object_id` — ID of the inventory object this job targeted. `null` for jobs not associated with an inventory object. Filter jobs for an object with `GET /api/jobs?object_id={id}`.
 - `type_slug` — Inventory type slug (e.g., `server`, `service`) of the targeted object. `null` when no inventory object is associated.
+- `schedule_id` — ID of the schedule that triggered this job. `null` for non-scheduled jobs.
+- `webhook_id` — ID of the webhook that triggered this job. `null` for non-webhook jobs.
+- `schedule_name` — Resolved name of the triggering schedule. `null` if not schedule-triggered. Shows `"(deleted)"` if the schedule has been removed since the job ran.
+- `webhook_name` — Resolved name of the triggering webhook. `null` if not webhook-triggered. Shows `"(deleted)"` if the webhook has been removed since the job ran.
 
 ### POST `/api/jobs/{id}/rerun`
 

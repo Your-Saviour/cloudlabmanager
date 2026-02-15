@@ -92,15 +92,56 @@ export default function JobDetailPage() {
               {job.finished_at && ` | Finished ${formatDate(job.finished_at)}`}
             </p>
           )}
-          {job?.parent_job_id && (
+          {job && (
             <p className="text-sm text-muted-foreground">
-              Rerun of{' '}
-              <button
-                className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm font-mono"
-                onClick={() => navigate(`/jobs/${job.parent_job_id}`)}
-              >
-                {job.parent_job_id}
-              </button>
+              {job.schedule_name ? (
+                <>
+                  Triggered by schedule{' '}
+                  {job.schedule_name === '(deleted)' ? (
+                    <span className="italic">deleted schedule</span>
+                  ) : job.schedule_id ? (
+                    <button
+                      className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+                      onClick={() => navigate('/schedules')}
+                      aria-label={`View schedule ${job.schedule_name}`}
+                    >
+                      {job.schedule_name}
+                    </button>
+                  ) : (
+                    <span className="italic">deleted schedule</span>
+                  )}
+                </>
+              ) : job.webhook_name ? (
+                <>
+                  Triggered by webhook{' '}
+                  {job.webhook_name === '(deleted)' ? (
+                    <span className="italic">deleted webhook</span>
+                  ) : job.webhook_id ? (
+                    <button
+                      className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+                      onClick={() => navigate('/webhooks')}
+                      aria-label={`View webhook ${job.webhook_name}`}
+                    >
+                      {job.webhook_name}
+                    </button>
+                  ) : (
+                    <span className="italic">deleted webhook</span>
+                  )}
+                </>
+              ) : job.parent_job_id ? (
+                <>
+                  Rerun of{' '}
+                  <button
+                    className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm font-mono"
+                    onClick={() => navigate(`/jobs/${job.parent_job_id}`)}
+                    aria-label={`View parent job ${job.parent_job_id}`}
+                  >
+                    {job.parent_job_id}
+                  </button>
+                </>
+              ) : (
+                <>Triggered manually</>
+              )}
             </p>
           )}
         </div>

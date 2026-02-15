@@ -93,6 +93,7 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - List of all jobs sorted by most recent
 - Each entry shows service name, action, and status badge
 - Bulk parent jobs display a **bulk** badge next to the action name
+- **Provenance badges** — small outline badges in the Action column indicate how the job was triggered: `schedule` for scheduled jobs, `webhook` for webhook-triggered jobs, `rerun` for rerun jobs. Manual jobs have no badge. Badges use the same styling as existing bulk/deployment badges.
 - Click a job to view its detail page
 
 ### Job Detail
@@ -100,7 +101,11 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Auto-scrolling, auto-updating (polls every 1s while job is running)
 - Status badge updates when job completes
 - **Rerun button** — appears for completed or failed jobs (hidden while running). Clicking it creates a new job with the same inputs and navigates to the new job's detail page. Requires `jobs.rerun` permission (enforced server-side; unauthorized users see an error toast).
-- **Parent job link** — when a job was created via rerun, displays "Rerun of {parent_job_id}" as a clickable link that navigates to the original job
+- **Provenance section** — always visible, shows how the job was triggered:
+  - **Schedule-triggered**: "Triggered by schedule {name}" with clickable link to `/schedules` (or "deleted schedule" in italic if the schedule no longer exists)
+  - **Webhook-triggered**: "Triggered by webhook {name}" with clickable link to `/webhooks` (or "deleted webhook" in italic if the webhook no longer exists)
+  - **Rerun**: "Rerun of {job_id}" as a clickable link to the parent job
+  - **Manual**: "Triggered manually" as fallback when no automation source is set
 - **Child Jobs panel** — for bulk parent jobs, displays a "Child Jobs" card below the output showing each child job's status badge, service/action name, and a "View" link. Auto-refreshes every 3 seconds while the parent job is running.
 
 ### User Management
