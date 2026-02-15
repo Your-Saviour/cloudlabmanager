@@ -24,7 +24,7 @@ On first boot, create an admin account and enter the Ansible vault password. The
 - **Inventory System** — type-driven infrastructure tracking with tags, ACLs, and sync adapters
 - **WebSocket SSH** — browser-based SSH terminals to managed servers
 - **Audit Logging** — full trail of all user actions with timestamps and IP addresses
-- **Email Notifications** — invitation and password reset emails via Sendamatic
+- **Email Notifications** — invitation, password reset, and alert emails via SMTP or Sendamatic (auto-selects transport based on configuration)
 - **Config & File Management** — edit service configs and manage input/output files from the UI
 - **Bulk Operations** — multi-select services or inventory items for batch stop, deploy, delete, tag, and custom actions
 - **Persistent Storage** — deployment outputs survive container rebuilds
@@ -40,6 +40,13 @@ On first boot, create an admin account and enter the Ansible vault password. The
 | `SENDAMATIC_API_KEY` | No | Sendamatic email API key |
 | `SENDAMATIC_SENDER_EMAIL` | No | Sender email address |
 | `SENDAMATIC_SENDER_NAME` | No | Sender display name (default: "CloudLab Manager") |
+| `SMTP_HOST` | No | SMTP server hostname (enables SMTP transport when set) |
+| `SMTP_PORT` | No | SMTP server port (default: 587) |
+| `SMTP_USERNAME` | No | SMTP authentication username |
+| `SMTP_PASSWORD` | No | SMTP authentication password |
+| `SMTP_USE_TLS` | No | Enable STARTTLS (default: true) |
+| `SMTP_SENDER_EMAIL` | No | SMTP sender email (falls back to Sendamatic sender) |
+| `SMTP_SENDER_NAME` | No | SMTP sender display name (default: "CloudLab Manager") |
 | `ALLOWED_ORIGINS` | No | CORS allowed origins (default: `*`) |
 
 ## Password Reset

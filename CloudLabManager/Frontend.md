@@ -130,6 +130,14 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Supports `?service=<name>` query parameter to filter by service (shows removable filter badge)
 - Requires `schedules.*` permissions
 
+### Notifications
+- Tabbed settings page with **Notification Rules**, **Channels**, and **Email** tabs
+- **Email tab** — shows the active email transport (SMTP or Sendamatic) with a code badge, configuration status badge, and SMTP connection details (host, port, TLS) when applicable
+- "Send Test Email" button sends a test email to the current user's address (requires `notifications.channels.manage` permission and a configured transport)
+- Guidance messages when no transport is configured, with info about environment variable configuration
+- Hooks: `useEmailTransportStatus()`, `useTestEmail()` in `hooks/useNotificationRules.ts`
+- Component: `EmailTab` in `pages/notifications/NotificationRulesPage.tsx`
+
 ### Health
 - Dedicated `/health` page showing all monitored services
 - Summary badges: healthy, unhealthy, degraded, unknown counts

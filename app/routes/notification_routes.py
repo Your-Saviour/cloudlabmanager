@@ -395,6 +395,84 @@ async def test_channel(
 
 
 # ------------------------------------------------------------------
+# Email transport status & test
+# ------------------------------------------------------------------
+
+@router.get("/email/status")
+async def get_email_status(
+    user: User = Depends(require_permission("notifications.channels.manage")),
+):
+    """Get current email transport configuration status."""
+    from email_service import get_email_transport_status
+    return get_email_transport_status()
+
+
+@router.post("/email/test")
+async def test_email(
+    user: User = Depends(require_permission("notifications.channels.manage")),
+    session: Session = Depends(get_db_session),
+):
+    """Send a test email to the current user's email address."""
+    if not user.email:
+        raise HTTPException(400, "Your account has no email address configured")
+
+    from html import escape as html_escape
+    from email_service import _send_email, get_email_transport_status
+
+    status = get_email_transport_status()
+    if not status["configured"]:
+        raise HTTPException(
+            400,
+            f"Email transport ({status['transport']}) is not configured. "
+            "Set the required environment variables and restart the container.",
+        )
+
+    safe_email = html_escape(user.email)
+    safe_transport = html_escape(status['transport'].upper())
+    html_body = f"""
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0a0c10; color: #e8edf5; padding: 2rem; border: 1px solid #1e2738; border-radius: 8px;">
+        <div style="border-bottom: 2px solid #3b82f6; padding-bottom: 1rem; margin-bottom: 1.5rem;">
+            <h1 style="margin: 0; font-size: 1.2rem; color: #3b82f6; letter-spacing: 0.1em;">CLOUDLAB TEST EMAIL</h1>
+        </div>
+        <h2 style="margin: 0 0 0.5rem; font-size: 1.1rem; color: #e8edf5;">Email Transport Working</h2>
+        <p style="color: #8899b0; font-size: 0.9rem; line-height: 1.6;">
+            This is a test email from CloudLab Manager sent via
+            <strong>{safe_transport}</strong> transport.
+            If you're reading this, email delivery is configured correctly.
+        </p>
+        <p style="color: #4a5a70; font-size: 0.75rem; margin-top: 1.5rem;">
+            Sent to: {safe_email}
+        </p>
+    </div>
+    """
+
+    text_body = (
+        f"CloudLab Manager - Email Transport Test\n\n"
+        f"This is a test email sent via {status['transport'].upper()} transport.\n"
+        f"If you're reading this, email delivery is configured correctly.\n\n"
+        f"Sent to: {user.email}"
+    )
+
+    try:
+        success = await _send_email(
+            user.email, "CloudLab Manager — Test Email", html_body, text_body
+        )
+    except Exception:
+        logger.exception("Failed to send test email to %s", user.email)
+        raise HTTPException(500, "Failed to send test email — check container logs for details")
+
+    if not success:
+        raise HTTPException(500, "Email send returned failure — check container logs for details")
+
+    log_action(
+        session=session, user_id=user.id, username=user.username,
+        action="email.test", resource="email_transport",
+    )
+
+    return {"ok": True, "message": f"Test email sent to {user.email}"}
+
+
+# ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
 

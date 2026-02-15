@@ -14,6 +14,8 @@ import {
   useUpdateChannel,
   useDeleteChannel,
   useTestChannel,
+  useEmailTransportStatus,
+  useTestEmail,
 } from '@/hooks/useNotificationRules'
 import type { NotificationRule, NotificationChannel } from '@/hooks/useNotificationRules'
 import type { Role } from '@/types'
@@ -635,6 +637,82 @@ function ChannelsTab() {
   )
 }
 
+// ─── Email Tab ──────────────────────────────────────────────────────────────
+
+function EmailTab() {
+  const canManage = useHasPermission('notifications.channels.manage')
+  const { data: status, isLoading } = useEmailTransportStatus()
+  const testMutation = useTestEmail()
+
+  function handleTest() {
+    testMutation.mutate(undefined, {
+      onSuccess: (res) => toast.success(res.data?.message || 'Test email sent'),
+      onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to send test email'),
+    })
+  }
+
+  if (isLoading) {
+    return <div className="space-y-3"><Skeleton className="h-32 w-full" /></div>
+  }
+
+  const transport = status?.transport ?? 'unknown'
+  const configured = status?.configured ?? false
+
+  return (
+    <div className="space-y-4">
+      <div className="border rounded-lg p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <h3 className="text-sm font-medium">Email Transport</h3>
+            <p className="text-sm text-muted-foreground">
+              Active transport: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{transport}</code>
+            </p>
+            {transport === 'smtp' && status?.host && (
+              <p className="text-sm text-muted-foreground">
+                Server: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{status.host}:{status.port}</code>
+                {status.tls && <span className="ml-2 text-xs text-green-500">TLS</span>}
+              </p>
+            )}
+          </div>
+          <Badge variant={configured ? 'success' : 'secondary'}>
+            {configured ? 'Configured' : 'Not Configured'}
+          </Badge>
+        </div>
+
+        {canManage && configured && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTest}
+            disabled={testMutation.isPending}
+          >
+            <Send className="mr-2 h-3.5 w-3.5" />
+            {testMutation.isPending ? 'Sending...' : 'Send Test Email'}
+          </Button>
+        )}
+
+        {!configured && (
+          <p className="text-sm text-muted-foreground">
+            {transport === 'smtp'
+              ? 'SMTP host is set but sender email is missing. Set SMTP_SENDER_EMAIL and restart.'
+              : 'No email transport configured. Set SMTP_HOST or SENDAMATIC_API_KEY environment variables and restart the container.'}
+          </p>
+        )}
+      </div>
+
+      <div className="text-xs text-muted-foreground space-y-1 px-1">
+        <p>
+          Email transport is configured via environment variables.
+          {transport === 'smtp'
+            ? ' When SMTP_HOST is set, all emails are sent via SMTP.'
+            : ' Set SMTP_HOST to switch from Sendamatic to SMTP.'}
+        </p>
+        <p>Changes require a container restart to take effect.</p>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function NotificationRulesPage() {
@@ -645,12 +723,16 @@ export default function NotificationRulesPage() {
         <TabsList>
           <TabsTrigger value="rules">Notification Rules</TabsTrigger>
           <TabsTrigger value="channels">Channels</TabsTrigger>
+          <TabsTrigger value="email">Email</TabsTrigger>
         </TabsList>
         <TabsContent value="rules">
           <RulesTab />
         </TabsContent>
         <TabsContent value="channels">
           <ChannelsTab />
+        </TabsContent>
+        <TabsContent value="email">
+          <EmailTab />
         </TabsContent>
       </Tabs>
     </div>

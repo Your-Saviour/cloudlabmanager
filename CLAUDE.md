@@ -57,7 +57,7 @@ cloudlabmanager/
 │   ├── scheduler.py           # Background cron scheduler for recurring jobs
 │   ├── health_checker.py      # Health check config loader + background poller
 │   ├── audit.py               # Audit logging
-│   ├── email_service.py       # Sendamatic email integration
+│   ├── email_service.py       # Email integration (SMTP + Sendamatic)
 │   ├── notification_service.py# Notification dispatch engine
 │   ├── models.py              # Pydantic request/response models
 │   ├── db_session.py          # DB session dependency
@@ -122,6 +122,13 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 | `SENDAMATIC_API_KEY` | No | Email API key |
 | `SENDAMATIC_SENDER_EMAIL` | No | Sender email address |
 | `SENDAMATIC_SENDER_NAME` | No | Sender display name |
+| `SMTP_HOST` | No | SMTP server hostname (enables SMTP transport when set) |
+| `SMTP_PORT` | No | SMTP server port (default: 587) |
+| `SMTP_USERNAME` | No | SMTP authentication username |
+| `SMTP_PASSWORD` | No | SMTP authentication password |
+| `SMTP_USE_TLS` | No | Enable STARTTLS (default: true) |
+| `SMTP_SENDER_EMAIL` | No | SMTP sender email (falls back to `SENDAMATIC_SENDER_EMAIL`) |
+| `SMTP_SENDER_NAME` | No | SMTP sender name (default: "CloudLab Manager") |
 | `ALLOWED_ORIGINS` | No | CORS origins (default: `*`) |
 
 ## Database

@@ -482,6 +482,115 @@ class TestNotificationChannels:
 
 
 # ---------------------------------------------------------------------------
+# Email transport status & test
+# ---------------------------------------------------------------------------
+
+class TestEmailStatus:
+    async def test_requires_auth(self, client):
+        resp = await client.get("/api/notifications/email/status")
+        assert resp.status_code in (401, 403)
+
+    async def test_requires_permission(self, client, regular_auth_headers):
+        resp = await client.get("/api/notifications/email/status", headers=regular_auth_headers)
+        assert resp.status_code == 403
+
+    async def test_returns_smtp_status(self, client, auth_headers, monkeypatch):
+        import email_service
+        monkeypatch.setattr(email_service, "SMTP_HOST", "smtp.example.com")
+        monkeypatch.setattr(email_service, "SMTP_PORT", 587)
+        monkeypatch.setattr(email_service, "SMTP_USE_TLS", True)
+        monkeypatch.setattr(email_service, "SMTP_SENDER_EMAIL", "sender@example.com")
+
+        resp = await client.get("/api/notifications/email/status", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["transport"] == "smtp"
+        assert data["configured"] is True
+        assert data["host"] == "smtp.example.com"
+        assert data["port"] == 587
+        assert data["tls"] is True
+
+    async def test_returns_sendamatic_status(self, client, auth_headers, monkeypatch):
+        import email_service
+        monkeypatch.setattr(email_service, "SMTP_HOST", "")
+        monkeypatch.setattr(email_service, "SENDAMATIC_API_KEY", "test-key")
+        monkeypatch.setattr(email_service, "SENDAMATIC_SENDER_EMAIL", "sender@example.com")
+
+        resp = await client.get("/api/notifications/email/status", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["transport"] == "sendamatic"
+        assert data["configured"] is True
+
+
+class TestEmailTest:
+    async def test_requires_auth(self, client):
+        resp = await client.post("/api/notifications/email/test")
+        assert resp.status_code in (401, 403)
+
+    async def test_requires_permission(self, client, regular_auth_headers):
+        resp = await client.post("/api/notifications/email/test", headers=regular_auth_headers)
+        assert resp.status_code == 403
+
+    async def test_sends_test_email_successfully(self, client, auth_headers, monkeypatch):
+        import email_service
+        monkeypatch.setattr(email_service, "SMTP_HOST", "smtp.example.com")
+        monkeypatch.setattr(email_service, "SMTP_SENDER_EMAIL", "sender@example.com")
+
+        with patch("email_service._send_email", new_callable=AsyncMock, return_value=True):
+            resp = await client.post("/api/notifications/email/test", headers=auth_headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert "admin@test.com" in data["message"]
+
+    async def test_fails_when_user_has_no_email(self, client, auth_headers, db_session, admin_user):
+        admin_user.email = None
+        db_session.commit()
+
+        resp = await client.post("/api/notifications/email/test", headers=auth_headers)
+        assert resp.status_code == 400
+        assert "no email address" in resp.json()["detail"].lower()
+
+        # Restore email for other tests
+        admin_user.email = "admin@test.com"
+        db_session.commit()
+
+    async def test_fails_when_transport_not_configured(self, client, auth_headers, monkeypatch):
+        import email_service
+        monkeypatch.setattr(email_service, "SMTP_HOST", "")
+        monkeypatch.setattr(email_service, "SENDAMATIC_API_KEY", "")
+        monkeypatch.setattr(email_service, "SENDAMATIC_SENDER_EMAIL", "")
+
+        resp = await client.post("/api/notifications/email/test", headers=auth_headers)
+        assert resp.status_code == 400
+        assert "not configured" in resp.json()["detail"].lower()
+
+    async def test_returns_500_on_send_failure(self, client, auth_headers, monkeypatch):
+        import email_service
+        monkeypatch.setattr(email_service, "SMTP_HOST", "smtp.example.com")
+        monkeypatch.setattr(email_service, "SMTP_SENDER_EMAIL", "sender@example.com")
+
+        with patch("email_service._send_email", new_callable=AsyncMock, return_value=False):
+            resp = await client.post("/api/notifications/email/test", headers=auth_headers)
+
+        assert resp.status_code == 500
+        assert "failure" in resp.json()["detail"].lower()
+
+    async def test_returns_500_on_send_exception(self, client, auth_headers, monkeypatch):
+        import email_service
+        monkeypatch.setattr(email_service, "SMTP_HOST", "smtp.example.com")
+        monkeypatch.setattr(email_service, "SMTP_SENDER_EMAIL", "sender@example.com")
+
+        with patch("email_service._send_email", new_callable=AsyncMock, side_effect=Exception("SMTP timeout")):
+            resp = await client.post("/api/notifications/email/test", headers=auth_headers)
+
+        assert resp.status_code == 500
+        assert "check container logs" in resp.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
 # Timestamp UTC offset regression
 # ---------------------------------------------------------------------------
 

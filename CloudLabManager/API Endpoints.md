@@ -798,6 +798,33 @@ Returns available event types:
 
 Sends a test message to the configured channel. Returns `200` on success or an error if the webhook is unreachable.
 
+### Email Transport (Admin)
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/notifications/email/status` | `notifications.channels.manage` | Get active email transport type and configuration status |
+| POST | `/api/notifications/email/test` | `notifications.channels.manage` | Send a test email to the current user's address |
+
+#### GET `/api/notifications/email/status`
+
+Returns the active email transport and whether it's properly configured. Never exposes credentials.
+
+```json
+{
+  "transport": "smtp",
+  "configured": true,
+  "host": "smtp.example.com",
+  "port": 587,
+  "tls": true
+}
+```
+
+When Sendamatic is the active transport, `host`, `port`, and `tls` are omitted.
+
+#### POST `/api/notifications/email/test`
+
+Sends a styled HTML test email to the authenticated user's email address. Returns 400 if the user has no email configured or if no email transport is configured. Returns 500 with a helpful message if the send fails. Logged as `email.test` in the audit log.
+
 ## User Preferences
 
 | Method | Endpoint | Auth | Description |

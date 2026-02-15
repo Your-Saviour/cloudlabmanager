@@ -12,6 +12,7 @@ asyncssh
 websockets
 sqlalchemy
 httpx
+aiosmtplib
 slowapi
 croniter>=2.0.0
 jsonpath-ng

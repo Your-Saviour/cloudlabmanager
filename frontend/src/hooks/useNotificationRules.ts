@@ -152,3 +152,28 @@ export function useTestChannel() {
     mutationFn: (id: number) => api.post(`/api/notifications/channels/${id}/test`),
   })
 }
+
+// Email transport
+export interface EmailTransportStatus {
+  transport: 'smtp' | 'sendamatic'
+  configured: boolean
+  host?: string
+  port?: number
+  tls?: boolean
+}
+
+export function useEmailTransportStatus() {
+  return useQuery({
+    queryKey: ['email-transport-status'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/notifications/email/status')
+      return data as EmailTransportStatus
+    },
+  })
+}
+
+export function useTestEmail() {
+  return useMutation({
+    mutationFn: () => api.post('/api/notifications/email/test'),
+  })
+}

@@ -1,10 +1,24 @@
 import os
 import httpx
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 SENDAMATIC_API_URL = "https://send.api.sendamatic.net/send"
 SENDAMATIC_API_KEY = os.environ.get("SENDAMATIC_API_KEY", "")
 SENDAMATIC_SENDER_EMAIL = os.environ.get("SENDAMATIC_SENDER_EMAIL", "")
 SENDAMATIC_SENDER_NAME = os.environ.get("SENDAMATIC_SENDER_NAME", "CloudLab Manager")
+
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+try:
+    SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+except (ValueError, TypeError):
+    SMTP_PORT = 587
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
+SMTP_SENDER_EMAIL = os.environ.get("SMTP_SENDER_EMAIL", "")
+SMTP_SENDER_NAME = os.environ.get("SMTP_SENDER_NAME", "CloudLab Manager")
 
 
 def _get_sender():
@@ -13,8 +27,49 @@ def _get_sender():
     return SENDAMATIC_SENDER_EMAIL
 
 
+def _get_smtp_sender():
+    name = SMTP_SENDER_NAME or SENDAMATIC_SENDER_NAME
+    email = SMTP_SENDER_EMAIL or SENDAMATIC_SENDER_EMAIL
+    if name:
+        return f"{name} <{email}>"
+    return email
+
+
+async def _send_email_smtp(to_email: str, subject: str, html_body: str, text_body: str):
+    """Send email via SMTP with STARTTLS."""
+    sender_email = SMTP_SENDER_EMAIL or SENDAMATIC_SENDER_EMAIL
+    if not sender_email:
+        print(f"WARN: SMTP sender email not configured. Would send to {to_email}: {subject}")
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = _get_smtp_sender()
+    msg["To"] = to_email
+    msg.attach(MIMEText(text_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        smtp = aiosmtplib.SMTP(hostname=SMTP_HOST, port=SMTP_PORT, timeout=15.0)
+        await smtp.connect()
+        if SMTP_USE_TLS:
+            await smtp.starttls()
+        if SMTP_USERNAME and SMTP_PASSWORD:
+            await smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+        await smtp.send_message(msg)
+        await smtp.quit()
+        print(f"Email sent via SMTP to {to_email}: {subject}")
+        return True
+    except Exception as e:
+        print(f"SMTP send failed to {to_email}: {e}")
+        return False
+
+
 async def _send_email(to_email: str, subject: str, html_body: str, text_body: str):
-    """Send email via Sendamatic API."""
+    """Send email via SMTP if configured, otherwise via Sendamatic API."""
+    if SMTP_HOST:
+        return await _send_email_smtp(to_email, subject, html_body, text_body)
+
     if not SENDAMATIC_API_KEY or not SENDAMATIC_SENDER_EMAIL:
         print(f"WARN: Email not configured. Would send to {to_email}: {subject}")
         return False
@@ -97,3 +152,18 @@ Reset your password: {reset_url}
 This link expires in 1 hour. If you didn't request this, ignore this email."""
 
     return await _send_email(to_email, "CloudLab Manager — Password Reset", html_body, text_body)
+
+
+def get_email_transport_status():
+    """Return the active email transport and whether it is configured."""
+    if SMTP_HOST:
+        sender = SMTP_SENDER_EMAIL or SENDAMATIC_SENDER_EMAIL
+        return {
+            "transport": "smtp",
+            "configured": bool(sender),
+            "host": SMTP_HOST,
+            "port": SMTP_PORT,
+            "tls": SMTP_USE_TLS,
+        }
+    configured = bool(SENDAMATIC_API_KEY and SENDAMATIC_SENDER_EMAIL)
+    return {"transport": "sendamatic", "configured": configured}
