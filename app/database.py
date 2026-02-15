@@ -216,6 +216,7 @@ class JobRecord(Base):
     schedule_id = Column(Integer, ForeignKey("scheduled_jobs.id", ondelete="SET NULL"), nullable=True)
     inputs = Column(Text, nullable=True)  # JSON dict of original inputs
     parent_job_id = Column(String(20), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
+    webhook_id = Column(Integer, ForeignKey("webhook_endpoints.id", ondelete="SET NULL"), nullable=True)
 
 
 class ScheduledJob(Base):
@@ -255,6 +256,43 @@ class ScheduledJob(Base):
 
     # Overlap policy
     skip_if_running = Column(Boolean, default=True, nullable=False)
+
+    # Ownership & audit
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Relationships
+    creator = relationship("User", foreign_keys=[created_by])
+    inventory_object = relationship("InventoryObject", foreign_keys=[object_id])
+
+
+class WebhookEndpoint(Base):
+    __tablename__ = "webhook_endpoints"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    description = Column(String(500), nullable=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+
+    # Target action (same 3 types as ScheduledJob)
+    job_type = Column(String(30), nullable=False)  # "service_script", "inventory_action", "system_task"
+    service_name = Column(String(100), nullable=True)
+    script_name = Column(String(100), nullable=True)
+    type_slug = Column(String(50), nullable=True)
+    action_name = Column(String(100), nullable=True)
+    object_id = Column(Integer, ForeignKey("inventory_objects.id", ondelete="SET NULL"), nullable=True)
+    system_task = Column(String(50), nullable=True)
+
+    # Payload mapping: JSON dict of {"input_name": "$.jsonpath.expression"}
+    payload_mapping = Column(Text, nullable=True)
+
+    # State
+    is_enabled = Column(Boolean, default=True, nullable=False)
+    last_trigger_at = Column(DateTime(timezone=True), nullable=True)
+    last_job_id = Column(String(20), nullable=True)
+    last_status = Column(String(20), nullable=True)
+    trigger_count = Column(Integer, default=0, nullable=False)
 
     # Ownership & audit
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -452,6 +490,7 @@ def create_tables():
         "ALTER TABLE drift_reports ADD COLUMN previous_status VARCHAR(20)",
         "ALTER TABLE jobs ADD COLUMN inputs TEXT",
         "ALTER TABLE jobs ADD COLUMN parent_job_id VARCHAR(20) REFERENCES jobs(id) ON DELETE SET NULL",
+        "ALTER TABLE jobs ADD COLUMN webhook_id INTEGER REFERENCES webhook_endpoints(id) ON DELETE SET NULL",
     ]
     with engine.connect() as conn:
         for sql in migrations:

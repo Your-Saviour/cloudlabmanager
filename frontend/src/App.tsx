@@ -34,6 +34,7 @@ import HealthPage from '@/pages/health/HealthPage'
 import DriftPage from '@/pages/drift/DriftPage'
 import NotificationRulesPage from '@/pages/notifications/NotificationRulesPage'
 import PortalPage from '@/pages/portal/PortalPage'
+import WebhooksPage from '@/pages/webhooks/WebhooksPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -101,6 +102,7 @@ function AppRoutes() {
         <Route path="/jobs" element={<JobsListPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailPage />} />
         <Route path="/schedules" element={<SchedulesPage />} />
+        <Route path="/webhooks" element={<WebhooksPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/services/:name/config" element={<ServiceConfigPage />} />
         <Route path="/services/:name/files" element={<ServiceFilesPage />} />

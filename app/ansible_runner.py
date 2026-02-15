@@ -1126,6 +1126,8 @@ class AnsibleRunner:
                     existing.type_slug = type_slug
                 if job.schedule_id is not None:
                     existing.schedule_id = job.schedule_id
+                if job.webhook_id is not None:
+                    existing.webhook_id = job.webhook_id
             else:
                 record = JobRecord(
                     id=job.id,
@@ -1142,6 +1144,7 @@ class AnsibleRunner:
                     object_id=object_id,
                     type_slug=type_slug,
                     schedule_id=job.schedule_id,
+                    webhook_id=job.webhook_id,
                     inputs=json.dumps(job.inputs) if job.inputs else None,
                     parent_job_id=job.parent_job_id,
                 )

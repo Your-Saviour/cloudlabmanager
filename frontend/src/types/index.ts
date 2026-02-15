@@ -251,3 +251,4 @@ export interface CostSummary {
 }
 
 export type { ScheduledJob, CronPreview } from './schedule'
+export type { WebhookEndpoint } from './webhook'

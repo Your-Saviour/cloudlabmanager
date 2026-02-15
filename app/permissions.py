@@ -49,6 +49,11 @@ STATIC_PERMISSION_DEFS = [
     ("schedules.create", "schedules", "Create Schedules", "Create new scheduled jobs"),
     ("schedules.edit", "schedules", "Edit Schedules", "Edit existing scheduled jobs"),
     ("schedules.delete", "schedules", "Delete Schedules", "Delete scheduled jobs"),
+    # webhooks
+    ("webhooks.view", "webhooks", "View Webhooks", "View webhook endpoint definitions"),
+    ("webhooks.create", "webhooks", "Create Webhooks", "Create new webhook endpoints"),
+    ("webhooks.edit", "webhooks", "Edit Webhooks", "Edit existing webhook endpoints"),
+    ("webhooks.delete", "webhooks", "Delete Webhooks", "Delete webhook endpoints"),
     # inventory management
     ("inventory.tags.manage", "inventory", "Manage Tags", "Create, edit, and delete inventory tags"),
     ("inventory.acl.manage", "inventory", "Manage ACLs", "Set per-object and tag-level permissions"),

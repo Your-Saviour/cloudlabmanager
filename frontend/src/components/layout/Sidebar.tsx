@@ -16,6 +16,7 @@ import {
   GitCompare,
   Bell,
   Compass,
+  Webhook,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
@@ -50,6 +51,7 @@ export function Sidebar() {
     { label: 'Costs', href: '/costs', icon: <DollarSign className="h-4 w-4" />, permission: 'costs.view' },
     { label: 'Health', href: '/health', icon: <HeartPulse className="h-4 w-4" />, permission: 'health.view' },
     { label: 'Drift Detection', href: '/drift', icon: <GitCompare className="h-4 w-4" />, permission: 'drift.view' },
+    { label: 'Webhooks', href: '/webhooks', icon: <Webhook className="h-4 w-4" />, permission: 'webhooks.view' },
   ]
 
   const adminNav: NavItem[] = [
