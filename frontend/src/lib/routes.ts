@@ -16,6 +16,8 @@ import {
   User,
   OctagonX,
   UserPlus,
+  Rocket,
+  PlayCircle,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -46,6 +48,8 @@ export const routeIcons: Record<string, LucideIcon> = {
   User,
   OctagonX,
   UserPlus,
+  Rocket,
+  PlayCircle,
 }
 
 export const mainRoutes: RouteDefinition[] = [

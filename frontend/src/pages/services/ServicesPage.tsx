@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useServiceAction } from '@/hooks/useServiceAction'
 import {
   Play,
   Square,
@@ -24,6 +25,7 @@ import { usePreferencesStore } from '@/stores/preferencesStore'
 import { useHasPermission } from '@/lib/permissions'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { ScriptInputField } from '@/components/shared/ScriptInputField'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -43,7 +45,7 @@ import { DryRunPreview } from '@/components/services/DryRunPreview'
 import { ServiceCrossLinks } from '@/components/services/ServiceCrossLinks'
 import type { ServiceSummary } from '@/components/services/ServiceCrossLinks'
 import { BulkActionBar } from '@/components/shared/BulkActionBar'
-import type { InventoryObject, ServiceScript, ScriptInput } from '@/types'
+import type { InventoryObject, ServiceScript } from '@/types'
 
 export default function ServicesPage() {
   const navigate = useNavigate()
@@ -54,19 +56,20 @@ export default function ServicesPage() {
   const canConfig = useHasPermission('services.config.view')
   const canFiles = useHasPermission('services.files.view')
 
+  const {
+    triggerAction,
+    confirmDeploy,
+    submitScriptInputs,
+    dismissModals,
+    dryRunModal,
+    scriptModal,
+    scriptInputs,
+    setScriptInputs,
+    isPending,
+  } = useServiceAction()
+
   const [stopAllOpen, setStopAllOpen] = useState(false)
   const [expandedService, setExpandedService] = useState<string | null>(null)
-  const [scriptModal, setScriptModal] = useState<{
-    serviceName: string
-    objId: number
-    script: ServiceScript
-  } | null>(null)
-  const [scriptInputs, setScriptInputs] = useState<Record<string, any>>({})
-  const [dryRunModal, setDryRunModal] = useState<{
-    serviceName: string
-    objId: number
-    script: ServiceScript
-  } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkStopOpen, setBulkStopOpen] = useState(false)
   const [bulkDeployOpen, setBulkDeployOpen] = useState(false)
@@ -126,9 +129,9 @@ export default function ServicesPage() {
   const runningCount = serviceObjects.filter((o) => o.data.power_status === 'running').length
   const stoppedCount = serviceObjects.filter((o) => o.data.power_status !== 'running').length
 
-  const runActionMutation = useMutation({
-    mutationFn: ({ objId, actionName, body }: { objId: number; actionName: string; body?: any }) =>
-      api.post(`/api/inventory/service/${objId}/actions/${actionName}`, body || {}),
+  const stopServiceMutation = useMutation({
+    mutationFn: ({ objId }: { objId: number }) =>
+      api.post(`/api/inventory/service/${objId}/actions/stop`, {}),
     onSuccess: (res) => {
       if (res.data.job_id) {
         toast.success('Action started')
@@ -177,53 +180,6 @@ export default function ServicesPage() {
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Bulk deploy failed'),
   })
-
-  const handleRunScript = (serviceName: string, objId: number, script: ServiceScript) => {
-    if (script.name === 'deploy') {
-      // Show dry-run preview first
-      setDryRunModal({ serviceName, objId, script })
-    } else if (script.inputs && script.inputs.length > 0) {
-      // Show input modal
-      const defaults: Record<string, any> = {}
-      script.inputs.forEach((inp) => {
-        if (inp.type === 'list') {
-          defaults[inp.name] = inp.default ? [inp.default] : ['']
-        } else if (inp.type === 'ssh_key_select') {
-          defaults[inp.name] = []
-        } else {
-          if (inp.default) defaults[inp.name] = inp.default
-        }
-      })
-      setScriptInputs(defaults)
-      setScriptModal({ serviceName, objId, script })
-    } else {
-      // Run directly
-      runActionMutation.mutate({
-        objId,
-        actionName: 'run_script',
-        body: { script: script.name, inputs: {} },
-      })
-    }
-  }
-
-  const submitScriptModal = () => {
-    if (!scriptModal) return
-    // Process list inputs: filter empty strings
-    const processed: Record<string, any> = {}
-    for (const [key, val] of Object.entries(scriptInputs)) {
-      if (Array.isArray(val)) {
-        processed[key] = val.filter((v: string) => v.trim() !== '')
-      } else {
-        processed[key] = val
-      }
-    }
-    runActionMutation.mutate({
-      objId: scriptModal.objId,
-      actionName: 'run_script',
-      body: { script: scriptModal.script.name, inputs: processed },
-    })
-    setScriptModal(null)
-  }
 
   return (
     <div>
@@ -440,8 +396,8 @@ export default function ServicesPage() {
                     {canDeploy && scripts.length > 0 && (
                       <ScriptRunner
                         scripts={scripts}
-                        onRun={(script) => handleRunScript(name, obj.id, script)}
-                        disabled={runActionMutation.isPending}
+                        onRun={(script) => triggerAction(name, obj.id, script)}
+                        disabled={isPending}
                       />
                     )}
 
@@ -451,8 +407,8 @@ export default function ServicesPage() {
                         variant="outline"
                         size="sm"
                         className="border-destructive/40 text-destructive hover:bg-destructive/10"
-                        onClick={() => runActionMutation.mutate({ objId: obj.id, actionName: 'stop' })}
-                        disabled={runActionMutation.isPending}
+                        onClick={() => stopServiceMutation.mutate({ objId: obj.id })}
+                        disabled={stopServiceMutation.isPending}
                       >
                         <Square className="mr-1 h-3 w-3" /> Stop
                       </Button>
@@ -573,20 +529,13 @@ export default function ServicesPage() {
         <DryRunPreview
           serviceName={dryRunModal.serviceName}
           open={true}
-          onOpenChange={(open) => { if (!open) setDryRunModal(null) }}
-          onConfirm={() => {
-            runActionMutation.mutate({
-              objId: dryRunModal.objId,
-              actionName: 'run_script',
-              body: { script: dryRunModal.script.name, inputs: {} },
-            })
-            setDryRunModal(null)
-          }}
+          onOpenChange={(open) => { if (!open) dismissModals() }}
+          onConfirm={confirmDeploy}
         />
       )}
 
       {/* Script Input Modal */}
-      <Dialog open={!!scriptModal} onOpenChange={() => setScriptModal(null)}>
+      <Dialog open={!!scriptModal} onOpenChange={() => dismissModals()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -605,8 +554,8 @@ export default function ServicesPage() {
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setScriptModal(null)}>Cancel</Button>
-            <Button onClick={submitScriptModal}>Run</Button>
+            <Button variant="outline" onClick={() => dismissModals()}>Cancel</Button>
+            <Button onClick={submitScriptInputs} disabled={isPending}>Run</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -765,163 +714,3 @@ function ScriptRunner({
   )
 }
 
-function ScriptInputField({
-  input,
-  value,
-  onChange,
-  serviceName,
-}: {
-  input: ScriptInput
-  value: any
-  onChange: (val: any) => void
-  serviceName: string
-}) {
-  // For deployment_id / deployment_select type, load active deployments
-  const isDeploymentType = input.type === 'deployment_id' || input.type === 'deployment_select'
-  const { data: deployments = [] } = useQuery({
-    queryKey: ['active-deployments'],
-    queryFn: async () => {
-      const { data } = await api.get('/api/services/active-deployments')
-      return (data.deployments || []) as { name: string }[]
-    },
-    enabled: isDeploymentType,
-  })
-
-  // For ssh_key_select type, load SSH keys
-  const { data: sshKeys = [] } = useQuery({
-    queryKey: ['all-ssh-keys'],
-    queryFn: async () => {
-      const { data } = await api.get('/api/auth/ssh-keys')
-      return (data.keys || []) as { user_id: number; username: string; display_name: string; ssh_public_key: string; is_self: boolean }[]
-    },
-    enabled: input.type === 'ssh_key_select',
-  })
-
-  // ssh_key_select: multi-checkbox
-  if (input.type === 'ssh_key_select') {
-    const selectedKeys = (value as string[]) || []
-    return (
-      <div className="space-y-2">
-        <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
-        <div className="space-y-2 max-h-48 overflow-auto border rounded-md p-2">
-          {sshKeys.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No SSH keys available</p>
-          ) : (
-            sshKeys.map((key) => {
-              const keyId = String(key.user_id)
-              const isChecked = selectedKeys.includes(keyId)
-              return (
-                <label key={key.user_id} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <Checkbox
-                    checked={isChecked}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        onChange([...selectedKeys, keyId])
-                      } else {
-                        onChange(selectedKeys.filter((k: string) => k !== keyId))
-                      }
-                    }}
-                  />
-                  <span>{key.display_name || key.username}</span>
-                  <span className="text-muted-foreground text-xs">@{key.username}</span>
-                  {key.is_self && (
-                    <Badge variant="outline" className="text-[10px] px-1 py-0">you</Badge>
-                  )}
-                </label>
-              )
-            })
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // list: dynamic add/remove rows
-  if (input.type === 'list') {
-    const rows = (value as string[]) || ['']
-    return (
-      <div className="space-y-2">
-        <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
-        <div className="space-y-2">
-          {rows.map((row: string, idx: number) => (
-            <div key={idx} className="flex gap-2">
-              <Input
-                value={row}
-                onChange={(e) => {
-                  const updated = [...rows]
-                  updated[idx] = e.target.value
-                  onChange(updated)
-                }}
-                placeholder={input.default || ''}
-              />
-              {rows.length > 1 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 shrink-0"
-                  onClick={() => onChange(rows.filter((_: string, i: number) => i !== idx))}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
-            </div>
-          ))}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onChange([...rows, ''])}
-          >
-            <Plus className="mr-1 h-3 w-3" /> Add
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  // select with options
-  if (input.type === 'select' && input.options) {
-    return (
-      <div className="space-y-2">
-        <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
-        <Select value={value as string} onValueChange={onChange}>
-          <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
-          <SelectContent>
-            {input.options.map((opt) => (
-              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    )
-  }
-
-  // deployment_id / deployment_select
-  if (isDeploymentType) {
-    return (
-      <div className="space-y-2">
-        <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
-        <Select value={value as string} onValueChange={onChange}>
-          <SelectTrigger><SelectValue placeholder="Select deployment..." /></SelectTrigger>
-          <SelectContent>
-            {deployments.map((d: any) => (
-              <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    )
-  }
-
-  // Default: text input
-  return (
-    <div className="space-y-2">
-      <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
-      <Input
-        value={value as string}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={input.default || ''}
-        required={input.required}
-      />
-    </div>
-  )
-}

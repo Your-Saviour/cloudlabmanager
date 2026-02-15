@@ -13,7 +13,7 @@ export function formatRelativeTime(timestamp: number): string {
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { hasPermission } from '@/lib/permissions'
 import api from '@/lib/api'
-import type { InventoryObject } from '@/types'
+import type { InventoryObject, Service } from '@/types'
 
 export interface CommandAction {
   id: string
@@ -23,7 +23,12 @@ export interface CommandAction {
   keywords?: string[]
   href?: string
   permission?: string
-  category: 'system' | 'service' | 'inventory' | 'admin'
+  category: 'system' | 'service' | 'inventory' | 'admin' | 'deploy' | 'run'
+  // Fields for executable commands
+  actionType?: 'deploy' | 'run_script'
+  serviceName?: string
+  script?: { name: string; label: string; inputs?: any[] }
+  objId?: number
 }
 
 const STATIC_ACTIONS: CommandAction[] = [
@@ -47,6 +52,15 @@ export function useCommandActions() {
     queryFn: async () => {
       const { data } = await api.get('/api/inventory/service')
       return (data.objects || []) as InventoryObject[]
+    },
+    staleTime: 30_000,
+  })
+
+  const { data: servicesData = [] } = useQuery({
+    queryKey: ['services'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/services')
+      return (data.services || []) as Service[]
     },
     staleTime: 30_000,
   })
@@ -79,9 +93,58 @@ export function useCommandActions() {
     category: 'inventory' as const,
   }))
 
+  const deployCommands: CommandAction[] = []
+  for (const svc of servicesData) {
+    const deployScript = svc.scripts.find((s) => s.name === 'deploy')
+    if (!deployScript) continue
+
+    const obj = serviceObjects.find(
+      (o) => (o.data.name as string) === svc.name || o.name === svc.name
+    )
+
+    deployCommands.push({
+      id: `deploy:${svc.name}`,
+      label: `Deploy ${svc.name}`,
+      icon: 'Rocket',
+      keywords: [svc.name, 'deploy', 'start', 'launch'],
+      permission: 'services.deploy',
+      category: 'deploy',
+      actionType: 'deploy',
+      serviceName: svc.name,
+      script: deployScript,
+      objId: obj?.id,
+    })
+  }
+
+  const runCommands: CommandAction[] = []
+  for (const svc of servicesData) {
+    const obj = serviceObjects.find(
+      (o) => (o.data.name as string) === svc.name || o.name === svc.name
+    )
+
+    for (const script of svc.scripts) {
+      if (script.name === 'deploy') continue
+
+      runCommands.push({
+        id: `run:${svc.name}:${script.name}`,
+        label: `Run ${svc.name}: ${script.label}`,
+        icon: 'PlayCircle',
+        keywords: [svc.name, script.name, script.label, 'run', 'script', 'execute'],
+        permission: 'services.deploy',
+        category: 'run',
+        actionType: 'run_script',
+        serviceName: svc.name,
+        script,
+        objId: obj?.id,
+      })
+    }
+  }
+
   return {
     actions: staticActions,
     services: serviceCommands,
     inventory: inventoryCommands,
+    deployCommands,
+    runCommands,
   }
 }

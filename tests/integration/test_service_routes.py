@@ -13,6 +13,48 @@ class TestListServices:
         names = [s["name"] for s in services]
         assert "test-service" in names
 
+    async def test_list_services_includes_scripts(self, client, auth_headers):
+        """Services response includes scripts array for command palette deploy/run commands."""
+        resp = await client.get("/api/services", headers=auth_headers)
+        assert resp.status_code == 200
+        services = resp.json()["services"]
+        test_svc = next(s for s in services if s["name"] == "test-service")
+        assert "scripts" in test_svc
+        assert isinstance(test_svc["scripts"], list)
+        # Default scripts.yaml fallback includes deploy
+        script_names = [s["name"] for s in test_svc["scripts"]]
+        assert "deploy" in script_names
+
+    async def test_list_services_custom_scripts(self, client, auth_headers, mock_services_dir):
+        """Services with scripts.yaml return custom scripts for run commands."""
+        scripts_yaml = mock_services_dir / "test-service" / "scripts.yaml"
+        scripts_yaml.write_text(
+            "scripts:\n"
+            "  - name: deploy\n"
+            "    label: Deploy\n"
+            "    file: deploy.sh\n"
+            "  - name: add-users\n"
+            "    label: Add Users\n"
+            "    file: add-users.sh\n"
+            "    inputs:\n"
+            "      - name: usernames\n"
+            "        label: Usernames\n"
+            "        type: list\n"
+            "        required: true\n"
+        )
+        resp = await client.get("/api/services", headers=auth_headers)
+        assert resp.status_code == 200
+        services = resp.json()["services"]
+        test_svc = next(s for s in services if s["name"] == "test-service")
+        script_names = [s["name"] for s in test_svc["scripts"]]
+        assert "deploy" in script_names
+        assert "add-users" in script_names
+        # Verify script structure includes inputs
+        add_users = next(s for s in test_svc["scripts"] if s["name"] == "add-users")
+        assert add_users["label"] == "Add Users"
+        assert len(add_users["inputs"]) == 1
+        assert add_users["inputs"][0]["name"] == "usernames"
+
     async def test_list_services_no_auth(self, client):
         resp = await client.get("/api/services")
         assert resp.status_code in (401, 403)
@@ -48,6 +90,118 @@ class TestDeployService:
 
 
 class TestRunScript:
+    async def test_run_deploy_script_starts_job(self, client, auth_headers):
+        """Running the deploy script via /run endpoint creates a job (command palette fallback path)."""
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            mock_process = AsyncMock()
+            mock_process.stdout.readline = AsyncMock(return_value=b"")
+            mock_process.wait = AsyncMock(return_value=None)
+            mock_process.returncode = 0
+            mock_proc.return_value = mock_process
+
+            resp = await client.post("/api/services/test-service/run", headers=auth_headers,
+                                     json={"script": "deploy", "inputs": {}})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "job_id" in data
+            assert data["status"] == "running"
+
+    async def test_run_custom_script_starts_job(self, client, auth_headers, mock_services_dir):
+        """Running a custom script from scripts.yaml creates a job with correct inputs."""
+        # Set up scripts.yaml and script file
+        (mock_services_dir / "test-service" / "scripts.yaml").write_text(
+            "scripts:\n"
+            "  - name: deploy\n"
+            "    label: Deploy\n"
+            "    file: deploy.sh\n"
+            "  - name: backup\n"
+            "    label: Run Backup\n"
+            "    file: backup.sh\n"
+        )
+        backup_script = mock_services_dir / "test-service" / "backup.sh"
+        backup_script.write_text("#!/bin/bash\necho 'backing up'\n")
+        backup_script.chmod(0o755)
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            mock_process = AsyncMock()
+            mock_process.stdout.readline = AsyncMock(return_value=b"")
+            mock_process.wait = AsyncMock(return_value=None)
+            mock_process.returncode = 0
+            mock_proc.return_value = mock_process
+
+            resp = await client.post("/api/services/test-service/run", headers=auth_headers,
+                                     json={"script": "backup", "inputs": {}})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "job_id" in data
+            assert data["status"] == "running"
+
+    async def test_run_script_with_inputs(self, client, auth_headers, mock_services_dir):
+        """Script inputs are passed through to the job."""
+        (mock_services_dir / "test-service" / "scripts.yaml").write_text(
+            "scripts:\n"
+            "  - name: deploy\n"
+            "    label: Deploy\n"
+            "    file: deploy.sh\n"
+            "  - name: add-users\n"
+            "    label: Add Users\n"
+            "    file: add-users.sh\n"
+            "    inputs:\n"
+            "      - name: usernames\n"
+            "        label: Usernames\n"
+            "        type: list\n"
+            "        required: true\n"
+        )
+        script = mock_services_dir / "test-service" / "add-users.sh"
+        script.write_text("#!/bin/bash\necho $INPUT_USERNAMES\n")
+        script.chmod(0o755)
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            mock_process = AsyncMock()
+            mock_process.stdout.readline = AsyncMock(return_value=b"")
+            mock_process.wait = AsyncMock(return_value=None)
+            mock_process.returncode = 0
+            mock_proc.return_value = mock_process
+
+            resp = await client.post("/api/services/test-service/run", headers=auth_headers,
+                                     json={"script": "add-users",
+                                           "inputs": {"usernames": ["alice", "bob"]}})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "job_id" in data
+            assert data["status"] == "running"
+
+    async def test_run_script_missing_required_input(self, client, auth_headers, mock_services_dir):
+        """Missing required inputs return 400."""
+        (mock_services_dir / "test-service" / "scripts.yaml").write_text(
+            "scripts:\n"
+            "  - name: deploy\n"
+            "    label: Deploy\n"
+            "    file: deploy.sh\n"
+            "  - name: add-users\n"
+            "    label: Add Users\n"
+            "    file: add-users.sh\n"
+            "    inputs:\n"
+            "      - name: usernames\n"
+            "        label: Usernames\n"
+            "        type: list\n"
+            "        required: true\n"
+        )
+        script = mock_services_dir / "test-service" / "add-users.sh"
+        script.write_text("#!/bin/bash\necho $INPUT_USERNAMES\n")
+        script.chmod(0o755)
+
+        resp = await client.post("/api/services/test-service/run", headers=auth_headers,
+                                 json={"script": "add-users", "inputs": {}})
+        assert resp.status_code == 400
+
+    async def test_run_script_without_permission(self, client, regular_auth_headers):
+        """Unprivileged user cannot run scripts."""
+        resp = await client.post("/api/services/test-service/run",
+                                 headers=regular_auth_headers,
+                                 json={"script": "deploy", "inputs": {}})
+        assert resp.status_code == 403
+
     async def test_run_script_not_found(self, client, auth_headers):
         resp = await client.post("/api/services/test-service/run", headers=auth_headers,
                                  json={"script": "nonexistent", "inputs": {}})

@@ -28,9 +28,10 @@ def create_symlinks():
             continue
         if os.path.islink(link_path):
             os.unlink(link_path)
+        elif os.path.isdir(link_path):
+            shutil.rmtree(link_path)
         elif os.path.exists(link_path):
-            print(f"WARN: {link_path} already exists and is not a symlink, skipping")
-            continue
+            os.remove(link_path)
         os.symlink(target, link_path)
         print(f"Symlink: {link_path} -> {target}")
 
