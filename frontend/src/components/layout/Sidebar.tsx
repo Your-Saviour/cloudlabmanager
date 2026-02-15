@@ -1,22 +1,9 @@
+import { createElement } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard,
-  Server,
-  Boxes,
-  Play,
-  DollarSign,
-  Users,
-  Shield,
-  ScrollText,
   ChevronLeft,
   ChevronRight,
   Hexagon,
-  Clock,
-  HeartPulse,
-  GitCompare,
-  Bell,
-  Compass,
-  Webhook,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
@@ -26,13 +13,13 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { mainRoutes, adminRoutes, routeIcons } from '@/lib/routes'
 
 interface NavItem {
   label: string
   href: string
   icon: React.ReactNode
   permission?: string
-  section?: 'main' | 'admin'
 }
 
 export function Sidebar() {
@@ -41,25 +28,19 @@ export function Sidebar() {
   const location = useLocation()
   const types = useInventoryStore((s) => s.types)
 
-  const mainNav: NavItem[] = [
-    { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { label: 'Portal', href: '/portal', icon: <Compass className="h-4 w-4" />, permission: 'portal.view' },
-    { label: 'Services', href: '/services', icon: <Boxes className="h-4 w-4" />, permission: 'services.view' },
-    { label: 'Inventory', href: '/inventory', icon: <Server className="h-4 w-4" /> },
-    { label: 'Jobs', href: '/jobs', icon: <Play className="h-4 w-4" /> },
-    { label: 'Schedules', href: '/schedules', icon: <Clock className="h-4 w-4" />, permission: 'schedules.view' },
-    { label: 'Costs', href: '/costs', icon: <DollarSign className="h-4 w-4" />, permission: 'costs.view' },
-    { label: 'Health', href: '/health', icon: <HeartPulse className="h-4 w-4" />, permission: 'health.view' },
-    { label: 'Drift Detection', href: '/drift', icon: <GitCompare className="h-4 w-4" />, permission: 'drift.view' },
-    { label: 'Webhooks', href: '/webhooks', icon: <Webhook className="h-4 w-4" />, permission: 'webhooks.view' },
-  ]
+  const mainNav: NavItem[] = mainRoutes.map((r) => ({
+    label: r.label,
+    href: r.href,
+    icon: createElement(routeIcons[r.icon], { className: 'h-4 w-4' }),
+    permission: r.permission,
+  }))
 
-  const adminNav: NavItem[] = [
-    { label: 'Users', href: '/users', icon: <Users className="h-4 w-4" />, permission: 'users.view' },
-    { label: 'Roles', href: '/roles', icon: <Shield className="h-4 w-4" />, permission: 'roles.view' },
-    { label: 'Audit Log', href: '/audit', icon: <ScrollText className="h-4 w-4" />, permission: 'system.audit_log' },
-    { label: 'Notifications', href: '/notifications/rules', icon: <Bell className="h-4 w-4" />, permission: 'notifications.rules.view' },
-  ]
+  const adminNav: NavItem[] = adminRoutes.map((r) => ({
+    label: r.label,
+    href: r.href,
+    icon: createElement(routeIcons[r.icon], { className: 'h-4 w-4' }),
+    permission: r.permission,
+  }))
 
   return (
     <aside

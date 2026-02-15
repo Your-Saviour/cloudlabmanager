@@ -232,6 +232,21 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Uses AsyncSSH on the server side
 - Credentials resolved from service inventory files
 
+### Command Palette
+- Opened with `Cmd+K` (macOS) or `Ctrl+K` (Windows/Linux)
+- **Unified navigation** — auto-generates entries from the shared route definitions used by the Sidebar, so new pages are automatically included (15+ routes)
+- **Search groups**: Navigation, Services, Inventory, Actions, Admin, Quick Actions
+- **Fuzzy search with aliases** — partial word matching plus keyword aliases (e.g., "cron" → Schedules, "budget" → Costs, "drift" → Drift Detection, "links" → Portal)
+- **Dynamic service items** — fetches deployed services from the API, shows name and Running/Stopped status sublabel. Reuses the `['inventory', 'service']` query cache with 30-second stale time
+- **Dynamic inventory items** — lists all registered inventory types with links to their detail pages
+- **Action commands** — contextual shortcuts: Refresh Costs, Run Drift Check, Reload Health Checks, Export Audit Log, Stop All Services, Create Webhook, Create Schedule, Invite User
+- **Permission filtering** — all navigation, service, and action items are filtered by the current user's RBAC permissions. Groups are hidden entirely when no items pass the filter
+- **Recent items** — tracks the last 10 palette selections in localStorage (key: `cloudlab-command-palette`) using a Zustand persisted store. Recent group appears at the top when the search is empty, showing item icon, label, and relative timestamp ("Just now", "5m ago", "2h ago", "3d ago"). Re-selecting an item moves it to the front (deduplication)
+- Shared route definitions: `src/lib/routes.ts` (used by both Sidebar and CommandPalette)
+- Action registry: `src/lib/commandRegistry.ts`
+- Recent store: `src/stores/commandPaletteStore.ts`
+- Component: `components/layout/CommandPalette.tsx`
+
 ## Files
 
 | File | Purpose |
