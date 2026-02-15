@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Trash2, Play, Plus, X, Terminal } from 'lucide-react'
+import { ArrowLeft, Trash2, Play, Plus, X, Terminal, Camera, MoreHorizontal, RotateCcw } from 'lucide-react'
 import api from '@/lib/api'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useHasPermission } from '@/lib/permissions'
@@ -24,12 +24,18 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { DataTable } from '@/components/data/DataTable'
 import { relativeTime } from '@/lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
-import type { InventoryObject, InventoryField, Tag, ACLEntry, Job } from '@/types'
+import type { InventoryObject, InventoryField, Tag, ACLEntry, Job, Snapshot } from '@/types'
 
 export default function InventoryDetailPage() {
   const { typeSlug, objId } = useParams<{ typeSlug: string; objId: string }>()
@@ -40,10 +46,22 @@ export default function InventoryDetailPage() {
   const canEdit = useHasPermission(`inventory.${typeSlug}.edit`)
   const canDelete = useHasPermission(`inventory.${typeSlug}.delete`)
 
+  const canSnapshot = useHasPermission('snapshots.create')
+  const canDeleteSnapshot = useHasPermission('snapshots.delete')
+  const canRestoreSnapshot = useHasPermission('snapshots.restore')
+
   const [editing, setEditing] = useState(false)
   const [formData, setFormData] = useState<Record<string, unknown>>({})
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [actionConfirm, setActionConfirm] = useState<string | null>(null)
+  const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false)
+  const [snapshotDescription, setSnapshotDescription] = useState('')
+  const [deleteSnapshotTarget, setDeleteSnapshotTarget] = useState<Snapshot | null>(null)
+  const [restoreSnapshot, setRestoreSnapshot] = useState<Snapshot | null>(null)
+  const [restoreLabel, setRestoreLabel] = useState('')
+  const [restoreHostname, setRestoreHostname] = useState('')
+  const [restorePlan, setRestorePlan] = useState('')
+  const [restoreRegion, setRestoreRegion] = useState('')
 
   const { data: obj, isLoading } = useQuery({
     queryKey: ['inventory', typeSlug, objId],
@@ -82,6 +100,153 @@ export default function InventoryDetailPage() {
   })
 
   const lastJob = jobHistory.length > 0 ? jobHistory[0] : null
+
+  const vultrId = obj?.data?.vultr_id as string | undefined
+
+  const { data: instanceSnapshots = [] } = useQuery({
+    queryKey: ['snapshots', 'instance', vultrId],
+    queryFn: async () => {
+      const { data } = await api.get(`/api/snapshots?instance_id=${vultrId}`)
+      return data.snapshots as Snapshot[]
+    },
+    enabled: !!vultrId && typeSlug === 'server',
+    refetchInterval: 15000,
+  })
+
+  const { data: plans = [] } = useQuery({
+    queryKey: ['costs', 'plans'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/costs/plans')
+      return (data.plans || []) as { id: string; vcpu_count: number; ram: number; disk: number; monthly_cost: number }[]
+    },
+    enabled: !!restoreSnapshot,
+  })
+
+  const createSnapshotMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/api/snapshots', {
+        instance_vultr_id: vultrId,
+        description: snapshotDescription || 'CloudLab snapshot',
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      toast.success('Snapshot creation started')
+      queryClient.invalidateQueries({ queryKey: ['snapshots'] })
+      setSnapshotDialogOpen(false)
+      setSnapshotDescription('')
+      if (data.job_id) navigate(`/jobs/${data.job_id}`)
+    },
+    onError: () => toast.error('Failed to create snapshot'),
+  })
+
+  const deleteSnapshotMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const { data } = await api.delete(`/api/snapshots/${id}`)
+      return data
+    },
+    onSuccess: (data) => {
+      toast.success('Snapshot deletion started')
+      queryClient.invalidateQueries({ queryKey: ['snapshots'] })
+      setDeleteSnapshotTarget(null)
+      if (data.job_id) navigate(`/jobs/${data.job_id}`)
+    },
+    onError: () => toast.error('Failed to delete snapshot'),
+  })
+
+  const restoreSnapshotMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const { data } = await api.post(`/api/snapshots/${id}/restore`, {
+        label: restoreLabel,
+        hostname: restoreHostname,
+        plan: restorePlan,
+        region: restoreRegion,
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      toast.success('Snapshot restore started')
+      queryClient.invalidateQueries({ queryKey: ['snapshots'] })
+      setRestoreSnapshot(null)
+      if (data.job_id) navigate(`/jobs/${data.job_id}`)
+    },
+    onError: () => toast.error('Failed to restore snapshot'),
+  })
+
+  const openRestore = (snap: Snapshot) => {
+    setRestoreSnapshot(snap)
+    setRestoreLabel(`restored-${snap.instance_label || 'snapshot'}`)
+    setRestoreHostname('')
+    setRestorePlan('')
+    setRestoreRegion('')
+  }
+
+  const snapshotColumns = useMemo<ColumnDef<Snapshot>[]>(
+    () => [
+      {
+        accessorKey: 'description',
+        header: 'Description',
+        cell: ({ row }) => (
+          <span className="font-medium">{row.original.description || '(no description)'}</span>
+        ),
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      },
+      {
+        accessorKey: 'size_gb',
+        header: 'Size',
+        cell: ({ row }) =>
+          row.original.size_gb != null ? (
+            <Badge variant="secondary">{row.original.size_gb} GB</Badge>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+      },
+      {
+        accessorKey: 'created_at',
+        header: 'Created',
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {relativeTime(row.original.created_at)}
+          </span>
+        ),
+      },
+      {
+        id: 'actions',
+        cell: ({ row }) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+                <span className="sr-only">Actions</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canRestoreSnapshot && row.original.status === 'complete' && (
+                <DropdownMenuItem onClick={() => openRestore(row.original)}>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Restore
+                </DropdownMenuItem>
+              )}
+              {canDeleteSnapshot && (
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onClick={() => setDeleteSnapshotTarget(row.original)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+      },
+    ],
+    [canDeleteSnapshot, canRestoreSnapshot],
+  )
 
   const jobColumns = useMemo<ColumnDef<Job>[]>(
     () => [
@@ -255,6 +420,9 @@ export default function InventoryDetailPage() {
           <TabsTrigger value="actions">Actions</TabsTrigger>
           <TabsTrigger value="acl">ACL</TabsTrigger>
           <TabsTrigger value="jobs">Job History</TabsTrigger>
+          {typeSlug === 'server' && (
+            <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
@@ -425,6 +593,33 @@ export default function InventoryDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {typeSlug === 'server' && (
+          <TabsContent value="snapshots" className="mt-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-base">Instance Snapshots</CardTitle>
+                {canSnapshot && (
+                  <Button size="sm" onClick={() => setSnapshotDialogOpen(true)}>
+                    <Camera className="mr-2 h-3 w-3" /> Take Snapshot
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {instanceSnapshots.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No snapshots for this instance.</p>
+                ) : (
+                  <DataTable
+                    columns={snapshotColumns}
+                    data={instanceSnapshots}
+                    searchKey="description"
+                    searchPlaceholder="Search snapshots..."
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Delete confirm */}
@@ -454,6 +649,123 @@ export default function InventoryDetailPage() {
           />
         )
       })()}
+
+      {/* Take Snapshot Dialog */}
+      <Dialog open={snapshotDialogOpen} onOpenChange={setSnapshotDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Take Snapshot</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Create a snapshot of <span className="font-medium text-foreground">{obj.name}</span>
+            </p>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input
+                placeholder="CloudLab snapshot"
+                value={snapshotDescription}
+                onChange={(e) => setSnapshotDescription(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSnapshotDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createSnapshotMutation.mutate()}
+              disabled={createSnapshotMutation.isPending}
+            >
+              {createSnapshotMutation.isPending ? 'Creating...' : 'Take Snapshot'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Snapshot Dialog */}
+      <Dialog open={!!restoreSnapshot} onOpenChange={() => {
+        setRestoreSnapshot(null)
+        setRestoreLabel(''); setRestoreHostname(''); setRestorePlan(''); setRestoreRegion('')
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restore Snapshot</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Create a new instance from snapshot: <span className="font-medium text-foreground">{restoreSnapshot?.description}</span>
+            </p>
+            <div className="space-y-2">
+              <Label>Label</Label>
+              <Input
+                value={restoreLabel}
+                onChange={(e) => setRestoreLabel(e.target.value)}
+                placeholder="restored-instance"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Hostname</Label>
+              <Input
+                value={restoreHostname}
+                onChange={(e) => setRestoreHostname(e.target.value)}
+                placeholder="restored-instance.example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Plan</Label>
+              <Select value={restorePlan} onValueChange={setRestorePlan}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a plan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {plans.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.id} — {p.vcpu_count} vCPU, {Math.round(p.ram / 1024)}GB RAM, {p.disk}GB SSD — ${p.monthly_cost}/mo
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Region</Label>
+              <Select value={restoreRegion} onValueChange={setRestoreRegion}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a region" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="syd">Sydney (syd)</SelectItem>
+                  <SelectItem value="mel">Melbourne (mel)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestoreSnapshot(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => restoreSnapshot && restoreSnapshotMutation.mutate(restoreSnapshot.id)}
+              disabled={
+                !restoreLabel || !restoreHostname || !restorePlan || !restoreRegion || restoreSnapshotMutation.isPending
+              }
+            >
+              {restoreSnapshotMutation.isPending ? 'Restoring...' : 'Restore'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Snapshot Confirmation */}
+      <ConfirmDialog
+        open={!!deleteSnapshotTarget}
+        onOpenChange={() => setDeleteSnapshotTarget(null)}
+        title="Delete Snapshot"
+        description={`Permanently delete snapshot "${deleteSnapshotTarget?.description || deleteSnapshotTarget?.vultr_snapshot_id}"? This will also delete it from Vultr.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => deleteSnapshotTarget && deleteSnapshotMutation.mutate(deleteSnapshotTarget.id)}
+      />
     </div>
   )
 }

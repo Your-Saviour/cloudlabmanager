@@ -28,6 +28,7 @@ cloudlabmanager/
 │   ├── scheduler.py            # Background cron scheduler for recurring jobs
 │   ├── health_checker.py       # Health check config loader and background poller
 │   ├── drift_checker.py        # Infrastructure drift detection poller and notifications
+│   ├── snapshot_poller.py      # Background snapshot status sync from Vultr
 │   ├── audit.py                # Audit logging to database
 │   ├── email_service.py        # Sendamatic email integration
 │   ├── notification_service.py # Notification dispatch engine (rule-based routing)
@@ -52,6 +53,7 @@ cloudlabmanager/
 │   │   ├── schedule_routes.py  # /api/schedules/* endpoints
 │   │   ├── notification_routes.py # /api/notifications/* endpoints
 │   │   ├── preference_routes.py # /api/users/me/preferences endpoints
+│   │   ├── snapshot_routes.py  # /api/snapshots/* endpoints
 │   │   └── audit_routes.py     # /api/audit/* endpoints
 │   └── static/
 │       ├── index.html          # SPA shell
@@ -104,7 +106,8 @@ cloudlabmanager/
 15. Starts background `Scheduler` (checks for due scheduled jobs every 30 seconds)
 16. Starts background `HealthPoller` (checks service health at configured intervals)
 17. Starts background `DriftPoller` (compares desired vs actual infrastructure state every 5 minutes)
-18. Populates plans cache if empty (immediate `refresh_costs()`) and starts periodic plans/cost cache refresh (every 6 hours)
+18. Starts background `SnapshotPoller` (syncs pending snapshot status from Vultr every 60 seconds)
+19. Populates plans cache if empty (immediate `refresh_costs()`) and starts periodic plans/cost cache refresh (every 6 hours)
 
 ## Deployment Job Flow
 
@@ -144,6 +147,7 @@ All persistent state is stored in SQLite (`/data/cloudlab.db`) using SQLAlchemy 
 | `config_versions` | Service config file version history (content, hash, author, change notes) |
 | `notifications` | Per-user in-app notifications (title, body, severity, read status) |
 | `notification_rules` | Event-to-channel routing rules (event type, channel, role target, filters) |
+| `snapshots` | Vultr snapshot metadata cache (vultr_snapshot_id, instance, description, status, size) |
 | `notification_channels` | External notification channels (Slack webhooks, etc.) |
 | `user_preferences` | Per-user dashboard preferences (pinned services, section order, quick links) |
 | `app_metadata` | Key-value store (secret key, vault password, cache) |

@@ -3,7 +3,7 @@ import json
 import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
-from database import AppMetadata, CostSnapshot, AuditLog
+from database import AppMetadata, CostSnapshot, AuditLog, Snapshot
 
 
 SAMPLE_PLANS = [
@@ -119,6 +119,57 @@ class TestGetCosts:
     async def test_requires_permission(self, client, regular_auth_headers):
         resp = await client.get("/api/costs", headers=regular_auth_headers)
         assert resp.status_code == 403
+
+    async def test_includes_snapshot_storage(self, client, auth_headers, db_session):
+        _seed_cost_cache(db_session)
+
+        # Insert completed snapshots
+        db_session.add(Snapshot(
+            vultr_snapshot_id="snap-1", status="complete", size_gb=20,
+            description="Snap 1",
+        ))
+        db_session.add(Snapshot(
+            vultr_snapshot_id="snap-2", status="complete", size_gb=30,
+            description="Snap 2",
+        ))
+        # Pending snapshot should NOT be counted
+        db_session.add(Snapshot(
+            vultr_snapshot_id="snap-3", status="pending", size_gb=10,
+            description="Snap 3",
+        ))
+        db_session.commit()
+
+        resp = await client.get("/api/costs", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        ss = data["snapshot_storage"]
+        assert ss["snapshot_count"] == 2
+        assert ss["total_size_gb"] == 50
+        assert ss["monthly_cost"] == 2.5  # 50 * 0.05
+
+    async def test_snapshot_storage_empty_when_no_snapshots(self, client, auth_headers, db_session):
+        _seed_cost_cache(db_session)
+
+        resp = await client.get("/api/costs", headers=auth_headers)
+        assert resp.status_code == 200
+        ss = resp.json()["snapshot_storage"]
+        assert ss["snapshot_count"] == 0
+        assert ss["total_size_gb"] == 0
+        assert ss["monthly_cost"] == 0.0
+
+    async def test_snapshot_storage_handles_null_size(self, client, auth_headers, db_session):
+        _seed_cost_cache(db_session)
+        db_session.add(Snapshot(
+            vultr_snapshot_id="snap-null", status="complete", size_gb=None,
+            description="Null size",
+        ))
+        db_session.commit()
+
+        resp = await client.get("/api/costs", headers=auth_headers)
+        assert resp.status_code == 200
+        ss = resp.json()["snapshot_storage"]
+        assert ss["snapshot_count"] == 1
+        assert ss["total_size_gb"] == 0  # None treated as 0
 
 
 # ---------------------------------------------------------------------------

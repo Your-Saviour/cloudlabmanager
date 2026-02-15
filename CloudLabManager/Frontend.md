@@ -138,6 +138,30 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Hooks: `useEmailTransportStatus()`, `useTestEmail()` in `hooks/useNotificationRules.ts`
 - Component: `EmailTab` in `pages/notifications/NotificationRulesPage.tsx`
 
+### Snapshots
+- Dedicated `/snapshots` page showing all Vultr instance snapshots (requires `snapshots.view` permission)
+- DataTable with columns: instance name, description, status badge (`pending`/`complete`), size, age
+- **Take Snapshot** button — opens dialog to select an instance and enter a description; creates a job
+- **Sync** button — manually triggers snapshot metadata sync from Vultr
+- **Restore** action (row dropdown, only for `complete` snapshots) — dialog with label, hostname, plan selector (fetches from `/api/costs/plans`), and region selector (Sydney/Melbourne)
+- **Delete** action (row dropdown) — destructive confirmation dialog
+- Permission-gated action buttons (`snapshots.create`, `snapshots.delete`, `snapshots.restore`)
+- 15-second auto-refresh to pick up status changes
+- After create/delete/restore, navigates to the job detail page
+- Sidebar link with Camera icon (between Costs and Health)
+- Component: `pages/snapshots/SnapshotsPage.tsx`
+
+### Inventory Detail — Snapshots Tab
+- Server inventory objects show a **Snapshots** tab on their detail page
+- Lists snapshots filtered to the current instance
+- Same Take Snapshot, Restore, and Delete actions as the main Snapshots page
+- Tab only appears for server-type inventory objects
+
+### Cost Dashboard — Snapshot Storage
+- **Snapshot Storage** summary card on the Costs page showing total GB, snapshot count, and monthly cost estimate ($0.05/GB/month)
+- Grid layout expanded to 4 columns at `lg` breakpoint to accommodate the new card
+- Only renders when `snapshot_storage` data is present in the API response
+
 ### Health
 - Dedicated `/health` page showing all monitored services
 - Summary badges: healthy, unhealthy, degraded, unknown counts

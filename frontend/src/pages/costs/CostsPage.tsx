@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, DollarSign, Server, CreditCard, TrendingUp, TrendingDown, Minus, Save, AlertTriangle } from 'lucide-react'
+import { RefreshCw, DollarSign, Server, CreditCard, TrendingUp, TrendingDown, Minus, Save, AlertTriangle, Camera } from 'lucide-react'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts'
@@ -180,7 +180,7 @@ export default function CostsPage() {
       </PageHeader>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3 mb-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -242,6 +242,27 @@ export default function CostsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {costs?.snapshot_storage && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <Camera className="h-8 w-8 text-primary" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Snapshot Storage</p>
+                  <p className="text-3xl font-bold">
+                    {costs.snapshot_storage.total_size_gb} GB
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {costs.snapshot_storage.snapshot_count} snapshots
+                    {' · '}
+                    ${costs.snapshot_storage.monthly_cost.toFixed(2)}/mo
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Line Chart — Total Spend Over Time */}

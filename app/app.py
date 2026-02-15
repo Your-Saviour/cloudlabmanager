@@ -28,8 +28,10 @@ from routes.notification_routes import router as notification_router
 from routes.preference_routes import router as preference_router
 from routes.portal_routes import router as portal_router
 from routes.webhook_routes import router as webhook_router
+from routes.snapshot_routes import router as snapshot_router
 from health_checker import HealthPoller, load_health_configs
 from drift_checker import DriftPoller
+from snapshot_poller import SnapshotPoller
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -82,6 +84,11 @@ async def lifespan(app: FastAPI):
         logger.info("Plans cache empty — triggering initial cost refresh")
         await app.state.ansible_runner.refresh_costs()
 
+    # Start snapshot poller
+    snapshot_poller = SnapshotPoller(app.state.ansible_runner)
+    app.state.snapshot_poller = snapshot_poller
+    snapshot_poller.start()
+
     cost_refresh_task = asyncio.create_task(_periodic_cost_refresh(app.state.ansible_runner))
 
     yield
@@ -92,6 +99,9 @@ async def lifespan(app: FastAPI):
         await cost_refresh_task
     except asyncio.CancelledError:
         pass
+
+    # Stop snapshot poller on shutdown
+    await snapshot_poller.stop()
 
     # Stop drift poller on shutdown
     await drift_poller.stop()
@@ -138,6 +148,7 @@ app.include_router(notification_router)
 app.include_router(preference_router)
 app.include_router(portal_router)
 app.include_router(webhook_router)
+app.include_router(snapshot_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

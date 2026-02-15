@@ -71,6 +71,8 @@ _SESSION_LOCAL_MODULES = [
     "routes.notification_routes",
     "routes.preference_routes",
     "routes.webhook_routes",
+    "routes.snapshot_routes",
+    "snapshot_poller",
 ]
 
 
@@ -285,6 +287,9 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
 
     from routes.webhook_routes import router as webhook_router
     app.include_router(webhook_router)
+
+    from routes.snapshot_routes import router as snapshot_router
+    app.include_router(snapshot_router)
 
     return app
 

@@ -1109,6 +1109,345 @@ class AnsibleRunner:
         except Exception as e:
             print(f"[notification] Failed to notify for job {job.id}: {e}")
 
+    # --- Snapshot methods ---
+
+    async def sync_snapshots(self, user_id: int | None = None, username: str | None = None) -> Job:
+        job_id = str(uuid.uuid4())[:8]
+        job = Job(
+            id=job_id,
+            service="snapshots",
+            action="sync",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+            inputs={},
+        )
+        self.jobs[job_id] = job
+        asyncio.create_task(self._run_sync_snapshots(job))
+        return job
+
+    async def _run_sync_snapshots(self, job: Job):
+        job.output.append("--- Syncing snapshots from Vultr ---")
+        ok = await self._run_command(job, [
+            "ansible-playbook",
+            "/init_playbook/snapshot-list.yaml",
+            "--vault-password-file", VAULT_PASS_FILE,
+        ])
+
+        if ok:
+            snapshots_file = "/outputs/snapshots.json"
+            if os.path.isfile(snapshots_file):
+                try:
+                    with open(snapshots_file, "r") as f:
+                        vultr_snapshots = json.load(f)
+
+                    from database import SessionLocal, AppMetadata, Snapshot
+                    session = SessionLocal()
+                    try:
+                        # Cache raw list for fast reads
+                        AppMetadata.set(session, "snapshots_cache", vultr_snapshots)
+                        AppMetadata.set(session, "snapshots_cache_time",
+                                        datetime.now(timezone.utc).isoformat())
+
+                        # Upsert each snapshot into DB
+                        vultr_ids_seen = set()
+                        for snap_data in vultr_snapshots:
+                            vultr_id = snap_data.get("id", "")
+                            if not vultr_id:
+                                continue
+                            vultr_ids_seen.add(vultr_id)
+
+                            existing = session.query(Snapshot).filter_by(
+                                vultr_snapshot_id=vultr_id).first()
+                            if existing:
+                                existing.status = snap_data.get("status", existing.status)
+                                existing.size_gb = snap_data.get("size", existing.size_gb)
+                                existing.description = snap_data.get("description", existing.description)
+                                existing.os_id = snap_data.get("os_id", existing.os_id)
+                                existing.app_id = snap_data.get("app_id", existing.app_id)
+                                existing.vultr_created_at = snap_data.get("date_created", existing.vultr_created_at)
+                            else:
+                                new_snap = Snapshot(
+                                    vultr_snapshot_id=vultr_id,
+                                    description=snap_data.get("description"),
+                                    status=snap_data.get("status", "complete"),
+                                    size_gb=snap_data.get("size"),
+                                    os_id=snap_data.get("os_id"),
+                                    app_id=snap_data.get("app_id"),
+                                    vultr_created_at=snap_data.get("date_created"),
+                                )
+                                session.add(new_snap)
+
+                        # Orphan cleanup: remove DB rows for snapshots no longer in Vultr
+                        all_db_snaps = session.query(Snapshot).all()
+                        for db_snap in all_db_snaps:
+                            if db_snap.vultr_snapshot_id not in vultr_ids_seen:
+                                session.delete(db_snap)
+
+                        session.commit()
+                        job.output.append(f"[Synced {len(vultr_ids_seen)} snapshots]")
+                    finally:
+                        session.close()
+                except Exception as e:
+                    job.output.append(f"[Warning: Could not sync snapshot data: {e}]")
+
+        job.status = "completed" if ok else "failed"
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(job)
+        await self._notify_job(job)
+
+    async def create_snapshot(self, instance_vultr_id: str, description: str | None = None,
+                              user_id: int | None = None, username: str | None = None) -> Job:
+        job_id = str(uuid.uuid4())[:8]
+        job = Job(
+            id=job_id,
+            service="snapshots",
+            action="create",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+            inputs={"instance_vultr_id": instance_vultr_id, "description": description or ""},
+        )
+        self.jobs[job_id] = job
+        asyncio.create_task(self._run_create_snapshot(job, instance_vultr_id,
+                                                       description or "CloudLab snapshot",
+                                                       user_id, username))
+        return job
+
+    async def _run_create_snapshot(self, job: Job, instance_vultr_id: str, description: str,
+                                    user_id: int | None, username: str | None):
+        job.output.append(f"--- Creating snapshot of instance {instance_vultr_id} ---")
+        ok = await self._run_command(job, [
+            "ansible-playbook",
+            "/init_playbook/snapshot-create.yaml",
+            "--vault-password-file", VAULT_PASS_FILE,
+            "-e", f"instance_id={instance_vultr_id}",
+            "-e", f"description={description}",
+        ])
+
+        if ok:
+            result_file = "/outputs/snapshot_create_result.json"
+            if os.path.isfile(result_file):
+                try:
+                    with open(result_file, "r") as f:
+                        snap_data = json.load(f)
+
+                    from database import SessionLocal, Snapshot, AppMetadata
+                    session = SessionLocal()
+                    try:
+                        # Look up instance label from cache
+                        instance_label = None
+                        instances_cache = AppMetadata.get(session, "instances_cache") or {}
+                        hosts = instances_cache.get("all", {}).get("hosts", {})
+                        for _hostname, info in hosts.items():
+                            if info.get("vultr_id") == instance_vultr_id:
+                                instance_label = info.get("vultr_label", _hostname)
+                                break
+
+                        new_snap = Snapshot(
+                            vultr_snapshot_id=snap_data.get("id", ""),
+                            instance_vultr_id=instance_vultr_id,
+                            instance_label=instance_label,
+                            description=snap_data.get("description", description),
+                            status=snap_data.get("status", "pending"),
+                            size_gb=snap_data.get("size"),
+                            os_id=snap_data.get("os_id"),
+                            app_id=snap_data.get("app_id"),
+                            vultr_created_at=snap_data.get("date_created"),
+                            created_by=user_id,
+                            created_by_username=username,
+                        )
+                        session.add(new_snap)
+                        session.commit()
+                        job.output.append(f"[Snapshot created: {snap_data.get('id', 'unknown')}]")
+                    finally:
+                        session.close()
+                except Exception as e:
+                    job.output.append(f"[Warning: Could not save snapshot record: {e}]")
+
+            # Send notification
+            from notification_service import notify, EVENT_SNAPSHOT_CREATED
+            try:
+                await notify(EVENT_SNAPSHOT_CREATED, {
+                    "title": f"Snapshot created for instance {instance_vultr_id}",
+                    "body": f"Snapshot '{description}' created successfully.",
+                    "severity": "success",
+                    "action_url": "/snapshots",
+                    "service_name": "snapshots",
+                    "status": "completed",
+                    "job_id": job.id,
+                })
+            except Exception:
+                pass
+
+            # Trigger a sync after a brief delay to pick up final status
+            await asyncio.sleep(5)
+            try:
+                await self.sync_snapshots()
+            except Exception:
+                pass
+
+        job.status = "completed" if ok else "failed"
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(job)
+        await self._notify_job(job)
+
+    async def delete_snapshot(self, vultr_snapshot_id: str,
+                              user_id: int | None = None, username: str | None = None) -> Job:
+        job_id = str(uuid.uuid4())[:8]
+        job = Job(
+            id=job_id,
+            service="snapshots",
+            action="delete",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+            inputs={"vultr_snapshot_id": vultr_snapshot_id},
+        )
+        self.jobs[job_id] = job
+        asyncio.create_task(self._run_delete_snapshot(job, vultr_snapshot_id, user_id, username))
+        return job
+
+    async def _run_delete_snapshot(self, job: Job, vultr_snapshot_id: str,
+                                    user_id: int | None, username: str | None):
+        job.output.append(f"--- Deleting snapshot {vultr_snapshot_id} ---")
+        ok = await self._run_command(job, [
+            "ansible-playbook",
+            "/init_playbook/snapshot-delete.yaml",
+            "--vault-password-file", VAULT_PASS_FILE,
+            "-e", f"snapshot_id={vultr_snapshot_id}",
+        ])
+
+        if ok:
+            # Remove from DB
+            from database import SessionLocal, Snapshot
+            session = SessionLocal()
+            try:
+                snap = session.query(Snapshot).filter_by(
+                    vultr_snapshot_id=vultr_snapshot_id).first()
+                if snap:
+                    session.delete(snap)
+                    session.commit()
+                    job.output.append(f"[Snapshot {vultr_snapshot_id} removed from DB]")
+            finally:
+                session.close()
+
+            # Send notification
+            from notification_service import notify, EVENT_SNAPSHOT_DELETED
+            try:
+                await notify(EVENT_SNAPSHOT_DELETED, {
+                    "title": f"Snapshot {vultr_snapshot_id} deleted",
+                    "body": f"Snapshot {vultr_snapshot_id} has been deleted.",
+                    "severity": "info",
+                    "action_url": "/snapshots",
+                    "service_name": "snapshots",
+                    "status": "completed",
+                    "job_id": job.id,
+                })
+            except Exception:
+                pass
+
+        job.status = "completed" if ok else "failed"
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(job)
+        await self._notify_job(job)
+
+    async def restore_snapshot(self, snapshot_vultr_id: str, label: str, hostname: str,
+                               plan: str, region: str, description: str = "",
+                               user_id: int | None = None, username: str | None = None) -> Job:
+        job_id = str(uuid.uuid4())[:8]
+        job = Job(
+            id=job_id,
+            service="snapshots",
+            action="restore",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+            inputs={
+                "snapshot_vultr_id": snapshot_vultr_id,
+                "label": label,
+                "hostname": hostname,
+                "plan": plan,
+                "region": region,
+            },
+        )
+        self.jobs[job_id] = job
+        asyncio.create_task(self._run_restore_snapshot(
+            job, snapshot_vultr_id, label, hostname, plan, region, description))
+        return job
+
+    async def _run_restore_snapshot(self, job: Job, snapshot_vultr_id: str,
+                                     label: str, hostname: str, plan: str, region: str,
+                                     description: str):
+        job.output.append(f"--- Restoring snapshot {snapshot_vultr_id} to new instance ---")
+        ok = await self._run_command(job, [
+            "ansible-playbook",
+            "/init_playbook/snapshot-restore.yaml",
+            "--vault-password-file", VAULT_PASS_FILE,
+            "-e", f"snapshot_id={snapshot_vultr_id}",
+            "-e", f"instance_label={label}",
+            "-e", f"instance_hostname={hostname}",
+            "-e", f"instance_plan={plan}",
+            "-e", f"instance_region={region}",
+        ])
+
+        if ok:
+            # Read the result file for instance details
+            result_file = "/outputs/snapshot_restore_result.json"
+            if os.path.isfile(result_file):
+                try:
+                    with open(result_file, "r") as f:
+                        instance_data = json.load(f)
+                    job.output.append(
+                        f"[Instance created: {instance_data.get('id', 'unknown')} "
+                        f"IP: {instance_data.get('main_ip', 'unknown')}]")
+                except Exception as e:
+                    job.output.append(f"[Warning: Could not read restore result: {e}]")
+
+            # Refresh instances to pick up the new VM
+            try:
+                await self.refresh_instances()
+            except Exception:
+                pass
+
+            # Send notification
+            from notification_service import notify, EVENT_SNAPSHOT_RESTORED
+            try:
+                await notify(EVENT_SNAPSHOT_RESTORED, {
+                    "title": f"Snapshot restored: {label}",
+                    "body": f"Instance '{label}' created from snapshot '{description}'.",
+                    "severity": "success",
+                    "action_url": "/snapshots",
+                    "service_name": "snapshots",
+                    "status": "completed",
+                    "job_id": job.id,
+                })
+            except Exception:
+                pass
+        else:
+            from notification_service import notify, EVENT_SNAPSHOT_RESTORED
+            try:
+                await notify(EVENT_SNAPSHOT_RESTORED, {
+                    "title": f"Snapshot restore failed: {label}",
+                    "body": f"Failed to create instance '{label}' from snapshot.",
+                    "severity": "error",
+                    "action_url": "/snapshots",
+                    "service_name": "snapshots",
+                    "status": "failed",
+                    "job_id": job.id,
+                })
+            except Exception:
+                pass
+
+        job.status = "completed" if ok else "failed"
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(job)
+        await self._notify_job(job)
+
     def _persist_job(self, job: Job, object_id: int | None = None, type_slug: str | None = None):
         from database import SessionLocal, JobRecord
         session = SessionLocal()

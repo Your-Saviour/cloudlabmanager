@@ -447,6 +447,27 @@ class CostSnapshot(Base):
     captured_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
 
+class Snapshot(Base):
+    __tablename__ = "snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vultr_snapshot_id = Column(String(50), unique=True, nullable=False, index=True)
+    instance_vultr_id = Column(String(50), nullable=True)  # Vultr instance ID it was taken from
+    instance_label = Column(String(200), nullable=True)     # Human-readable instance name at time of snapshot
+    description = Column(String(500), nullable=True)
+    status = Column(String(20), nullable=False, default="pending")  # "pending", "complete", "failed"
+    size_gb = Column(Integer, nullable=True)                # Size in GB (populated after completion)
+    os_id = Column(Integer, nullable=True)                  # Vultr OS ID
+    app_id = Column(Integer, nullable=True)                 # Vultr App ID
+    vultr_created_at = Column(String(50), nullable=True)    # Vultr's creation timestamp (string)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by_username = Column(String(30), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    creator = relationship("User", foreign_keys=[created_by])
+
+
 class NotificationChannel(Base):
     __tablename__ = "notification_channels"
 

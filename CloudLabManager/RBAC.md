@@ -54,6 +54,10 @@ These are always present:
 | Schedules | `schedules.create` | Create new scheduled jobs |
 | Schedules | `schedules.edit` | Edit existing scheduled jobs |
 | Schedules | `schedules.delete` | Delete scheduled jobs |
+| Snapshots | `snapshots.view` | View snapshot list and details |
+| Snapshots | `snapshots.create` | Take new snapshots of instances |
+| Snapshots | `snapshots.delete` | Delete snapshots from Vultr |
+| Snapshots | `snapshots.restore` | Create new instances from snapshots |
 | Portal | `portal.view` | View the service access portal |
 | Portal | `portal.bookmarks.edit` | Create, edit, and delete personal portal bookmarks |
 | Inventory | `inventory.tags.manage` | Create/edit/delete tags |

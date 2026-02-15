@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from database import SessionLocal, User, AppMetadata, CostSnapshot
+from database import SessionLocal, User, AppMetadata, CostSnapshot, Snapshot
 from permissions import require_permission
 from db_session import get_db_session
 from audit import log_action
@@ -81,7 +81,19 @@ def _get_cost_data(session):
 async def get_costs(user: User = Depends(require_permission("costs.view"))):
     session = SessionLocal()
     try:
-        return _get_cost_data(session)
+        data = _get_cost_data(session)
+
+        # Add snapshot storage cost info
+        snapshots = session.query(Snapshot).filter(Snapshot.status == "complete").all()
+        total_snapshot_gb = sum(s.size_gb or 0 for s in snapshots)
+        snapshot_monthly_cost = total_snapshot_gb * 0.05  # Vultr charges $0.05/GB/month
+        data["snapshot_storage"] = {
+            "total_size_gb": total_snapshot_gb,
+            "snapshot_count": len(snapshots),
+            "monthly_cost": round(snapshot_monthly_cost, 2),
+        }
+
+        return data
     finally:
         session.close()
 

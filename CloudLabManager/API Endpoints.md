@@ -684,6 +684,22 @@ Notifications are sent only on state transitions (clean â†’ drifted or drifted â
 | GET | `/api/costs/plans` | `costs.view` | Cached Vultr plans list with pricing |
 | POST | `/api/costs/refresh` | `costs.refresh` | Trigger cost data refresh from Vultr |
 
+### GET `/api/costs`
+
+The response includes a `snapshot_storage` object with snapshot cost data:
+
+```json
+{
+  "snapshot_storage": {
+    "total_size_gb": 45.2,
+    "snapshot_count": 3,
+    "monthly_cost": 2.26
+  }
+}
+```
+
+Snapshot storage cost is calculated at Vultr's rate of $0.05/GB/month. Only snapshots with `status == "complete"` are included.
+
 ### GET `/api/costs/plans`
 
 Returns the cached Vultr plans list used for cost estimation (including dry-run previews). The cache is refreshed automatically every 6 hours and on startup if empty.
@@ -697,6 +713,57 @@ Returns the cached Vultr plans list used for cost estimation (including dry-run 
   "cached_at": "2026-02-15T00:00:00+00:00"
 }
 ```
+
+## Snapshots
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/snapshots` | `snapshots.view` | List all snapshots (optional `instance_id` query param) |
+| POST | `/api/snapshots` | `snapshots.create` | Create a snapshot from an instance |
+| POST | `/api/snapshots/sync` | `snapshots.view` | Manually trigger Vultr snapshot sync |
+| GET | `/api/snapshots/{id}` | `snapshots.view` | Get snapshot detail by DB ID |
+| DELETE | `/api/snapshots/{id}` | `snapshots.delete` | Delete a snapshot from Vultr |
+| POST | `/api/snapshots/{id}/restore` | `snapshots.restore` | Create a new instance from a snapshot |
+
+### POST `/api/snapshots`
+
+```json
+{
+  "instance_vultr_id": "<vultr_instance_id>",
+  "description": "pre-upgrade backup"
+}
+```
+
+Returns a job ID for tracking the async snapshot creation. The instance label is automatically resolved from the instances cache.
+
+### POST `/api/snapshots/{id}/restore`
+
+```json
+{
+  "label": "restored-server",
+  "hostname": "restored-server",
+  "plan": "vc2-1c-1gb",
+  "region": "syd"
+}
+```
+
+Creates a new Vultr instance from the snapshot image. Returns a job ID. The new instance is tagged with `snapshot-restore` and registered in Cloudflare DNS. After completion, the instances cache is automatically refreshed.
+
+### POST `/api/snapshots/sync`
+
+Triggers a full sync of snapshot metadata from the Vultr API. Updates the local `snapshots` table (upserts existing, removes orphaned records). Returns a job ID.
+
+### GET `/api/snapshots`
+
+Query params: `instance_id` (optional, filter by Vultr instance ID).
+
+Returns all cached snapshots with: `id`, `vultr_snapshot_id`, `instance_vultr_id`, `instance_label`, `description`, `status` (`pending` / `complete`), `size_gb`, `created_at`, `created_by_username`.
+
+### Background Sync
+
+A `SnapshotPoller` runs every 60 seconds (30-second initial delay). It only triggers a Vultr sync when pending snapshots exist in the database, avoiding unnecessary API calls.
+
+All mutating operations are logged in the audit trail with action prefix `snapshot`.
 
 ## Notifications
 
@@ -769,7 +836,11 @@ Returns available event types:
   { "value": "drift.state_change", "label": "Drift State Change" },
   { "value": "budget.threshold_exceeded", "label": "Budget Threshold Exceeded" },
   { "value": "webhook.triggered", "label": "Webhook Triggered" },
-  { "value": "bulk.completed", "label": "Bulk Operation Completed" }
+  { "value": "bulk.completed", "label": "Bulk Operation Completed" },
+  { "value": "snapshot.created", "label": "Snapshot Created" },
+  { "value": "snapshot.deleted", "label": "Snapshot Deleted" },
+  { "value": "snapshot.failed", "label": "Snapshot Failed" },
+  { "value": "snapshot.restored", "label": "Snapshot Restored" }
 ]
 ```
 

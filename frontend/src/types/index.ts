@@ -154,6 +154,11 @@ export interface ACLEntry {
 export interface CostData {
   total_monthly_cost: number
   instances: CostInstance[]
+  snapshot_storage?: {
+    total_size_gb: number
+    snapshot_count: number
+    monthly_cost: number
+  }
 }
 
 export interface CostInstance {
@@ -268,6 +273,22 @@ export interface ServiceACLEntry {
 }
 
 export type ServicePermission = 'view' | 'deploy' | 'stop' | 'config'
+
+export interface Snapshot {
+  id: number
+  vultr_snapshot_id: string
+  instance_vultr_id: string | null
+  instance_label: string | null
+  description: string | null
+  status: 'pending' | 'complete' | 'failed'
+  size_gb: number | null
+  os_id: number | null
+  app_id: number | null
+  vultr_created_at: string | null
+  created_by_username: string | null
+  created_at: string
+  updated_at: string
+}
 
 export type { ScheduledJob, CronPreview } from './schedule'
 export type { WebhookEndpoint } from './webhook'

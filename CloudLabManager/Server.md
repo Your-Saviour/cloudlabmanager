@@ -14,6 +14,7 @@ Go to [[Introduction]]
 - **Audit Logging**: Record all user actions with timestamps and IP addresses
 - **Health Monitoring**: Background poller checks deployed service health (HTTP, TCP, ICMP, SSH) at configured intervals with email notifications on state changes
 - **Drift Detection**: Background poller compares desired infrastructure state (instance.yaml files) against actual Vultr instances and Cloudflare DNS, with email notifications on state transitions
+- **Snapshot Management**: Create, list, delete, and restore Vultr instance snapshots with background status polling
 - **Email**: Send invitation and password reset emails via Sendamatic
 - **Static File Serving**: Serve the frontend SPA
 
@@ -35,6 +36,7 @@ Go to [[Introduction]]
 | `scheduler.py` | Background cron scheduler — checks for due scheduled jobs every 30s, dispatches to AnsibleRunner |
 | `health_checker.py` | Health check config loader (`load_health_configs`) and background `HealthPoller` (15s tick, interval-based scheduling, data retention cleanup) |
 | `drift_checker.py` | Infrastructure drift detection: `DriftPoller` (5-min interval), `run_drift_check()` standalone function, email notifications on state transitions, 30-day report cleanup |
+| `snapshot_poller.py` | Background snapshot status sync: `SnapshotPoller` (60s interval, 30s initial delay), only syncs when pending snapshots exist |
 | `audit.py` | `log_action()` — writes to `audit_log` table |
 | `email_service.py` | Sendamatic API integration for invite and password reset emails |
 | `models.py` | Pydantic models for all request/response schemas |
@@ -58,6 +60,7 @@ Go to [[Introduction]]
 | `health_routes.py` | `/api/health` | Health check status, history, summary, config reload |
 | `drift_routes.py` | `/api/drift` | Drift detection status, history, reports, trigger check, notification settings |
 | `schedule_routes.py` | `/api/schedules` | Schedule CRUD, cron preview, execution history |
+| `snapshot_routes.py` | `/api/snapshots` | Snapshot CRUD, sync, restore |
 | `audit_routes.py` | `/api/audit` | Audit log listing |
 
 ## Running

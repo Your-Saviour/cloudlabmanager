@@ -19,6 +19,10 @@ EVENT_DRIFT_STATE_CHANGE = "drift.state_change"
 EVENT_BUDGET_THRESHOLD_EXCEEDED = "budget.threshold_exceeded"
 EVENT_WEBHOOK_TRIGGERED = "webhook.triggered"
 EVENT_BULK_COMPLETED = "bulk.completed"
+EVENT_SNAPSHOT_CREATED = "snapshot.created"
+EVENT_SNAPSHOT_DELETED = "snapshot.deleted"
+EVENT_SNAPSHOT_FAILED = "snapshot.failed"
+EVENT_SNAPSHOT_RESTORED = "snapshot.restored"
 
 
 async def notify(event_type: str, context: dict):

@@ -68,6 +68,11 @@ STATIC_PERMISSION_DEFS = [
     ("notifications.rules.view", "notifications", "View Notification Rules", "View notification rule configurations"),
     ("notifications.rules.manage", "notifications", "Manage Notification Rules", "Create, edit, and delete notification rules"),
     ("notifications.channels.manage", "notifications", "Manage Notification Channels", "Configure notification channels (Slack webhooks, etc.)"),
+    # snapshots
+    ("snapshots.view", "snapshots", "View Snapshots", "View snapshot list and details"),
+    ("snapshots.create", "snapshots", "Create Snapshots", "Take new snapshots of instances"),
+    ("snapshots.delete", "snapshots", "Delete Snapshots", "Delete snapshots from Vultr"),
+    ("snapshots.restore", "snapshots", "Restore Snapshots", "Create new instances from snapshots"),
     # portal
     ("portal.view", "portal", "View Portal", "View the service access portal"),
     ("portal.bookmarks.edit", "portal", "Edit Bookmarks", "Create, edit, and delete personal portal bookmarks"),
