@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
 from database import (
-    InventoryType, InventoryObject, AppMetadata, User, Role, JobRecord,
+    InventoryType, InventoryObject, InventoryTag, AppMetadata, User, Role, JobRecord,
 )
 from inventory_sync import (
     _build_search_text, _find_or_create_object,
@@ -20,13 +20,14 @@ from inventory_sync import (
 
 @pytest.fixture
 def inventory_types_in_db(db_session):
-    """Create InventoryType rows for server, service, user, deployment."""
+    """Create InventoryType rows for server, service, user, deployment, credential."""
     types = {}
     for slug, label in [
         ("server", "Server"),
         ("service", "Service"),
         ("user", "User"),
         ("deployment", "Deployment"),
+        ("credential", "Credential"),
     ]:
         t = InventoryType(slug=slug, label=label)
         db_session.add(t)
@@ -195,6 +196,261 @@ class TestVultrInventorySync:
 
         # Should not raise
         VultrInventorySync().sync(db_session, self._make_type_config())
+
+    def test_captures_default_password_and_kvm_url(self, db_session, inventory_types_in_db):
+        """Credential fields from Vultr API are stored in server data."""
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "s3cret!",
+                        "vultr_kvm_url": "https://my.vultr.com/subs/vps/novnc/abc",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        obj = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["server"].id
+        ).first()
+        data = json.loads(obj.data)
+        assert data["default_password"] == "s3cret!"
+        assert data["kvm_url"] == "https://my.vultr.com/subs/vps/novnc/abc"
+
+    def test_defaults_empty_when_credential_fields_missing(self, db_session, inventory_types_in_db):
+        """If Vultr response has no password/kvm, fields default to empty string."""
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {"ansible_host": "10.0.0.1", "vultr_region": "syd"}
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        obj = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["server"].id
+        ).first()
+        data = json.loads(obj.data)
+        assert data["default_password"] == ""
+        assert data["kvm_url"] == ""
+
+    def test_preserves_existing_password_when_incoming_empty(self, db_session, inventory_types_in_db):
+        """Re-sync with empty credentials should preserve previously stored values."""
+        # First sync with credentials
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "original_pw",
+                        "vultr_kvm_url": "https://kvm.example.com/abc",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        # Second sync without credentials (e.g. from generate-inventory)
+        cache["all"]["hosts"]["web1"] = {"ansible_host": "10.0.0.1"}
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        obj = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["server"].id
+        ).first()
+        data = json.loads(obj.data)
+        assert data["default_password"] == "original_pw"
+        assert data["kvm_url"] == "https://kvm.example.com/abc"
+
+    def test_auto_creates_credential_object(self, db_session, inventory_types_in_db):
+        """Syncing a server with a password auto-creates a credential inventory object."""
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "rootpw123",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        cred_objs = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["credential"].id
+        ).all()
+        assert len(cred_objs) == 1
+        cred_data = json.loads(cred_objs[0].data)
+        assert cred_data["name"] == "web1 — Root Password"
+        assert cred_data["credential_type"] == "password"
+        assert cred_data["username"] == "root"
+        assert cred_data["value"] == "rootpw123"
+
+        # Verify tag was created
+        tags = [t.name for t in cred_objs[0].tags]
+        assert "instance:web1" in tags
+
+    def test_credential_upsert_no_duplicates(self, db_session, inventory_types_in_db):
+        """Re-syncing updates existing credential instead of creating a duplicate."""
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "pw_v1",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        # Update password and re-sync
+        cache["all"]["hosts"]["web1"]["vultr_default_password"] = "pw_v2"
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        cred_objs = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["credential"].id
+        ).all()
+        assert len(cred_objs) == 1
+        cred_data = json.loads(cred_objs[0].data)
+        assert cred_data["value"] == "pw_v2"
+
+    def test_no_credential_created_when_password_empty(self, db_session, inventory_types_in_db):
+        """No credential object is created when default_password is empty."""
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {"ansible_host": "10.0.0.1"}
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        cred_objs = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["credential"].id
+        ).all()
+        assert len(cred_objs) == 0
+
+    def test_orphaned_credentials_cleaned_up(self, db_session, inventory_types_in_db):
+        """Credentials for destroyed instances are garbage-collected."""
+        # First sync with two servers, one with a password
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "rootpw",
+                    },
+                    "web2": {
+                        "ansible_host": "10.0.0.2",
+                    },
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        # Verify credential exists for web1
+        cred_objs = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["credential"].id
+        ).all()
+        assert len(cred_objs) == 1
+
+        # Second sync with web1 removed (instance destroyed), web2 remains
+        cache["all"]["hosts"] = {"web2": {"ansible_host": "10.0.0.2"}}
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        # Credential for web1 should be cleaned up
+        cred_objs = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["credential"].id
+        ).all()
+        assert len(cred_objs) == 0
+
+    def test_no_credential_created_when_credential_type_missing(self, db_session):
+        """If credential InventoryType doesn't exist, sync still works without errors."""
+        # Only create server type, not credential
+        server_type = InventoryType(slug="server", label="Server")
+        db_session.add(server_type)
+        db_session.flush()
+
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "rootpw",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        # Should not raise
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        # Server should still be created
+        objs = db_session.query(InventoryObject).filter_by(type_id=server_type.id).all()
+        assert len(objs) == 1
+
+    def test_credential_tag_has_indigo_color(self, db_session, inventory_types_in_db):
+        """Instance tags for credentials use indigo (#6366f1) color."""
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "rootpw",
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        tag = db_session.query(InventoryTag).filter_by(name="instance:web1").first()
+        assert tag is not None
+        assert tag.color == "#6366f1"
 
 
 # ---------------------------------------------------------------------------

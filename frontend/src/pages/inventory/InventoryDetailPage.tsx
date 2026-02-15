@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Trash2, Play, Plus, X, Terminal, Camera, MoreHorizontal, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Trash2, Play, Plus, X, Terminal, Monitor, Camera, MoreHorizontal, RotateCcw } from 'lucide-react'
 import api from '@/lib/api'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useHasPermission } from '@/lib/permissions'
@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
 import { DataTable } from '@/components/data/DataTable'
 import { relativeTime } from '@/lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -454,12 +455,21 @@ export default function InventoryDetailPage() {
                     </div>
                     {typeConfig?.fields.map((field) => {
                       const val = obj.data[field.name]
-                      if (field.type === 'secret') return (
-                        <div key={field.name}>
-                          <p className="text-xs text-muted-foreground uppercase tracking-wider">{field.label || field.name}</p>
-                          <p className="text-sm mt-1 font-mono">{'*'.repeat(8)}</p>
-                        </div>
-                      )
+                      if (field.type === 'secret') {
+                        const secretVal = val != null ? String(val) : ''
+                        return (
+                          <div key={field.name}>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider">{field.label || field.name}</p>
+                            <div className="mt-1">
+                              {secretVal ? (
+                                <CredentialDisplay value={secretVal} />
+                              ) : (
+                                <p className="text-sm font-mono text-muted-foreground">-</p>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      }
                       return (
                         <div key={field.name}>
                           <p className="text-xs text-muted-foreground uppercase tracking-wider">{field.label || field.name}</p>
@@ -531,6 +541,23 @@ export default function InventoryDetailPage() {
                             onClick={() => navigate(`/ssh/${hostname}/${ip || hostname}`)}
                           >
                             <Terminal className="mr-2 h-3 w-3" /> {action.label}
+                          </Button>
+                        )
+                      }
+                      // Console builtin action opens KVM/noVNC URL in new tab
+                      if (action.type === 'builtin' && action.name === 'console') {
+                        const kvmUrl = obj?.data.kvm_url as string | undefined
+                        const isRunning = obj?.data.power_status === 'running'
+                        const isValidUrl = kvmUrl && /^https?:\/\//i.test(kvmUrl)
+                        if (!isRunning || !isValidUrl) return null
+                        return (
+                          <Button
+                            key={action.name}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(kvmUrl, '_blank', 'noopener,noreferrer')}
+                          >
+                            <Monitor className="mr-2 h-3 w-3" /> {action.label}
                           </Button>
                         )
                       }

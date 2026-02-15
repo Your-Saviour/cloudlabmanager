@@ -82,7 +82,10 @@ Sync adapters populate inventory objects from external sources. They run on star
 ### VultrInventorySync (`vultr`)
 
 - Reads instances from the cached inventory (populated by `refresh_instances`)
-- Creates/updates `server` objects with hostname, IP, region, plan, status, tags
+- Creates/updates `server` objects with hostname, IP, region, plan, status, tags, root password, and VNC console URL
+- **Credential preservation**: If `default_password` or `kvm_url` is empty in incoming data (e.g., from `generate-inventory.yaml` which may not return these fields), the sync preserves existing non-empty values from the database rather than overwriting them with blanks
+- **Auto-creates credential objects**: When a server has a non-empty `default_password`, a `credential` inventory object is created (or updated) with the root password, tagged `instance:{hostname}`. These credentials appear in the [[Service Access Portal]] alongside service-level credentials
+- **Orphan cleanup**: When a server is removed from Vultr, its associated `instance:{hostname}` credential object is also deleted
 
 ### ServiceDiscoverySync (`services`)
 
@@ -171,12 +174,24 @@ Action types:
 | Type | Description |
 |------|-------------|
 | `ssh` | Opens a WebSocket SSH terminal to the object |
+| `builtin` | Frontend-handled action (e.g., `console` opens VNC URL in a new tab) |
 | `script` | Runs a shell script |
 | `playbook` | Runs an Ansible playbook |
 | `script_stop` | Stops a running script |
 | `dynamic_scripts` | Runs scripts from `scripts.yaml` |
 
-Actions are executed via `POST /api/inventory/{type}/{id}/actions/{action}` and streamed via WebSocket.
+Actions are executed via `POST /api/inventory/{type}/{id}/actions/{action}` and streamed via WebSocket. `builtin` actions are handled entirely by the frontend and do not make API calls.
+
+## Server Credentials and Console Access
+
+Server objects include two fields captured from the Vultr API at instance creation time:
+
+- **Root Password** (`default_password`, type: `secret`) — The initial root password set by Vultr. Displayed as a blurred/masked field with reveal (eye icon) and copy-to-clipboard controls on the server detail page. Shows `-` when no value is set.
+- **VNC Console URL** (`kvm_url`) — Vultr's noVNC console URL. Accessible via the **Console** button on the server detail and list pages. Opens in a new browser tab.
+
+Both the Console button and SSH button are only shown when the server is in a `running` state and has the required URL/credentials.
+
+> **Note:** `default_password` is only captured at initial instance creation and does not update if the password is changed inside the VM. The KVM URL may expire or rotate.
 
 ## WebSocket SSH Terminal
 

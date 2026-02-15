@@ -4,7 +4,7 @@ import json
 import os
 import yaml
 from sqlalchemy.orm import Session
-from database import InventoryType, InventoryObject, AppMetadata, User, JobRecord, SessionLocal
+from database import InventoryType, InventoryObject, InventoryTag, AppMetadata, User, JobRecord, SessionLocal
 
 SERVICES_DIR = "/app/cloudlab/services"
 INVENTORY_FILE = "/inventory/vultr.yml"
@@ -52,6 +52,8 @@ class VultrInventorySync:
             print("WARN: 'server' inventory type not found, skipping Vultr sync")
             return
 
+        cred_type = session.query(InventoryType).filter_by(slug="credential").first()
+
         fields = type_config.get("fields", [])
 
         # Read from DB cache (populated by refresh_instances)
@@ -85,9 +87,71 @@ class VultrInventorySync:
                 "vultr_id": info.get("vultr_id", ""),
                 "vultr_label": info.get("vultr_label", hostname),
                 "vultr_tags": info.get("vultr_tags", []),
+                "default_password": info.get("vultr_default_password", ""),
+                "kvm_url": info.get("vultr_kvm_url", ""),
             }
+
+            # Preserve existing credentials if incoming values are empty
+            # (generate-inventory may not have these fields)
+            if not data["default_password"] or not data["kvm_url"]:
+                for obj in session.query(InventoryObject).filter_by(type_id=inv_type.id).all():
+                    obj_data = json.loads(obj.data)
+                    if obj_data.get("hostname") == hostname:
+                        if not data["default_password"]:
+                            data["default_password"] = obj_data.get("default_password", "")
+                        if not data["kvm_url"]:
+                            data["kvm_url"] = obj_data.get("kvm_url", "")
+                        break
+
             _find_or_create_object(session, inv_type.id, data, "hostname", fields)
             synced += 1
+
+            # Auto-create credential object if password is present
+            password = data.get("default_password", "")
+            if password and cred_type:
+                cred_tag_name = f"instance:{hostname}"
+                cred_tag = session.query(InventoryTag).filter_by(name=cred_tag_name).first()
+                if not cred_tag:
+                    cred_tag = InventoryTag(name=cred_tag_name, color="#6366f1")
+                    session.add(cred_tag)
+                    session.flush()
+
+                cred_name = f"{hostname} — Root Password"
+                cred_data = {
+                    "name": cred_name,
+                    "credential_type": "password",
+                    "username": "root",
+                    "value": password,
+                    "notes": f"Auto-captured from Vultr instance provisioning ({hostname})",
+                }
+                cred_search = f"{cred_name} root".lower()
+
+                # Find existing credential with this tag
+                existing_cred = None
+                existing_creds = (
+                    session.query(InventoryObject)
+                    .filter_by(type_id=cred_type.id)
+                    .filter(InventoryObject.tags.any(InventoryTag.id == cred_tag.id))
+                    .all()
+                )
+                for ec in existing_creds:
+                    ec_data = json.loads(ec.data)
+                    if ec_data.get("name") == cred_name:
+                        existing_cred = ec
+                        break
+
+                if existing_cred:
+                    existing_cred.data = json.dumps(cred_data)
+                    existing_cred.search_text = cred_search
+                else:
+                    new_cred = InventoryObject(
+                        type_id=cred_type.id,
+                        data=json.dumps(cred_data),
+                        search_text=cred_search,
+                    )
+                    session.add(new_cred)
+                    session.flush()
+                    new_cred.tags.append(cred_tag)
 
         # Remove objects for servers no longer in the cache
         removed = 0
@@ -96,6 +160,17 @@ class VultrInventorySync:
             if obj_data.get("hostname") not in seen_hostnames:
                 session.delete(obj)
                 removed += 1
+
+        # Also clean up orphaned instance credentials
+        if cred_type:
+            for obj in session.query(InventoryObject).filter_by(type_id=cred_type.id).all():
+                obj_tags = [t.name for t in obj.tags]
+                instance_tags = [t for t in obj_tags if t.startswith("instance:")]
+                for it in instance_tags:
+                    instance_hostname = it.split(":", 1)[1]
+                    if instance_hostname not in seen_hostnames:
+                        session.delete(obj)
+                        break
 
         session.flush()
         print(f"  Vultr sync: {synced} server(s), {removed} removed")

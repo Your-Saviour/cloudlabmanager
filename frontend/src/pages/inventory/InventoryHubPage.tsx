@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, RefreshCw, Square } from 'lucide-react'
+import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, Monitor, RefreshCw, Square } from 'lucide-react'
 import api from '@/lib/api'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useHasPermission } from '@/lib/permissions'
@@ -312,6 +312,33 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
               }}
             >
               <Terminal className="mr-1 h-3 w-3" /> SSH
+            </Button>
+          )
+        },
+      })
+    }
+
+    // Add Console action column if this type has a console builtin action
+    const hasConsole = typeConfig?.actions.some((a) => a.type === 'builtin' && a.name === 'console')
+    if (hasConsole) {
+      cols.push({
+        id: 'console',
+        header: '',
+        cell: ({ row }) => {
+          const isRunning = row.original.data.power_status === 'running'
+          const kvmUrl = row.original.data.kvm_url as string | undefined
+          const isValidUrl = kvmUrl && /^https?:\/\//i.test(kvmUrl)
+          if (!isRunning || !isValidUrl) return null
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                window.open(kvmUrl, '_blank', 'noopener,noreferrer')
+              }}
+            >
+              <Monitor className="mr-1 h-3 w-3" /> Console
             </Button>
           )
         },
