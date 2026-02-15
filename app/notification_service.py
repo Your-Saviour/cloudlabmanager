@@ -15,6 +15,10 @@ EVENT_JOB_FAILED = "job.failed"
 EVENT_HEALTH_STATE_CHANGE = "health.state_change"
 EVENT_SCHEDULE_COMPLETED = "schedule.completed"
 EVENT_SCHEDULE_FAILED = "schedule.failed"
+EVENT_DRIFT_STATE_CHANGE = "drift.state_change"
+EVENT_BUDGET_THRESHOLD_EXCEEDED = "budget.threshold_exceeded"
+EVENT_WEBHOOK_TRIGGERED = "webhook.triggered"
+EVENT_BULK_COMPLETED = "bulk.completed"
 
 
 async def notify(event_type: str, context: dict):

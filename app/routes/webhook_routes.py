@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import secrets
 import json
 from datetime import datetime, timezone
@@ -11,6 +12,9 @@ from permissions import require_permission
 from db_session import get_db_session
 from audit import log_action
 from models import WebhookEndpointCreate, WebhookEndpointUpdate
+from notification_service import notify, EVENT_WEBHOOK_TRIGGERED
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
@@ -158,6 +162,21 @@ async def trigger_webhook(token: str, request: Request, session: Session = Depen
 
     # Background task to update status when job completes
     asyncio.create_task(_update_webhook_status(webhook.id, job.id, runner))
+
+    # Fire notification for webhook trigger
+    try:
+        await notify(EVENT_WEBHOOK_TRIGGERED, {
+            "title": f"Webhook triggered: {webhook.name}",
+            "body": f"Webhook '{webhook.name}' ({webhook.job_type}) started job {job.id}.",
+            "severity": "info",
+            "action_url": f"/jobs/{job.id}",
+            "webhook_name": webhook.name,
+            "job_id": job.id,
+            "job_type": webhook.job_type,
+            "service_name": webhook.service_name or "",
+        })
+    except Exception:
+        logger.exception("Failed to notify for webhook trigger %d", webhook.id)
 
     return {"ok": True, "job_id": job.id, "webhook_id": webhook.id, "webhook_name": webhook.name}
 

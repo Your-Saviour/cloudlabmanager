@@ -180,7 +180,7 @@ function RulesTab() {
     })
   }
 
-  const eventTypeLabel = (key: string) => eventTypes.find((e) => e.key === key)?.label || key
+  const eventTypeLabel = (key: string) => eventTypes.find((e) => e.value === key)?.label || key
   const roleLabel = (id: number | null) => {
     if (!id) return '—'
     return roles.find((r) => r.id === id)?.name || `Role #${id}`
@@ -265,7 +265,7 @@ function RulesTab() {
           <SelectTrigger><SelectValue placeholder="Select event type..." /></SelectTrigger>
           <SelectContent>
             {eventTypes.map((et) => (
-              <SelectItem key={et.key} value={et.key}>{et.label}</SelectItem>
+              <SelectItem key={et.value} value={et.value}>{et.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>

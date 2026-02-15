@@ -155,12 +155,13 @@ def _build_drift_email(status: str, previous_status: str, summary: dict, report_
 
 
 async def _maybe_notify_drift(status: str, previous_status: str, summary: dict, report_data: dict):
-    """Send drift notification email if configured and a state transition occurred."""
+    """Send drift notification via the unified notification system."""
     if previous_status == "unknown":
         return  # Don't notify on first check
     if previous_status == status:
         return  # No transition
 
+    # Check drift-specific notification settings for transition filtering
     session = SessionLocal()
     try:
         settings = AppMetadata.get(session, DRIFT_NOTIFICATION_SETTINGS_KEY, {})
@@ -170,29 +171,38 @@ async def _maybe_notify_drift(status: str, previous_status: str, summary: dict, 
     if not settings or not settings.get("enabled", False):
         return
 
-    recipients = settings.get("recipients", [])
-    if not recipients:
-        return
-
-    # Check if this transition type should be notified
     notify_on = settings.get("notify_on", ["drifted", "missing", "orphaned"])
-    # "drifted" in notify_on means notify when status becomes "drifted"
-    # We always notify on clean->drifted and drifted->clean transitions
-    # since that's the primary use case
     if status == "drifted" and "drifted" not in notify_on:
         return
     if status == "clean" and "resolved" not in notify_on and "drifted" not in notify_on:
         return
 
-    from email_service import _send_email
+    # Dispatch through unified notification system
+    from notification_service import notify, EVENT_DRIFT_STATE_CHANGE
 
-    subject, html_body, text_body = _build_drift_email(status, previous_status, summary, report_data)
+    is_resolved = status == "clean"
+    direction = "Resolved" if is_resolved else "Detected"
+    drifted_count = summary.get("drifted", 0)
+    missing_count = summary.get("missing", 0)
+    orphaned_count = summary.get("orphaned", 0)
 
-    for recipient in recipients:
-        try:
-            await _send_email(recipient, subject, html_body, text_body)
-        except Exception:
-            logger.exception("Failed to send drift notification to %s", recipient)
+    body_parts = []
+    if drifted_count:
+        body_parts.append(f"{drifted_count} drifted")
+    if missing_count:
+        body_parts.append(f"{missing_count} missing")
+    if orphaned_count:
+        body_parts.append(f"{orphaned_count} orphaned")
+    body_detail = ", ".join(body_parts) if body_parts else "all in sync"
+
+    await notify(EVENT_DRIFT_STATE_CHANGE, {
+        "title": f"Infrastructure Drift {direction}",
+        "body": f"Drift check: {previous_status} \u2192 {status}. {body_detail}.",
+        "severity": "error" if status == "drifted" else "success",
+        "action_url": "/drift",
+        "status": status,
+        "previous_status": previous_status,
+    })
 
 
 async def run_drift_check(triggered_by: str = "poller") -> DriftReport | None:

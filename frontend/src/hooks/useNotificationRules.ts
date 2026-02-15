@@ -25,9 +25,8 @@ export interface NotificationChannel {
 }
 
 export interface EventType {
-  key: string
+  value: string
   label: string
-  category: string
 }
 
 // Rules

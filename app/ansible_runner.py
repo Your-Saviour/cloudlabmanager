@@ -94,43 +94,22 @@ async def _check_budget_alert(session, cost_data):
         if datetime.now(timezone.utc) - last_dt < timedelta(hours=cooldown_hours):
             return  # Still in cooldown
 
-    recipients = settings.get("recipients", [])
-    if not recipients:
-        return
+    # Dispatch through unified notification system
+    from notification_service import notify, EVENT_BUDGET_THRESHOLD_EXCEEDED
 
-    # Build and send alert email
-    from email_service import _send_email
-    from html import escape as html_escape
     overage = current_cost - threshold
     pct_over = (overage / threshold) * 100
 
-    subject = f"[CloudLab] Budget Alert — ${current_cost:.2f}/mo exceeds ${threshold:.2f} threshold"
-    esc_cost = html_escape(f"${current_cost:.2f}")
-    esc_threshold = html_escape(f"${threshold:.2f}")
-    esc_overage = html_escape(f"${overage:.2f} ({pct_over:.1f}%)")
-    esc_count = html_escape(str(len(cost_data.get('instances', []))))
-    html_body = f"""
-    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0a0c10; color: #e8edf5; padding: 2rem; border: 1px solid #1e2738; border-radius: 8px;">
-        <div style="border-bottom: 2px solid #ef4444; padding-bottom: 1rem; margin-bottom: 1.5rem;">
-            <h1 style="margin: 0; font-size: 1.2rem; color: #ef4444; letter-spacing: 0.1em;">BUDGET ALERT</h1>
-        </div>
-        <table style="width: 100%; color: #8899b0; font-size: 0.9rem;">
-            <tr><td style="padding: 4px 0;"><strong>Current Monthly Cost:</strong></td><td style="color: #ef4444;">{esc_cost}</td></tr>
-            <tr><td style="padding: 4px 0;"><strong>Budget Threshold:</strong></td><td>{esc_threshold}</td></tr>
-            <tr><td style="padding: 4px 0;"><strong>Over Budget:</strong></td><td style="color: #ef4444;">{esc_overage}</td></tr>
-            <tr><td style="padding: 4px 0;"><strong>Active Instances:</strong></td><td>{esc_count}</td></tr>
-        </table>
-    </div>
-    """
-    text_body = f"Budget Alert: ${current_cost:.2f}/mo exceeds ${threshold:.2f} threshold (${overage:.2f} over, {pct_over:.1f}%)"
+    await notify(EVENT_BUDGET_THRESHOLD_EXCEEDED, {
+        "title": f"Budget Alert \u2014 ${current_cost:.2f}/mo exceeds ${threshold:.2f} threshold",
+        "body": f"Current cost ${current_cost:.2f} is over budget by ${overage:.2f} ({pct_over:.1f}%). {len(cost_data.get('instances', []))} active instances.",
+        "severity": "error",
+        "action_url": "/costs",
+        "current_cost": current_cost,
+        "threshold": threshold,
+    })
 
-    for recipient in recipients:
-        try:
-            await _send_email(recipient, subject, html_body, text_body)
-        except Exception:
-            print(f"Failed to send budget alert to {recipient}")
-
-    # Update last_alerted_at
+    # Update last_alerted_at (cooldown tracking)
     settings["last_alerted_at"] = datetime.now(timezone.utc).isoformat()
     AppMetadata.set(session, "cost_budget_settings", settings)
     session.commit()
@@ -714,6 +693,7 @@ class AnsibleRunner:
         parent.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(parent)
         await self._notify_job(parent)
+        await self._notify_bulk(parent, child_jobs, "stop")
 
     async def bulk_deploy(self, service_names: list[str],
                           user_id: int | None = None, username: str | None = None) -> Job:
@@ -756,6 +736,7 @@ class AnsibleRunner:
         parent.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(parent)
         await self._notify_job(parent)
+        await self._notify_bulk(parent, child_jobs, "deploy")
 
     async def stop_instance(self, label: str, region: str,
                             user_id: int | None = None, username: str | None = None) -> Job:
@@ -1086,6 +1067,26 @@ class AnsibleRunner:
                 job.output.append(f"[Service outputs synced for {service_name}]")
         except Exception as e:
             job.output.append(f"[Warning: Could not sync service outputs: {e}]")
+
+    async def _notify_bulk(self, parent: Job, child_jobs: list, operation: str):
+        """Fire a bulk-specific notification after a bulk stop/deploy completes."""
+        from notification_service import notify, EVENT_BULK_COMPLETED
+        try:
+            services = parent.inputs.get("services", [])
+            failed_count = sum(1 for _, child in child_jobs if child.status != "completed")
+            succeeded_count = len(child_jobs) - failed_count
+            await notify(EVENT_BULK_COMPLETED, {
+                "title": f"Bulk {operation} {parent.status}: {len(services)} services",
+                "body": f"{succeeded_count} succeeded, {failed_count} failed.",
+                "severity": "success" if parent.status == "completed" else "warning",
+                "action_url": f"/jobs/{parent.id}",
+                "status": parent.status,
+                "operation": operation,
+                "service_count": len(services),
+                "job_id": parent.id,
+            })
+        except Exception:
+            print(f"[notification] Failed to notify for bulk {operation} {parent.id}")
 
     async def _notify_job(self, job: Job):
         """Fire a notification for a completed/failed job."""

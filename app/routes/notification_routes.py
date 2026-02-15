@@ -26,6 +26,10 @@ EVENT_TYPES = [
     {"value": "health.state_change", "label": "Health State Change"},
     {"value": "schedule.completed", "label": "Scheduled Job Completed"},
     {"value": "schedule.failed", "label": "Scheduled Job Failed"},
+    {"value": "drift.state_change", "label": "Drift State Change"},
+    {"value": "budget.threshold_exceeded", "label": "Budget Threshold Exceeded"},
+    {"value": "webhook.triggered", "label": "Webhook Triggered"},
+    {"value": "bulk.completed", "label": "Bulk Operation Completed"},
 ]
 
 VALID_CHANNELS = ("in_app", "email", "slack")

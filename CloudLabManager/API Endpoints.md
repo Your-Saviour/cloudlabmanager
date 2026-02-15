@@ -684,7 +684,11 @@ Returns available event types:
   { "value": "job.failed", "label": "Job Failed" },
   { "value": "health.state_change", "label": "Health State Change" },
   { "value": "schedule.completed", "label": "Schedule Completed" },
-  { "value": "schedule.failed", "label": "Schedule Failed" }
+  { "value": "schedule.failed", "label": "Schedule Failed" },
+  { "value": "drift.state_change", "label": "Drift State Change" },
+  { "value": "budget.threshold_exceeded", "label": "Budget Threshold Exceeded" },
+  { "value": "webhook.triggered", "label": "Webhook Triggered" },
+  { "value": "bulk.completed", "label": "Bulk Operation Completed" }
 ]
 ```
 
