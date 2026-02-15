@@ -222,4 +222,32 @@ export interface DryRunValidation {
   message: string
 }
 
+export interface CostHistoryPoint {
+  date: string
+  total_monthly_cost: number
+  instance_count: number
+}
+
+export interface CostHistoryResponse {
+  data_points: CostHistoryPoint[]
+  period: { from: string; to: string }
+  granularity: string
+}
+
+export interface CostServicePoint {
+  date: string
+  services: Record<string, number>
+  total: number
+}
+
+export interface CostSummary {
+  current_total: number
+  previous_total: number
+  change_amount: number
+  change_percent: number
+  direction: 'up' | 'down' | 'flat'
+  current_instance_count: number
+  previous_instance_count: number
+}
+
 export type { ScheduledJob, CronPreview } from './schedule'

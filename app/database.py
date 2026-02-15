@@ -354,6 +354,17 @@ class HealthCheckResult(Base):
     target = Column(String(255), nullable=True)  # URL or host:port that was checked
 
 
+class CostSnapshot(Base):
+    __tablename__ = "cost_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    total_monthly_cost = Column(String(20), nullable=False)  # stored as string like Ansible does
+    instance_count = Column(Integer, nullable=False, default=0)
+    snapshot_data = Column(Text, nullable=False)  # Full JSON: instances with per-instance costs
+    source = Column(String(20), nullable=False)  # "playbook" or "computed"
+    captured_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+
 class NotificationChannel(Base):
     __tablename__ = "notification_channels"
 

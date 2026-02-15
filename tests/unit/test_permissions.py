@@ -62,7 +62,7 @@ class TestStaticPermissionDefs:
 
     def test_cost_permissions_category(self):
         cost_perms = [p for p in STATIC_PERMISSION_DEFS if p[0].startswith("costs.")]
-        assert len(cost_perms) == 2
+        assert len(cost_perms) == 3
         for perm in cost_perms:
             assert perm[1] == "costs"
 

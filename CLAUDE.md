@@ -37,6 +37,7 @@ cloudlabmanager/
 │   │   ├── user_routes.py     # /api/users/*
 │   │   ├── role_routes.py     # /api/roles/*
 │   │   ├── health_routes.py   # /api/health/*
+│   │   ├── cost_routes.py     # /api/costs/*
 │   │   ├── schedule_routes.py # /api/schedules/*
 │   │   ├── notification_routes.py # /api/notifications/*
 │   │   └── audit_routes.py    # /api/audit/*
@@ -120,6 +121,6 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 
 ## Database
 
-SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `notifications`, `notification_rules`, `notification_channels`.
+SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `cost_snapshots`, `notifications`, `notification_rules`, `notification_channels`.
 
 See `app/database.py` for full schema.

@@ -6,7 +6,7 @@ import uuid
 import os
 import shutil
 import yaml
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from models import Job
 
 VAULT_PASS_FILE = "/tmp/.vault_pass.txt"
@@ -69,6 +69,71 @@ def save_config_version(session, service_name: str, filename: str, content: str,
         session.flush()
 
     return version
+
+
+async def _check_budget_alert(session, cost_data):
+    """Check if current costs exceed budget threshold and send alert."""
+    from database import AppMetadata
+    settings = AppMetadata.get(session, "cost_budget_settings", {})
+    if not settings or not settings.get("enabled"):
+        return
+
+    threshold = float(settings.get("monthly_threshold", 0))
+    if threshold <= 0:
+        return
+
+    current_cost = float(cost_data.get("total_monthly_cost", 0))
+    if current_cost <= threshold:
+        return  # Under budget
+
+    # Check cooldown
+    last_alerted = settings.get("last_alerted_at")
+    cooldown_hours = int(settings.get("alert_cooldown_hours", 24))
+    if last_alerted:
+        last_dt = datetime.fromisoformat(last_alerted)
+        if datetime.now(timezone.utc) - last_dt < timedelta(hours=cooldown_hours):
+            return  # Still in cooldown
+
+    recipients = settings.get("recipients", [])
+    if not recipients:
+        return
+
+    # Build and send alert email
+    from email_service import _send_email
+    from html import escape as html_escape
+    overage = current_cost - threshold
+    pct_over = (overage / threshold) * 100
+
+    subject = f"[CloudLab] Budget Alert — ${current_cost:.2f}/mo exceeds ${threshold:.2f} threshold"
+    esc_cost = html_escape(f"${current_cost:.2f}")
+    esc_threshold = html_escape(f"${threshold:.2f}")
+    esc_overage = html_escape(f"${overage:.2f} ({pct_over:.1f}%)")
+    esc_count = html_escape(str(len(cost_data.get('instances', []))))
+    html_body = f"""
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0a0c10; color: #e8edf5; padding: 2rem; border: 1px solid #1e2738; border-radius: 8px;">
+        <div style="border-bottom: 2px solid #ef4444; padding-bottom: 1rem; margin-bottom: 1.5rem;">
+            <h1 style="margin: 0; font-size: 1.2rem; color: #ef4444; letter-spacing: 0.1em;">BUDGET ALERT</h1>
+        </div>
+        <table style="width: 100%; color: #8899b0; font-size: 0.9rem;">
+            <tr><td style="padding: 4px 0;"><strong>Current Monthly Cost:</strong></td><td style="color: #ef4444;">{esc_cost}</td></tr>
+            <tr><td style="padding: 4px 0;"><strong>Budget Threshold:</strong></td><td>{esc_threshold}</td></tr>
+            <tr><td style="padding: 4px 0;"><strong>Over Budget:</strong></td><td style="color: #ef4444;">{esc_overage}</td></tr>
+            <tr><td style="padding: 4px 0;"><strong>Active Instances:</strong></td><td>{esc_count}</td></tr>
+        </table>
+    </div>
+    """
+    text_body = f"Budget Alert: ${current_cost:.2f}/mo exceeds ${threshold:.2f} threshold (${overage:.2f} over, {pct_over:.1f}%)"
+
+    for recipient in recipients:
+        try:
+            await _send_email(recipient, subject, html_body, text_body)
+        except Exception:
+            print(f"Failed to send budget alert to {recipient}")
+
+    # Update last_alerted_at
+    settings["last_alerted_at"] = datetime.now(timezone.utc).isoformat()
+    AppMetadata.set(session, "cost_budget_settings", settings)
+    session.commit()
 
 
 class AnsibleRunner:
@@ -923,8 +988,28 @@ class AnsibleRunner:
                             AppMetadata.set(session, "plans_cache", plans_data)
                             AppMetadata.set(session, "plans_cache_time", datetime.now(timezone.utc).isoformat())
 
+                        # Insert cost snapshot for historical tracking
+                        from database import CostSnapshot
+                        snapshot = CostSnapshot(
+                            total_monthly_cost=str(cost_data.get("total_monthly_cost", 0)),
+                            instance_count=len(cost_data.get("instances", [])),
+                            snapshot_data=json.dumps(cost_data),
+                            source="playbook",
+                        )
+                        session.add(snapshot)
+
+                        # Clean up old snapshots beyond retention period
+                        self._cleanup_old_snapshots(session)
+
                         session.commit()
                         job.output.append("[Cost data cached successfully]")
+                        job.output.append("[Cost snapshot saved]")
+
+                        # Check budget threshold and send alert if exceeded
+                        try:
+                            await _check_budget_alert(session, cost_data)
+                        except Exception as e:
+                            job.output.append(f"[Warning: Budget alert check failed: {e}]")
                     finally:
                         session.close()
                 except Exception as e:
@@ -934,6 +1019,12 @@ class AnsibleRunner:
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
         await self._notify_job(job)
+
+    def _cleanup_old_snapshots(self, session, retention_days=365):
+        """Delete cost snapshots older than retention period."""
+        from database import CostSnapshot
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        session.query(CostSnapshot).filter(CostSnapshot.captured_at < cutoff).delete()
 
     async def _run_stop_instance(self, job: Job, label: str, region: str):
         job.output.append(f"--- Destroying instance: {label} ({region}) ---")

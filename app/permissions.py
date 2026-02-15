@@ -43,6 +43,7 @@ STATIC_PERMISSION_DEFS = [
     # costs
     ("costs.view", "costs", "View Costs", "View cost breakdown and billing data"),
     ("costs.refresh", "costs", "Refresh Costs", "Trigger cost data refresh from Vultr"),
+    ("costs.budget", "costs", "Manage Budget", "Configure budget threshold and alert settings"),
     # schedules
     ("schedules.view", "schedules", "View Schedules", "View scheduled job definitions"),
     ("schedules.create", "schedules", "Create Schedules", "Create new scheduled jobs"),
