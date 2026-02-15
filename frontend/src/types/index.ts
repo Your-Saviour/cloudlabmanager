@@ -81,9 +81,12 @@ export interface Job {
   started_at: string
   finished_at?: string
   started_by?: string
+  username?: string
   schedule_id?: number
   inputs?: Record<string, unknown>
   parent_job_id?: string
+  object_id?: number
+  type_slug?: string
 }
 
 export interface Service {

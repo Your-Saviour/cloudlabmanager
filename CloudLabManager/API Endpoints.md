@@ -236,6 +236,13 @@ A directory in `cloudlab/services/` is considered a deployable service if it con
 | DELETE | `/api/jobs/{id}` | `jobs.cancel` | Cancel a running job |
 | WebSocket | `/api/jobs/ws/{id}` | Yes | Real-time job output streaming |
 
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `parent_job_id` | string | Filter jobs by parent job ID |
+| `object_id` | int | Filter jobs by inventory object ID (returns only jobs targeting that object) |
+
 ### Job Object
 
 ```json
@@ -250,7 +257,9 @@ A directory in `cloudlab/services/` is considered a deployable service if it con
   "user_id": 1,
   "username": "jake",
   "inputs": {},
-  "parent_job_id": null
+  "parent_job_id": null,
+  "object_id": 5,
+  "type_slug": "server"
 }
 ```
 
@@ -258,6 +267,8 @@ Job statuses: `running`, `completed`, `failed`
 
 - `inputs` — JSON object containing the original parameters used to create the job. For deploy/stop/refresh jobs this is `{}`. For script jobs it contains the script name and user-provided inputs. Pre-existing jobs (created before this feature) return `null`.
 - `parent_job_id` — ID of the parent job. Set when created via rerun or as a child of a bulk operation. `null` for standalone jobs. Filter child jobs with `GET /api/jobs?parent_job_id={id}`.
+- `object_id` — ID of the inventory object this job targeted. `null` for jobs not associated with an inventory object. Filter jobs for an object with `GET /api/jobs?object_id={id}`.
+- `type_slug` — Inventory type slug (e.g., `server`, `service`) of the targeted object. `null` when no inventory object is associated.
 
 ### POST `/api/jobs/{id}/rerun`
 

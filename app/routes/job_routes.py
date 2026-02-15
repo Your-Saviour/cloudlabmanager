@@ -40,6 +40,8 @@ def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
             "schedule_id": j.schedule_id,
             "inputs": json.loads(j.inputs) if j.inputs else None,
             "parent_job_id": j.parent_job_id,
+            "object_id": j.object_id,
+            "type_slug": j.type_slug,
         }
         if can_view_all or (can_view_own and j.user_id == user.id):
             jobs[j.id] = job_dict
@@ -57,6 +59,7 @@ def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
 @router.get("")
 async def list_jobs(request: Request,
                     parent_job_id: str | None = None,
+                    object_id: int | None = None,
                     user: User = Depends(get_current_user)):
     runner = request.app.state.ansible_runner
     session = SessionLocal()
@@ -64,6 +67,8 @@ async def list_jobs(request: Request,
         jobs = _get_all_jobs(runner, session, user)
         if parent_job_id:
             jobs = [j for j in jobs if j.get("parent_job_id") == parent_job_id]
+        if object_id is not None:
+            jobs = [j for j in jobs if j.get("object_id") == object_id]
         return {"jobs": jobs}
     finally:
         session.close()
@@ -103,6 +108,8 @@ async def get_job(job_id: str, request: Request, user: User = Depends(get_curren
                     "schedule_id": db_job.schedule_id,
                     "inputs": json.loads(db_job.inputs) if db_job.inputs else None,
                     "parent_job_id": db_job.parent_job_id,
+                    "object_id": db_job.object_id,
+                    "type_slug": db_job.type_slug,
                 }
             raise HTTPException(status_code=403, detail="Permission denied")
 

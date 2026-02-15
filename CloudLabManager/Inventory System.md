@@ -210,6 +210,16 @@ Each object in a bulk request is individually checked against the user's permiss
 
 Bulk action execution (destroy, stop, etc.) creates a parent job with child jobs per object. The parent job tracks overall completion and its output summarises per-child results. See [[API Endpoints#Bulk Operations]] for request/response formats.
 
+## Job History
+
+Each inventory object's detail page includes a **Job History** tab showing all jobs that have targeted that object. This provides a quick way to see past actions (deploys, stops, scripts, etc.) without leaving the inventory page.
+
+- Jobs are fetched via `GET /api/jobs?object_id={id}` with 10-second polling
+- Table columns: Status (badge), Action (link to job detail), Triggered By, Started (relative time), Duration
+- A **last job badge** appears in the object's header showing the most recent job's status and timestamp — clicking it navigates to that job's detail page
+
+See [[API Endpoints#Jobs]] for the `object_id` query parameter details.
+
 ## API Reference
 
 See [[API Endpoints#Inventory]] for the full endpoint list.

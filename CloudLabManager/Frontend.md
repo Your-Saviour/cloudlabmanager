@@ -187,6 +187,15 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Confirmation dialogs for destructive bulk actions
 - Skipped items (due to RBAC) shown via warning toast
 
+### Inventory Detail — Job History
+- **Job History tab** on each inventory object's detail page (alongside Details, Tags, Actions, ACLs)
+- Shows all jobs that targeted the object, fetched via `GET /api/jobs?object_id={id}` with 10-second polling
+- DataTable columns: Status (badge), Action (clickable link to job detail), Triggered By, Started (relative time), Duration
+- Empty state message when no jobs exist for the object
+- **Last job badge** in the detail page header — shows the most recent job's status and relative timestamp
+- Badge is clickable, navigating to the job's detail page
+- Badge only renders when job history exists (gracefully hidden otherwise)
+
 ### Portal
 - Unified service access launchpad at `/portal` (requires `portal.view` permission)
 - Sidebar link with Compass icon between Dashboard and Services

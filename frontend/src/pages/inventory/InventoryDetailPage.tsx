@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Trash2, Play, Plus, X, Terminal } from 'lucide-react'
@@ -25,7 +25,11 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import type { InventoryObject, InventoryField, Tag, ACLEntry } from '@/types'
+import { StatusBadge } from '@/components/shared/StatusBadge'
+import { DataTable } from '@/components/data/DataTable'
+import { relativeTime } from '@/lib/utils'
+import type { ColumnDef } from '@tanstack/react-table'
+import type { InventoryObject, InventoryField, Tag, ACLEntry, Job } from '@/types'
 
 export default function InventoryDetailPage() {
   const { typeSlug, objId } = useParams<{ typeSlug: string; objId: string }>()
@@ -66,6 +70,80 @@ export default function InventoryDetailPage() {
     },
     enabled: !!typeSlug && !!objId,
   })
+
+  const { data: jobHistory = [], isLoading: jobsLoading } = useQuery({
+    queryKey: ['inventory', typeSlug, objId, 'jobs'],
+    queryFn: async () => {
+      const { data } = await api.get(`/api/jobs?object_id=${objId}`)
+      return (data.jobs || []) as Job[]
+    },
+    enabled: !!objId,
+    refetchInterval: 10000,
+  })
+
+  const lastJob = jobHistory.length > 0 ? jobHistory[0] : null
+
+  const jobColumns = useMemo<ColumnDef<Job>[]>(
+    () => [
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      },
+      {
+        accessorKey: 'action',
+        header: 'Action',
+        cell: ({ row }) => (
+          <button
+            type="button"
+            className="text-primary hover:underline font-medium"
+            onClick={() => navigate(`/jobs/${row.original.id}`)}
+            aria-label={`View job: ${row.original.action}`}
+          >
+            {row.original.action}
+          </button>
+        ),
+      },
+      {
+        accessorKey: 'username',
+        header: 'Triggered By',
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.started_by || row.original.username || '-'}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'started_at',
+        header: 'Started',
+        cell: ({ row }) => (
+          <span className="text-muted-foreground text-xs">
+            {relativeTime(row.original.started_at)}
+          </span>
+        ),
+      },
+      {
+        id: 'duration',
+        header: 'Duration',
+        cell: ({ row }) => {
+          const { started_at, finished_at, status } = row.original
+          if (status === 'running') {
+            return <span className="text-muted-foreground text-xs">running</span>
+          }
+          if (!started_at || !finished_at) {
+            return <span className="text-muted-foreground text-xs">-</span>
+          }
+          const ms = new Date(finished_at).getTime() - new Date(started_at).getTime()
+          const secs = Math.floor(ms / 1000)
+          if (secs < 60) return <span className="text-muted-foreground text-xs">{secs}s</span>
+          const mins = Math.floor(secs / 60)
+          const remSecs = secs % 60
+          return <span className="text-muted-foreground text-xs">{mins}m {remSecs}s</span>
+        },
+      },
+    ],
+    [navigate]
+  )
 
   const updateMutation = useMutation({
     mutationFn: (body: { name?: string; data?: Record<string, unknown> }) =>
@@ -139,14 +217,26 @@ export default function InventoryDetailPage() {
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/inventory/${typeSlug}`)}>
+        <Button variant="ghost" size="icon" onClick={() => navigate(`/inventory/${typeSlug}`)} aria-label="Back to inventory list">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
           <h1 className="text-2xl font-semibold tracking-tight">{obj.name}</h1>
           <p className="text-sm text-muted-foreground">{typeConfig?.label || typeSlug}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {lastJob && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => navigate(`/jobs/${lastJob.id}`)}
+              title={`Last job: ${lastJob.action} — ${lastJob.status}`}
+              aria-label={`Last job: ${lastJob.action}, status ${lastJob.status}, ${relativeTime(lastJob.started_at)}`}
+            >
+              <StatusBadge status={lastJob.status} />
+              <span>{relativeTime(lastJob.started_at)}</span>
+            </button>
+          )}
           {canEdit && !editing && (
             <Button variant="outline" size="sm" onClick={startEdit}>Edit</Button>
           )}
@@ -164,6 +254,7 @@ export default function InventoryDetailPage() {
           <TabsTrigger value="tags">Tags</TabsTrigger>
           <TabsTrigger value="actions">Actions</TabsTrigger>
           <TabsTrigger value="acl">ACL</TabsTrigger>
+          <TabsTrigger value="jobs">Job History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
@@ -307,6 +398,29 @@ export default function InventoryDetailPage() {
                     </div>
                   ))}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="jobs" className="mt-4">
+          <Card>
+            <CardContent className="pt-6">
+              {jobsLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : jobHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No jobs have been run against this object.</p>
+              ) : (
+                <DataTable
+                  columns={jobColumns}
+                  data={jobHistory}
+                  searchKey="action"
+                  searchPlaceholder="Search jobs..."
+                />
               )}
             </CardContent>
           </Card>
