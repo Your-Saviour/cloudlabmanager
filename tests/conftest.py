@@ -279,6 +279,9 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     from routes.preference_routes import router as preference_router
     app.include_router(preference_router)
 
+    from routes.portal_routes import router as portal_router
+    app.include_router(portal_router)
+
     return app
 
 

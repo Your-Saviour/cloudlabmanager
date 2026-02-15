@@ -717,6 +717,46 @@ Returns:
 | `quick_links.order` | `string[]` | Quick link display order (format: `service:label` or `custom:id`) |
 | `quick_links.custom_links` | `object[]` | User-created custom links (id, label, url) |
 
+## Portal
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/portal/services` | `portal.view` | Aggregated portal data per service (outputs, health, inventory, connection guide, bookmarks) |
+| GET | `/api/portal/bookmarks` | `portal.view` | List current user's bookmarks |
+| POST | `/api/portal/bookmarks` | `portal.bookmarks.edit` | Create a bookmark |
+| PUT | `/api/portal/bookmarks/{id}` | `portal.bookmarks.edit` | Update a bookmark (must belong to user) |
+| DELETE | `/api/portal/bookmarks/{id}` | `portal.bookmarks.edit` | Delete a bookmark (must belong to user) |
+
+### GET `/api/portal/services`
+
+Returns unified portal data for all deployed services, aggregating:
+- Service outputs (`service_outputs.yaml`)
+- Latest health check results per service
+- Server inventory objects (IP, power status, tags)
+- Instance definitions from `instance.yaml` (plan, region, OS, hostname)
+- FQDNs built from `config.yml` domain name
+- Connection guide (SSH command, web URL, FQDN)
+- Current user's bookmarks per service
+
+Services are sorted alphabetically by name.
+
+### POST `/api/portal/bookmarks`
+
+```json
+{
+  "service_name": "n8n-server",
+  "label": "Admin Panel",
+  "url": "https://n8n.example.com/admin",
+  "notes": "Use admin credentials from vault"
+}
+```
+
+`url` and `notes` are optional. Bookmarks are per-user — each user only sees and manages their own.
+
+### PUT `/api/portal/bookmarks/{id}`
+
+Same body as POST (all fields optional). Returns 404 if the bookmark doesn't exist or belongs to another user.
+
 ## Inventory
 
 See [[Inventory System]] for concepts. All inventory endpoints require authentication.

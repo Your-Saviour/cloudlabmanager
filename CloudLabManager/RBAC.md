@@ -54,6 +54,8 @@ These are always present:
 | Schedules | `schedules.create` | Create new scheduled jobs |
 | Schedules | `schedules.edit` | Edit existing scheduled jobs |
 | Schedules | `schedules.delete` | Delete scheduled jobs |
+| Portal | `portal.view` | View the service access portal |
+| Portal | `portal.bookmarks.edit` | Create, edit, and delete personal portal bookmarks |
 | Inventory | `inventory.tags.manage` | Create/edit/delete tags |
 
 ### Dynamic Permissions

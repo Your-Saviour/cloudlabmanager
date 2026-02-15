@@ -365,6 +365,22 @@ class HealthCheckResult(Base):
     target = Column(String(255), nullable=True)  # URL or host:port that was checked
 
 
+class PortalBookmark(Base):
+    __tablename__ = "portal_bookmarks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    service_name = Column(String(100), nullable=False)
+    label = Column(String(200), nullable=False)
+    url = Column(String(500), nullable=True)
+    notes = Column(Text, nullable=True)
+    sort_order = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("User")
+
+
 class CostSnapshot(Base):
     __tablename__ = "cost_snapshots"
 

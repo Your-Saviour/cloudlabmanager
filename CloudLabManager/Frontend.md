@@ -187,6 +187,28 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Confirmation dialogs for destructive bulk actions
 - Skipped items (due to RBAC) shown via warning toast
 
+### Portal
+- Unified service access launchpad at `/portal` (requires `portal.view` permission)
+- Sidebar link with Compass icon between Dashboard and Services
+- **Grid/list toggle** — grid mode shows full service cards, list mode shows compact single-row entries
+- **Search** — filters across service name, hostname, FQDN, IP, and tags (case-insensitive)
+- **Grouping** — group by none, tag, or region with labeled section headers
+- **Service cards** (grid view):
+  - 3px colored status strip (green=running, amber=suspended, gray=stopped)
+  - Display name, health badge (healthy/unhealthy/degraded/unknown), power status
+  - Data cells: hostname, IP address, region
+  - Prominent FQDN link with globe icon
+  - Tags as outline badges
+  - **Outputs section**: URL outputs as clickable links, credentials with blur/reveal toggle and copy-to-clipboard, plain text values
+  - **"Open in Browser" button** — opens first URL output in new tab
+  - **Connection Guide** — expandable section with SSH command (copy button), web URL, FQDN
+  - **SSH Terminal button** — opens modal with embedded xterm.js terminal via WebSocket (only for running services with hostname and IP)
+  - **Bookmarks** — per-user custom links and notes with add/edit/delete controls (requires `portal.bookmarks.edit` permission)
+- **List view** — compact rows with status dot, name, FQDN/IP link, health badge, region, and action icons (SSH copy, credential copy, open in browser)
+- Loading skeletons for both grid and list modes
+- Empty state when no services exist or no search results match
+- Components: `pages/portal/PortalPage.tsx`, `components/portal/ServicePortalCard.tsx`, `components/portal/CredentialDisplay.tsx`, `components/portal/ConnectionGuide.tsx`, `components/portal/BookmarkSection.tsx`, `components/portal/SSHTerminalModal.tsx`
+
 ### SSH Terminal
 - Opens from inventory actions on server objects
 - Full interactive terminal via WebSocket

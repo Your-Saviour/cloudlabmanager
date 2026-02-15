@@ -63,6 +63,9 @@ STATIC_PERMISSION_DEFS = [
     ("notifications.rules.view", "notifications", "View Notification Rules", "View notification rule configurations"),
     ("notifications.rules.manage", "notifications", "Manage Notification Rules", "Create, edit, and delete notification rules"),
     ("notifications.channels.manage", "notifications", "Manage Notification Channels", "Configure notification channels (Slack webhooks, etc.)"),
+    # portal
+    ("portal.view", "portal", "View Portal", "View the service access portal"),
+    ("portal.bookmarks.edit", "portal", "Edit Bookmarks", "Create, edit, and delete personal portal bookmarks"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

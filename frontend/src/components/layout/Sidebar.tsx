@@ -15,6 +15,7 @@ import {
   HeartPulse,
   GitCompare,
   Bell,
+  Compass,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
@@ -41,6 +42,7 @@ export function Sidebar() {
 
   const mainNav: NavItem[] = [
     { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
+    { label: 'Portal', href: '/portal', icon: <Compass className="h-4 w-4" />, permission: 'portal.view' },
     { label: 'Services', href: '/services', icon: <Boxes className="h-4 w-4" />, permission: 'services.view' },
     { label: 'Inventory', href: '/inventory', icon: <Server className="h-4 w-4" /> },
     { label: 'Jobs', href: '/jobs', icon: <Play className="h-4 w-4" /> },

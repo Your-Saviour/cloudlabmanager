@@ -26,6 +26,7 @@ from routes.health_routes import router as health_router
 from routes.drift_routes import router as drift_router
 from routes.notification_routes import router as notification_router
 from routes.preference_routes import router as preference_router
+from routes.portal_routes import router as portal_router
 from health_checker import HealthPoller, load_health_configs
 from drift_checker import DriftPoller
 
@@ -134,6 +135,7 @@ app.include_router(health_router)
 app.include_router(drift_router)
 app.include_router(notification_router)
 app.include_router(preference_router)
+app.include_router(portal_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
