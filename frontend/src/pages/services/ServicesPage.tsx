@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { DryRunPreview } from '@/components/services/DryRunPreview'
+import { BulkActionBar } from '@/components/shared/BulkActionBar'
 import type { InventoryObject, ServiceScript, ScriptInput } from '@/types'
 
 export default function ServicesPage() {
@@ -61,6 +62,9 @@ export default function ServicesPage() {
     objId: number
     script: ServiceScript
   } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkStopOpen, setBulkStopOpen] = useState(false)
+  const [bulkDeployOpen, setBulkDeployOpen] = useState(false)
 
   // Get service inventory objects
   const { data: serviceObjects = [], isLoading: objectsLoading } = useQuery({
@@ -70,6 +74,21 @@ export default function ServicesPage() {
       return (data.objects || []) as InventoryObject[]
     },
   })
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    setSelectedIds(new Set(serviceObjects.map(o => o.id)))
+  }
+
+  const clearSelection = () => setSelectedIds(new Set())
 
   // Get service scripts from the services API
   const { data: servicesData = [] } = useQuery({
@@ -112,6 +131,34 @@ export default function ServicesPage() {
       if (res.data.job_id) navigate(`/jobs/${res.data.job_id}`)
     },
     onError: () => toast.error('Stop all failed'),
+  })
+
+  const bulkStopMutation = useMutation({
+    mutationFn: (serviceNames: string[]) =>
+      api.post('/api/services/actions/bulk-stop', { service_names: serviceNames }),
+    onSuccess: (res) => {
+      clearSelection()
+      setBulkStopOpen(false)
+      if (res.data.job_id) navigate(`/jobs/${res.data.job_id}`)
+      if (res.data.skipped?.length > 0) {
+        toast.warning(`${res.data.skipped.length} services skipped`)
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Bulk stop failed'),
+  })
+
+  const bulkDeployMutation = useMutation({
+    mutationFn: (serviceNames: string[]) =>
+      api.post('/api/services/actions/bulk-deploy', { service_names: serviceNames }),
+    onSuccess: (res) => {
+      clearSelection()
+      setBulkDeployOpen(false)
+      if (res.data.job_id) navigate(`/jobs/${res.data.job_id}`)
+      if (res.data.skipped?.length > 0) {
+        toast.warning(`${res.data.skipped.length} services skipped`)
+      }
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Bulk deploy failed'),
   })
 
   const handleRunScript = (serviceName: string, objId: number, script: ServiceScript) => {
@@ -185,6 +232,12 @@ export default function ServicesPage() {
                     <span>{stoppedCount} stopped</span>
                   </span>
                 )}
+                <span className="text-border">·</span>
+                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() =>
+                  selectedIds.size === serviceObjects.length ? clearSelection() : selectAll()
+                }>
+                  {selectedIds.size === serviceObjects.length ? 'Deselect All' : 'Select All'}
+                </Button>
               </div>
             )}
           </div>
@@ -250,7 +303,15 @@ export default function ServicesPage() {
 
                 {/* Zone A: Identity */}
                 <div className="flex items-start justify-between mb-4">
-                  <div>
+                  <div className="flex items-start gap-3">
+                    {/* Selection checkbox */}
+                    <Checkbox
+                      checked={selectedIds.has(obj.id)}
+                      onCheckedChange={() => toggleSelect(obj.id)}
+                      className="mt-1"
+                      aria-label={`Select ${name}`}
+                    />
+                    <div>
                     <h3 className="font-display text-lg font-semibold">{name}</h3>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="flex items-center gap-1.5">
@@ -290,6 +351,7 @@ export default function ServicesPage() {
                         ))}
                       </div>
                     )}
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
@@ -408,6 +470,57 @@ export default function ServicesPage() {
         confirmLabel="Stop All"
         variant="destructive"
         onConfirm={() => stopAllMutation.mutate()}
+      />
+
+      {/* Bulk Stop Confirm */}
+      <ConfirmDialog
+        open={bulkStopOpen}
+        onOpenChange={setBulkStopOpen}
+        title={`Stop ${selectedIds.size} Services`}
+        description={`This will stop ${selectedIds.size} selected services. Are you sure?`}
+        confirmLabel="Stop Selected"
+        variant="destructive"
+        onConfirm={() => {
+          const names = serviceObjects
+            .filter(o => selectedIds.has(o.id))
+            .map(o => (o.data.name as string) || o.name)
+          bulkStopMutation.mutate(names)
+        }}
+      />
+
+      {/* Bulk Deploy Confirm */}
+      <ConfirmDialog
+        open={bulkDeployOpen}
+        onOpenChange={setBulkDeployOpen}
+        title={`Deploy ${selectedIds.size} Services`}
+        description={`This will deploy ${selectedIds.size} selected services. Are you sure?`}
+        confirmLabel="Deploy Selected"
+        onConfirm={() => {
+          const names = serviceObjects
+            .filter(o => selectedIds.has(o.id))
+            .map(o => (o.data.name as string) || o.name)
+          bulkDeployMutation.mutate(names)
+        }}
+      />
+
+      {/* Bulk Action Bar */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        onClear={clearSelection}
+        itemLabel="services"
+        actions={[
+          ...(canDeploy ? [{
+            label: 'Deploy',
+            icon: <Play className="h-3.5 w-3.5" />,
+            onClick: () => setBulkDeployOpen(true),
+          }] : []),
+          ...(canStop ? [{
+            label: 'Stop',
+            icon: <Square className="h-3.5 w-3.5" />,
+            variant: 'destructive' as const,
+            onClick: () => setBulkStopOpen(true),
+          }] : []),
+        ]}
       />
 
       {/* Dry Run Preview Modal */}

@@ -608,6 +608,90 @@ class AnsibleRunner:
         asyncio.create_task(self._run_stop_all(job))
         return job
 
+    async def bulk_stop(self, service_names: list[str],
+                        user_id: int | None = None, username: str | None = None) -> Job:
+        parent_id = str(uuid.uuid4())[:8]
+        parent = Job(
+            id=parent_id,
+            service=f"bulk ({len(service_names)} services)",
+            action="bulk_stop",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+            inputs={"services": service_names},
+        )
+        self.jobs[parent_id] = parent
+        asyncio.create_task(self._run_bulk_stop(parent, service_names))
+        return parent
+
+    async def _run_bulk_stop(self, parent: Job, service_names: list[str]):
+        parent.output.append(f"--- Bulk stop: {len(service_names)} services ---")
+        child_jobs = []
+        for name in service_names:
+            parent.output.append(f"[Starting stop for {name}]")
+            child = await self.stop_service(name, user_id=parent.user_id, username=parent.username)
+            child.parent_job_id = parent.id
+            child_jobs.append((name, child))
+
+        # Wait for all children to complete
+        for name, child in child_jobs:
+            while child.status == "running":
+                await asyncio.sleep(1)
+            parent.output.append(f"[{name}] finished: {child.status}")
+
+        failed = [name for name, child in child_jobs if child.status != "completed"]
+        if failed:
+            parent.output.append(f"[Failed: {', '.join(failed)}]")
+            parent.status = "failed" if len(failed) == len(child_jobs) else "completed"
+        else:
+            parent.status = "completed"
+        parent.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(parent)
+        await self._notify_job(parent)
+
+    async def bulk_deploy(self, service_names: list[str],
+                          user_id: int | None = None, username: str | None = None) -> Job:
+        parent_id = str(uuid.uuid4())[:8]
+        parent = Job(
+            id=parent_id,
+            service=f"bulk ({len(service_names)} services)",
+            action="bulk_deploy",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+            inputs={"services": service_names},
+        )
+        self.jobs[parent_id] = parent
+        asyncio.create_task(self._run_bulk_deploy(parent, service_names))
+        return parent
+
+    async def _run_bulk_deploy(self, parent: Job, service_names: list[str]):
+        parent.output.append(f"--- Bulk deploy: {len(service_names)} services ---")
+        child_jobs = []
+        for name in service_names:
+            parent.output.append(f"[Starting deploy for {name}]")
+            child = await self.deploy_service(name, user_id=parent.user_id, username=parent.username)
+            child.parent_job_id = parent.id
+            child_jobs.append((name, child))
+
+        # Wait for all children to complete
+        for name, child in child_jobs:
+            while child.status == "running":
+                await asyncio.sleep(1)
+            parent.output.append(f"[{name}] finished: {child.status}")
+
+        failed = [name for name, child in child_jobs if child.status != "completed"]
+        if failed:
+            parent.output.append(f"[Failed: {', '.join(failed)}]")
+            parent.status = "failed" if len(failed) == len(child_jobs) else "completed"
+        else:
+            parent.status = "completed"
+        parent.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(parent)
+        await self._notify_job(parent)
+
     async def stop_instance(self, label: str, region: str,
                             user_id: int | None = None, username: str | None = None) -> Job:
         job_id = str(uuid.uuid4())[:8]

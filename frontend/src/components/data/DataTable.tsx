@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type RowSelectionState,
   type SortingState,
   flexRender,
   getCoreRowModel,
@@ -14,6 +15,7 @@ import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -21,6 +23,10 @@ interface DataTableProps<TData, TValue> {
   searchKey?: string
   searchPlaceholder?: string
   pageSize?: number
+  enableRowSelection?: boolean
+  rowSelection?: RowSelectionState
+  onRowSelectionChange?: (selection: RowSelectionState) => void
+  getRowId?: (row: TData) => string
 }
 
 export function DataTable<TData, TValue>({
@@ -29,20 +35,59 @@ export function DataTable<TData, TValue>({
   searchKey,
   searchPlaceholder = 'Search...',
   pageSize = 20,
+  enableRowSelection,
+  rowSelection,
+  onRowSelectionChange,
+  getRowId,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [internalSelection, setInternalSelection] = useState<RowSelectionState>({})
+  const selection = rowSelection ?? internalSelection
+  const setSelection = onRowSelectionChange ?? setInternalSelection
+
+  const allColumns = useMemo(() => {
+    if (!enableRowSelection) return columns
+    const selectColumn: ColumnDef<TData, any> = {
+      id: 'select',
+      header: ({ table }) => (
+        <Checkbox
+          checked={table.getIsAllPageRowsSelected()}
+          onCheckedChange={(checked) => table.toggleAllPageRowsSelected(!!checked)}
+          aria-label="Select all"
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(checked) => row.toggleSelected(!!checked)}
+          aria-label="Select row"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+      size: 40,
+    }
+    return [selectColumn, ...columns]
+  }, [columns, enableRowSelection])
 
   const table = useReactTable({
     data,
-    columns,
+    columns: allColumns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    state: { sorting, columnFilters },
+    enableRowSelection: enableRowSelection ?? false,
+    onRowSelectionChange: (updater) => {
+      const next = typeof updater === 'function' ? updater(selection) : updater
+      setSelection(next)
+    },
+    state: { sorting, columnFilters, rowSelection: selection },
+    getRowId: getRowId,
     initialState: { pagination: { pageSize } },
   })
 
@@ -98,7 +143,7 @@ export function DataTable<TData, TValue>({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={allColumns.length} className="h-24 text-center text-muted-foreground">
                   No results.
                 </TableCell>
               </TableRow>
@@ -106,11 +151,19 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-      {table.getPageCount() > 1 && (
-        <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between">
+        {enableRowSelection && Object.keys(selection).length > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {Object.keys(selection).length} of {table.getFilteredRowModel().rows.length} selected
+          </p>
+        ) : table.getPageCount() > 1 ? (
           <p className="text-sm text-muted-foreground">
             Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
           </p>
+        ) : (
+          <div />
+        )}
+        {table.getPageCount() > 1 && (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
               Previous
@@ -119,8 +172,8 @@ export function DataTable<TData, TValue>({
               Next
             </Button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

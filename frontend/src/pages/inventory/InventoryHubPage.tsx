@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, RefreshCw } from 'lucide-react'
+import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, RefreshCw, Square } from 'lucide-react'
 import api from '@/lib/api'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useHasPermission } from '@/lib/permissions'
@@ -9,10 +9,12 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
+import { BulkActionBar } from '@/components/shared/BulkActionBar'
 import { DataTable } from '@/components/data/DataTable'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -24,7 +26,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import type { ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import type { InventoryObject, Tag } from '@/types'
 
 export default function InventoryHubPage() {
@@ -89,6 +91,90 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
   const hasSync = !!typeConfig?.sync
   const [destroyTarget, setDestroyTarget] = useState<InventoryObject | null>(null)
 
+  // Bulk selection state
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const selectedCount = Object.keys(rowSelection).length
+  const clearSelection = () => setRowSelection({})
+
+  // Bulk delete
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (objectIds: number[]) => {
+      const { data } = await api.post(`/api/inventory/${typeSlug}/bulk/delete`, { object_ids: objectIds })
+      return data
+    },
+    onSuccess: (data) => {
+      clearSelection()
+      setBulkDeleteOpen(false)
+      toast.success(`Deleted ${data.succeeded.length} items`)
+      if (data.skipped?.length > 0) {
+        toast.warning(`${data.skipped.length} items skipped (permission denied)`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
+    },
+    onError: () => toast.error('Bulk delete failed'),
+  })
+
+  // Bulk tag management
+  const [bulkTagOpen, setBulkTagOpen] = useState(false)
+  const [bulkTagMode, setBulkTagMode] = useState<'add' | 'remove'>('add')
+  const [bulkTagIds, setBulkTagIds] = useState<number[]>([])
+
+  const { data: availableTags = [] } = useQuery({
+    queryKey: ['tags'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/inventory/tags')
+      return (data.tags || []) as Tag[]
+    },
+  })
+
+  const bulkTagMutation = useMutation({
+    mutationFn: async ({ objectIds, tagIds, mode }: { objectIds: number[], tagIds: number[], mode: 'add' | 'remove' }) => {
+      const endpoint = mode === 'add' ? 'tags/add' : 'tags/remove'
+      const { data } = await api.post(`/api/inventory/${typeSlug}/bulk/${endpoint}`, {
+        object_ids: objectIds,
+        tag_ids: tagIds,
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      clearSelection()
+      setBulkTagOpen(false)
+      setBulkTagIds([])
+      toast.success(`Tags updated on ${data.succeeded.length} items`)
+      if (data.skipped?.length > 0) {
+        toast.warning(`${data.skipped.length} items skipped`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
+    },
+    onError: () => toast.error('Bulk tag update failed'),
+  })
+
+  // Bulk action (destroy, stop, etc.)
+  const [bulkActionOpen, setBulkActionOpen] = useState<string | null>(null)
+
+  const bulkActionMutation = useMutation({
+    mutationFn: async ({ objectIds, actionName }: { objectIds: number[], actionName: string }) => {
+      const { data } = await api.post(`/api/inventory/${typeSlug}/bulk/action/${actionName}`, {
+        object_ids: objectIds,
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      clearSelection()
+      setBulkActionOpen(null)
+      if (data.job_id) {
+        toast.success('Bulk action started')
+        navigate(`/jobs/${data.job_id}`)
+      }
+      if (data.skipped?.length > 0) {
+        toast.warning(`${data.skipped.length} items skipped`)
+      }
+    },
+    onError: () => toast.error('Bulk action failed'),
+  })
+
   const destroyMutation = useMutation({
     mutationFn: async (obj: InventoryObject) => {
       const { data } = await api.post(`/api/inventory/${typeSlug}/${obj.id}/actions/destroy`)
@@ -117,6 +203,10 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
       return (data.objects || []) as InventoryObject[]
     },
   })
+
+  const selectedObjects = useMemo(() => {
+    return objects.filter((_, i) => rowSelection[String(i)])
+  }, [objects, rowSelection])
 
   const syncSource = typeof typeConfig?.sync === 'object' ? typeConfig.sync.source : typeConfig?.sync
   const needsInstanceRefresh = syncSource === 'vultr_inventory'
@@ -258,6 +348,49 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
     return cols
   }, [typeSlug, typeConfig])
 
+  // Build bulk actions array
+  const bulkActions = useMemo(() => {
+    const actions: { label: string; icon?: React.ReactNode; variant?: 'default' | 'destructive' | 'outline'; onClick: () => void }[] = []
+
+    // Tag operations (always available)
+    actions.push({
+      label: 'Add Tags',
+      icon: <TagIcon className="h-3.5 w-3.5" />,
+      variant: 'outline' as const,
+      onClick: () => { setBulkTagMode('add'); setBulkTagIds([]); setBulkTagOpen(true) },
+    })
+    actions.push({
+      label: 'Remove Tags',
+      icon: <TagIcon className="h-3.5 w-3.5" />,
+      variant: 'outline' as const,
+      onClick: () => { setBulkTagMode('remove'); setBulkTagIds([]); setBulkTagOpen(true) },
+    })
+
+    // Destroy action (if type has it)
+    const hasDestroyAction = typeConfig?.actions.some(a => a.name === 'destroy' && a.scope === 'object')
+    if (hasDestroyAction) {
+      actions.push({
+        label: 'Destroy',
+        icon: <Trash2 className="h-3.5 w-3.5" />,
+        variant: 'destructive' as const,
+        onClick: () => setBulkActionOpen('destroy'),
+      })
+    }
+
+    // Stop action (if type has it)
+    const hasStopAction = typeConfig?.actions.some(a => a.name === 'stop' && a.scope === 'object')
+    if (hasStopAction) {
+      actions.push({
+        label: 'Stop',
+        icon: <Square className="h-3.5 w-3.5" />,
+        variant: 'destructive' as const,
+        onClick: () => setBulkActionOpen('stop'),
+      })
+    }
+
+    return actions
+  }, [typeConfig])
+
   return (
     <div>
       <PageHeader title={typeConfig?.label || typeSlug} description={`Manage ${typeConfig?.label || typeSlug} inventory`}>
@@ -286,10 +419,91 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
           )}
         </EmptyState>
       ) : (
-        <DataTable columns={columns} data={objects} searchKey="name" searchPlaceholder={`Search ${typeConfig?.label || typeSlug}...`} />
+        <DataTable
+          columns={columns}
+          data={objects}
+          searchKey="name"
+          searchPlaceholder={`Search ${typeConfig?.label || typeSlug}...`}
+          enableRowSelection
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
+        />
       )}
 
-      {/* Destroy confirm */}
+      {/* Bulk action bar */}
+      <BulkActionBar
+        selectedCount={selectedCount}
+        onClear={clearSelection}
+        itemLabel={typeConfig?.label || typeSlug}
+        actions={bulkActions}
+      />
+
+      {/* Bulk tag picker dialog */}
+      <Dialog open={bulkTagOpen} onOpenChange={(open) => { if (!open) setBulkTagOpen(false) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{bulkTagMode === 'add' ? 'Add Tags' : 'Remove Tags'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-48 overflow-auto">
+            {availableTags.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">No tags available. Create tags first.</p>
+            ) : availableTags.map((tag) => (
+              <label key={tag.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={bulkTagIds.includes(tag.id)}
+                  onCheckedChange={(checked) => {
+                    if (checked) setBulkTagIds([...bulkTagIds, tag.id])
+                    else setBulkTagIds(bulkTagIds.filter(id => id !== tag.id))
+                  }}
+                  aria-label={`Select tag ${tag.name}`}
+                />
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
+                <span>{tag.name}</span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkTagOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => bulkTagMutation.mutate({
+                objectIds: selectedObjects.map(o => o.id),
+                tagIds: bulkTagIds,
+                mode: bulkTagMode,
+              })}
+              disabled={bulkTagIds.length === 0}
+            >
+              {bulkTagMode === 'add' ? 'Add Tags' : 'Remove Tags'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={() => setBulkDeleteOpen(false)}
+        title={`Delete ${selectedCount} Items`}
+        description={`This will permanently delete ${selectedCount} selected items. This cannot be undone.`}
+        confirmLabel="Delete All"
+        variant="destructive"
+        onConfirm={() => bulkDeleteMutation.mutate(selectedObjects.map(o => o.id))}
+      />
+
+      {/* Bulk action confirm (destroy, stop, etc.) */}
+      <ConfirmDialog
+        open={!!bulkActionOpen}
+        onOpenChange={() => setBulkActionOpen(null)}
+        title={`${bulkActionOpen ? bulkActionOpen.charAt(0).toUpperCase() + bulkActionOpen.slice(1) : ''} ${selectedCount} Items`}
+        description={`Run "${bulkActionOpen}" on ${selectedCount} selected items?`}
+        confirmLabel={`${bulkActionOpen ? bulkActionOpen.charAt(0).toUpperCase() + bulkActionOpen.slice(1) : ''} All`}
+        variant="destructive"
+        onConfirm={() => bulkActionOpen && bulkActionMutation.mutate({
+          objectIds: selectedObjects.map(o => o.id),
+          actionName: bulkActionOpen,
+        })}
+      />
+
+      {/* Destroy confirm (single item) */}
       <ConfirmDialog
         open={!!destroyTarget}
         onOpenChange={() => setDestroyTarget(null)}

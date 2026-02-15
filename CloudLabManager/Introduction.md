@@ -40,3 +40,4 @@ On first boot you'll see a **Setup** page where you create an admin account and 
 12. Schedules recurring jobs via cron expressions with execution history tracking
 13. Monitors deployed service health via configurable checks (HTTP, TCP, ICMP, SSH) with email alerts on state changes
 14. Detects infrastructure drift by comparing desired state against actual Vultr instances and Cloudflare DNS, with email notifications on state transitions
+15. Supports bulk operations — multi-select services or inventory items for batch stop, deploy, delete, tag assignment, and custom actions with parent-child job tracking

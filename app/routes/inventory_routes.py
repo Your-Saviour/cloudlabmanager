@@ -16,6 +16,8 @@ from audit import log_action
 from models import (
     InventoryObjectCreate, InventoryObjectUpdate,
     TagCreate, TagUpdate, ACLRuleCreate, TagPermissionSet, ObjectTagsUpdate,
+    BulkInventoryDeleteRequest, BulkInventoryTagRequest, BulkInventoryActionRequest,
+    BulkActionResult,
 )
 
 try:
@@ -440,6 +442,205 @@ async def remove_tag_from_object(type_slug: str, obj_id: int, tag_id: int,
     obj.tags = [t for t in obj.tags if t.id != tag_id]
     session.flush()
     return {"tags": [{"id": t.id, "name": t.name, "color": t.color} for t in obj.tags]}
+
+
+# --- Bulk operations ---
+
+@router.post("/{type_slug}/bulk/delete")
+async def bulk_delete_objects(type_slug: str, body: BulkInventoryDeleteRequest,
+                               request: Request,
+                               user: User = Depends(get_current_user),
+                               session: Session = Depends(get_db_session)):
+    tc = _get_type_config(request, type_slug)
+    inv_type = _get_type_db(session, type_slug)
+
+    succeeded = []
+    skipped = []
+    for obj_id in body.object_ids:
+        obj = session.query(InventoryObject).filter_by(id=obj_id, type_id=inv_type.id).first()
+        if not obj:
+            skipped.append({"name": str(obj_id), "reason": "Object not found"})
+            continue
+        if not check_inventory_permission(session, user, obj.id, "delete"):
+            skipped.append({"name": str(obj_id), "reason": "Permission denied"})
+            continue
+        session.delete(obj)
+        log_action(session, user.id, user.username, "inventory.delete",
+                   f"inventory/{type_slug}/{obj_id}",
+                   ip_address=request.client.host if request.client else None)
+        succeeded.append(str(obj_id))
+
+    session.flush()
+
+    return BulkActionResult(
+        succeeded=succeeded,
+        skipped=skipped,
+        total=len(body.object_ids),
+    ).model_dump()
+
+
+@router.post("/{type_slug}/bulk/tags/add")
+async def bulk_add_tags(type_slug: str, body: BulkInventoryTagRequest,
+                         request: Request,
+                         user: User = Depends(get_current_user),
+                         session: Session = Depends(get_db_session)):
+    tc = _get_type_config(request, type_slug)
+    inv_type = _get_type_db(session, type_slug)
+
+    tags = session.query(InventoryTag).filter(InventoryTag.id.in_(body.tag_ids)).all()
+
+    succeeded = []
+    skipped = []
+    for obj_id in body.object_ids:
+        obj = session.query(InventoryObject).filter_by(id=obj_id, type_id=inv_type.id).first()
+        if not obj:
+            skipped.append({"name": str(obj_id), "reason": "Object not found"})
+            continue
+        if not check_inventory_permission(session, user, obj.id, "edit"):
+            skipped.append({"name": str(obj_id), "reason": "Permission denied"})
+            continue
+        existing_ids = {t.id for t in obj.tags}
+        for tag in tags:
+            if tag.id not in existing_ids:
+                obj.tags.append(tag)
+        succeeded.append(str(obj_id))
+
+    session.flush()
+
+    return BulkActionResult(
+        succeeded=succeeded,
+        skipped=skipped,
+        total=len(body.object_ids),
+    ).model_dump()
+
+
+@router.post("/{type_slug}/bulk/tags/remove")
+async def bulk_remove_tags(type_slug: str, body: BulkInventoryTagRequest,
+                            request: Request,
+                            user: User = Depends(get_current_user),
+                            session: Session = Depends(get_db_session)):
+    tc = _get_type_config(request, type_slug)
+    inv_type = _get_type_db(session, type_slug)
+
+    tag_ids_to_remove = set(body.tag_ids)
+
+    succeeded = []
+    skipped = []
+    for obj_id in body.object_ids:
+        obj = session.query(InventoryObject).filter_by(id=obj_id, type_id=inv_type.id).first()
+        if not obj:
+            skipped.append({"name": str(obj_id), "reason": "Object not found"})
+            continue
+        if not check_inventory_permission(session, user, obj.id, "edit"):
+            skipped.append({"name": str(obj_id), "reason": "Permission denied"})
+            continue
+        obj.tags = [t for t in obj.tags if t.id not in tag_ids_to_remove]
+        succeeded.append(str(obj_id))
+
+    session.flush()
+
+    return BulkActionResult(
+        succeeded=succeeded,
+        skipped=skipped,
+        total=len(body.object_ids),
+    ).model_dump()
+
+
+@router.post("/{type_slug}/bulk/action/{action_name}")
+async def bulk_run_action(type_slug: str, action_name: str,
+                           body: BulkInventoryActionRequest,
+                           request: Request,
+                           user: User = Depends(get_current_user),
+                           session: Session = Depends(get_db_session)):
+    tc = _get_type_config(request, type_slug)
+    inv_type = _get_type_db(session, type_slug)
+
+    action_def = None
+    for a in tc.get("actions", []):
+        if a["name"] == action_name:
+            action_def = a
+            break
+    if not action_def:
+        raise HTTPException(status_code=404, detail=f"Action '{action_name}' not found")
+
+    runner = request.app.state.ansible_runner
+
+    valid_objects = []
+    skipped = []
+    for obj_id in body.object_ids:
+        obj = session.query(InventoryObject).filter_by(id=obj_id, type_id=inv_type.id).first()
+        if not obj:
+            skipped.append({"name": str(obj_id), "reason": "Object not found"})
+            continue
+        if not check_inventory_permission(session, user, obj.id, action_name):
+            skipped.append({"name": str(obj_id), "reason": "Permission denied"})
+            continue
+        valid_objects.append((obj_id, json.loads(obj.data)))
+
+    if not valid_objects:
+        return BulkActionResult(
+            succeeded=[],
+            skipped=skipped,
+            total=len(body.object_ids),
+        ).model_dump()
+
+    # Create parent job
+    import uuid
+    from datetime import datetime, timezone
+    from models import Job
+
+    parent_id = str(uuid.uuid4())[:8]
+    parent = Job(
+        id=parent_id,
+        service=f"bulk ({len(valid_objects)} objects)",
+        action=f"bulk_{action_name}",
+        status="running",
+        started_at=datetime.now(timezone.utc).isoformat(),
+        user_id=user.id,
+        username=user.username,
+        inputs={"action": action_name, "object_ids": [oid for oid, _ in valid_objects]},
+    )
+    runner.jobs[parent_id] = parent
+
+    async def _run_bulk_action():
+        parent.output.append(f"--- Bulk {action_name}: {len(valid_objects)} objects ---")
+        child_jobs = []
+        for obj_id, obj_data in valid_objects:
+            parent.output.append(f"[Starting {action_name} for object {obj_id}]")
+            child = await runner.run_action(action_def, obj_data, type_slug,
+                                             user_id=user.id, username=user.username,
+                                             object_id=obj_id)
+            child.parent_job_id = parent.id
+            child_jobs.append((obj_id, child))
+
+        for obj_id, child in child_jobs:
+            while child.status == "running":
+                await asyncio.sleep(1)
+            parent.output.append(f"[Object {obj_id}] finished: {child.status}")
+
+        failed = [str(oid) for oid, child in child_jobs if child.status != "completed"]
+        if failed:
+            parent.output.append(f"[Failed: {', '.join(failed)}]")
+            parent.status = "failed" if len(failed) == len(child_jobs) else "completed"
+        else:
+            parent.status = "completed"
+        parent.finished_at = datetime.now(timezone.utc).isoformat()
+        runner._persist_job(parent)
+        await runner._notify_job(parent)
+
+    asyncio.create_task(_run_bulk_action())
+
+    log_action(session, user.id, user.username, f"inventory.bulk_action.{action_name}",
+               f"inventory/{type_slug}",
+               details={"action": action_name, "object_ids": [oid for oid, _ in valid_objects], "job_id": parent_id},
+               ip_address=request.client.host if request.client else None)
+
+    return BulkActionResult(
+        job_id=parent_id,
+        succeeded=[str(oid) for oid, _ in valid_objects],
+        skipped=skipped,
+        total=len(body.object_ids),
+    ).model_dump()
 
 
 # --- Actions ---

@@ -44,6 +44,10 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - "Deploy" and "Stop" buttons with confirmation dialogs
 - Clicking Deploy opens a **Dry-Run Preview** modal before executing (see below)
 - Non-deploy scripts (e.g., add-users) bypass the preview and use the existing input modal or direct execution flow
+- **Multi-select**: checkbox on each service card for bulk operations
+- **Select All / Deselect All** button in the page header
+- **Bulk Action Bar**: floating bar at the bottom when services are selected, with Deploy and Stop actions (respects permissions)
+- Bulk actions show confirmation dialogs with selected count and navigate to the parent job page on completion
 
 ### Dry-Run Preview
 - Triggered when clicking Deploy on any service — intercepts the deploy action
@@ -73,6 +77,7 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 ### Jobs
 - List of all jobs sorted by most recent
 - Each entry shows service name, action, and status badge
+- Bulk parent jobs display a **bulk** badge next to the action name
 - Click a job to view its detail page
 
 ### Job Detail
@@ -81,6 +86,7 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Status badge updates when job completes
 - **Rerun button** — appears for completed or failed jobs (hidden while running). Clicking it creates a new job with the same inputs and navigates to the new job's detail page. Requires `jobs.rerun` permission (enforced server-side; unauthorized users see an error toast).
 - **Parent job link** — when a job was created via rerun, displays "Rerun of {parent_job_id}" as a clickable link that navigates to the original job
+- **Child Jobs panel** — for bulk parent jobs, displays a "Child Jobs" card below the output showing each child job's status badge, service/action name, and a "View" link. Auto-refreshes every 3 seconds while the parent job is running.
 
 ### User Management
 - List of all users with status (active, invited, inactive)
@@ -150,6 +156,11 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Tag management (assign tags, create new tags with colors)
 - ACL management per object (role-based allow/deny rules)
 - Execute configurable actions on objects
+- **Multi-select**: checkbox column in the DataTable for selecting multiple objects
+- **Bulk Action Bar**: floating bar with actions based on inventory type config — Add Tags, Remove Tags, Delete, and type-specific actions (Destroy, Stop)
+- Tag picker dialog for bulk tag add/remove operations
+- Confirmation dialogs for destructive bulk actions
+- Skipped items (due to RBAC) shown via warning toast
 
 ### SSH Terminal
 - Opens from inventory actions on server objects

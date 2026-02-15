@@ -83,6 +83,29 @@ Returns: `{ "access_token": "...", "token_type": "bearer" }`
 | POST | `/api/services/{name}/run` | `services.deploy` | Run a named script from scripts.yaml |
 | POST | `/api/services/{name}/stop` | `services.stop` | Stop instances for this service |
 | POST | `/api/services/actions/stop-all` | `system.stop_all` | Stop all running Vultr instances |
+| POST | `/api/services/actions/bulk-stop` | `services.stop` | Stop multiple services at once |
+| POST | `/api/services/actions/bulk-deploy` | `services.deploy` | Deploy multiple services in parallel |
+
+### Bulk Service Operations
+
+Both bulk endpoints accept a list of service names and return a `BulkActionResult`:
+
+```json
+// Request
+{
+  "service_names": ["n8n-server", "velociraptor"]
+}
+
+// Response
+{
+  "job_id": "abc123",
+  "succeeded": ["n8n-server", "velociraptor"],
+  "skipped": [],
+  "total": 2
+}
+```
+
+Creates a **parent job** that spawns individual child jobs per service. If some services don't exist or fail permission checks, they appear in `skipped` with a `reason` field. Use `GET /api/jobs?parent_job_id={job_id}` to list child jobs.
 
 ### Service Config Management
 
@@ -207,7 +230,7 @@ A directory in `cloudlab/services/` is considered a deployable service if it con
 
 | Method | Endpoint | Permission | Description |
 |--------|----------|------------|-------------|
-| GET | `/api/jobs` | `jobs.view_own` / `jobs.view_all` | List jobs (filterable by user/service) |
+| GET | `/api/jobs` | `jobs.view_own` / `jobs.view_all` | List jobs (filterable by user/service/parent) |
 | GET | `/api/jobs/{id}` | `jobs.view_own` / `jobs.view_all` | Get job detail including full output |
 | POST | `/api/jobs/{id}/rerun` | `jobs.rerun` | Rerun a completed or failed job |
 | DELETE | `/api/jobs/{id}` | `jobs.cancel` | Cancel a running job |
@@ -234,7 +257,7 @@ A directory in `cloudlab/services/` is considered a deployable service if it con
 Job statuses: `running`, `completed`, `failed`
 
 - `inputs` — JSON object containing the original parameters used to create the job. For deploy/stop/refresh jobs this is `{}`. For script jobs it contains the script name and user-provided inputs. Pre-existing jobs (created before this feature) return `null`.
-- `parent_job_id` — ID of the original job if this job was created via rerun. `null` for first-run jobs.
+- `parent_job_id` — ID of the parent job. Set when created via rerun or as a child of a bulk operation. `null` for standalone jobs. Filter child jobs with `GET /api/jobs?parent_job_id={id}`.
 
 ### POST `/api/jobs/{id}/rerun`
 
@@ -680,6 +703,46 @@ See [[Inventory System]] for concepts. All inventory endpoints require authentic
 |--------|----------|------------|-------------|
 | GET | `/api/inventory/{type_slug}/{id}/acl` | `inventory.{type}.edit` | Get ACL rules for an object |
 | POST | `/api/inventory/{type_slug}/{id}/acl` | `inventory.{type}.edit` | Set ACL rules for an object |
+
+### Bulk Operations
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/inventory/{type_slug}/bulk/delete` | `inventory.{type}.delete` | Delete multiple objects |
+| POST | `/api/inventory/{type_slug}/bulk/tags/add` | `inventory.{type}.edit` | Add tags to multiple objects |
+| POST | `/api/inventory/{type_slug}/bulk/tags/remove` | `inventory.{type}.edit` | Remove tags from multiple objects |
+| POST | `/api/inventory/{type_slug}/bulk/action/{action_name}` | `inventory.{type}.{action}` | Run an action on multiple objects |
+
+#### Bulk Delete / Bulk Action
+
+```json
+// Request
+{
+  "object_ids": [1, 2, 3]
+}
+
+// Response (BulkActionResult)
+{
+  "job_id": null,
+  "succeeded": [1, 2],
+  "skipped": [{"id": 3, "reason": "Permission denied"}],
+  "total": 3
+}
+```
+
+Bulk action returns a `job_id` for the parent job that tracks child jobs per object.
+
+#### Bulk Tag Add / Remove
+
+```json
+// Request
+{
+  "object_ids": [1, 2, 3],
+  "tag_ids": [5, 8]
+}
+```
+
+Each object is individually permission-checked. Objects the user lacks `edit` permission for are skipped and reported in the response.
 
 ### Actions
 

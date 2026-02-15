@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Loader2, RotateCcw } from 'lucide-react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useJobStream } from '@/hooks/useJobStream'
 import { formatDate } from '@/lib/utils'
 import api from '@/lib/api'
@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import type { Job } from '@/types'
 
 export default function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>()
@@ -28,6 +29,18 @@ export default function JobDetailPage() {
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || 'Failed to rerun job')
     },
+  })
+
+  const isBulkJob = job?.action?.startsWith('bulk_') || !!job?.inputs?.services
+
+  const { data: childJobs = [] } = useQuery({
+    queryKey: ['jobs', jobId, 'children'],
+    queryFn: async () => {
+      const { data } = await api.get(`/api/jobs?parent_job_id=${jobId}`)
+      return (data.jobs || []) as Job[]
+    },
+    enabled: !!job && isBulkJob,
+    refetchInterval: status === 'running' ? 3000 : false,
   })
 
   useEffect(() => {
@@ -118,6 +131,37 @@ export default function JobDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {isBulkJob && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Child Jobs</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {childJobs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {status === 'running' ? 'Waiting for child jobs...' : 'No child jobs found.'}
+              </p>
+            ) : (
+              childJobs.map((child) => (
+                <div key={child.id} className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
+                  <StatusBadge status={child.status} />
+                  <span className="text-sm font-medium">{child.service}</span>
+                  <span className="text-xs text-muted-foreground">{child.action}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => navigate(`/jobs/${child.id}`)}
+                  >
+                    View
+                  </Button>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

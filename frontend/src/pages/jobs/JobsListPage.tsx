@@ -45,16 +45,25 @@ export default function JobsListPage() {
       {
         accessorKey: 'action',
         header: 'Action',
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <span>{row.original.action}</span>
-            {row.original.deployment_id && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
-                {row.original.deployment_id}
-              </Badge>
-            )}
-          </div>
-        ),
+        cell: ({ row }) => {
+          const action = row.original.action
+          const isBulk = action.startsWith('bulk_')
+          return (
+            <div className="flex items-center gap-2">
+              <span>{action}</span>
+              {isBulk && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  bulk
+                </Badge>
+              )}
+              {row.original.deployment_id && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
+                  {row.original.deployment_id}
+                </Badge>
+              )}
+            </div>
+          )
+        },
       },
       {
         accessorKey: 'started_by',

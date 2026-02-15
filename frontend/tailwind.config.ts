@@ -58,6 +58,15 @@ const config: Config = {
         mono: ['JetBrains Mono', 'monospace'],
         display: ['Outfit', 'system-ui', 'sans-serif'],
       },
+      keyframes: {
+        'slide-up': {
+          from: { opacity: '0', transform: 'translate(-50%, 20px)' },
+          to: { opacity: '1', transform: 'translate(-50%, 0)' },
+        },
+      },
+      animation: {
+        'slide-up': 'slide-up 0.2s ease-out',
+      },
     },
   },
   plugins: [tailwindAnimate],

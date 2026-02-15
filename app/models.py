@@ -1,7 +1,9 @@
 import re
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 from typing import Optional, Any
 from datetime import datetime
+
+MAX_BULK_ITEMS = 100
 
 
 class LoginRequest(BaseModel):
@@ -230,6 +232,41 @@ class TagPermissionSet(BaseModel):
 
 class ObjectTagsUpdate(BaseModel):
     tag_ids: list[int]
+
+
+# --- Bulk operation models ---
+
+class BulkServiceActionRequest(BaseModel):
+    """Request for bulk service operations (stop, deploy)."""
+    service_names: list[str] = Field(max_length=MAX_BULK_ITEMS)
+
+    @field_validator("service_names")
+    @classmethod
+    def validate_service_names(cls, v):
+        for name in v:
+            if not re.match(r"^[a-zA-Z0-9_-]{1,100}$", name):
+                raise ValueError(f"Invalid service name: {name}")
+        return v
+
+class BulkInventoryDeleteRequest(BaseModel):
+    """Request for bulk delete of inventory objects."""
+    object_ids: list[int] = Field(max_length=MAX_BULK_ITEMS)
+
+class BulkInventoryTagRequest(BaseModel):
+    """Request for bulk tag add/remove on inventory objects."""
+    object_ids: list[int] = Field(max_length=MAX_BULK_ITEMS)
+    tag_ids: list[int] = Field(max_length=MAX_BULK_ITEMS)
+
+class BulkInventoryActionRequest(BaseModel):
+    """Request for bulk action execution on inventory objects."""
+    object_ids: list[int] = Field(max_length=MAX_BULK_ITEMS)
+
+class BulkActionResult(BaseModel):
+    """Response for bulk operations with partial success support."""
+    job_id: str | None = None
+    succeeded: list[str] = []
+    skipped: list[dict] = []  # [{"name": "...", "reason": "..."}]
+    total: int = 0
 
 
 # --- Scheduled job models ---

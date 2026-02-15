@@ -26,6 +26,7 @@ On first boot, create an admin account and enter the Ansible vault password. The
 - **Audit Logging** — full trail of all user actions with timestamps and IP addresses
 - **Email Notifications** — invitation and password reset emails via Sendamatic
 - **Config & File Management** — edit service configs and manage input/output files from the UI
+- **Bulk Operations** — multi-select services or inventory items for batch stop, deploy, delete, tag, and custom actions
 - **Persistent Storage** — deployment outputs survive container rebuilds
 
 ## Environment Variables

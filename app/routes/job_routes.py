@@ -55,11 +55,15 @@ def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
 
 
 @router.get("")
-async def list_jobs(request: Request, user: User = Depends(get_current_user)):
+async def list_jobs(request: Request,
+                    parent_job_id: str | None = None,
+                    user: User = Depends(get_current_user)):
     runner = request.app.state.ansible_runner
     session = SessionLocal()
     try:
         jobs = _get_all_jobs(runner, session, user)
+        if parent_job_id:
+            jobs = [j for j in jobs if j.get("parent_job_id") == parent_job_id]
         return {"jobs": jobs}
     finally:
         session.close()

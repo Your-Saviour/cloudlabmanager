@@ -9,6 +9,7 @@ from permissions import require_permission
 from db_session import get_db_session
 from audit import log_action
 from ansible_runner import ALLOWED_CONFIG_FILES
+from models import BulkServiceActionRequest, BulkActionResult
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -41,6 +42,76 @@ async def stop_all(request: Request,
                ip_address=request.client.host if request.client else None)
 
     return {"job_id": job.id, "status": job.status}
+
+
+@router.post("/actions/bulk-stop")
+async def bulk_stop(request: Request, body: BulkServiceActionRequest,
+                    user: User = Depends(require_permission("services.stop")),
+                    session: Session = Depends(get_db_session)):
+    runner = request.app.state.ansible_runner
+
+    valid_names = []
+    skipped = []
+    for name in body.service_names:
+        if runner.get_service(name):
+            valid_names.append(name)
+        else:
+            skipped.append({"name": name, "reason": "Service not found"})
+
+    if not valid_names:
+        return BulkActionResult(
+            succeeded=[],
+            skipped=skipped,
+            total=len(body.service_names),
+        ).model_dump()
+
+    job = await runner.bulk_stop(valid_names, user_id=user.id, username=user.username)
+
+    log_action(session, user.id, user.username, "service.bulk_stop", "services",
+               details={"services": valid_names, "job_id": job.id},
+               ip_address=request.client.host if request.client else None)
+
+    return BulkActionResult(
+        job_id=job.id,
+        succeeded=valid_names,
+        skipped=skipped,
+        total=len(body.service_names),
+    ).model_dump()
+
+
+@router.post("/actions/bulk-deploy")
+async def bulk_deploy(request: Request, body: BulkServiceActionRequest,
+                      user: User = Depends(require_permission("services.deploy")),
+                      session: Session = Depends(get_db_session)):
+    runner = request.app.state.ansible_runner
+
+    valid_names = []
+    skipped = []
+    for name in body.service_names:
+        if runner.get_service(name):
+            valid_names.append(name)
+        else:
+            skipped.append({"name": name, "reason": "Service not found"})
+
+    if not valid_names:
+        return BulkActionResult(
+            succeeded=[],
+            skipped=skipped,
+            total=len(body.service_names),
+        ).model_dump()
+
+    job = await runner.bulk_deploy(valid_names, user_id=user.id, username=user.username)
+
+    log_action(session, user.id, user.username, "service.bulk_deploy", "services",
+               details={"services": valid_names, "job_id": job.id},
+               ip_address=request.client.host if request.client else None)
+
+    return BulkActionResult(
+        job_id=job.id,
+        succeeded=valid_names,
+        skipped=skipped,
+        total=len(body.service_names),
+    ).model_dump()
 
 
 @router.get("/outputs")

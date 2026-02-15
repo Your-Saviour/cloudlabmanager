@@ -62,3 +62,99 @@ class TestGetJob:
         assert data["id"] == "test123"
         assert data["service"] == "test-service"
         assert len(data["output"]) == 2
+
+
+class TestParentJobIdFilter:
+    async def test_filter_by_parent_job_id(self, client, auth_headers, test_app):
+        """Jobs with parent_job_id should be returned when filtering."""
+        runner = test_app.state.ansible_runner
+
+        parent = Job(
+            id="parent1",
+            service="bulk (2 services)",
+            action="bulk_stop",
+            status="completed",
+            started_at="2024-01-01T00:00:00",
+            user_id=1,
+            username="admin",
+        )
+        child1 = Job(
+            id="child1",
+            service="test-service",
+            action="stop",
+            status="completed",
+            started_at="2024-01-01T00:00:01",
+            user_id=1,
+            username="admin",
+            parent_job_id="parent1",
+        )
+        child2 = Job(
+            id="child2",
+            service="other-service",
+            action="stop",
+            status="failed",
+            started_at="2024-01-01T00:00:02",
+            user_id=1,
+            username="admin",
+            parent_job_id="parent1",
+        )
+        unrelated = Job(
+            id="unrelated1",
+            service="some-service",
+            action="deploy",
+            status="completed",
+            started_at="2024-01-01T00:00:03",
+            user_id=1,
+            username="admin",
+        )
+
+        runner.jobs["parent1"] = parent
+        runner.jobs["child1"] = child1
+        runner.jobs["child2"] = child2
+        runner.jobs["unrelated1"] = unrelated
+
+        resp = await client.get("/api/jobs?parent_job_id=parent1", headers=auth_headers)
+        assert resp.status_code == 200
+        jobs = resp.json()["jobs"]
+        job_ids = [j["id"] for j in jobs]
+        assert "child1" in job_ids
+        assert "child2" in job_ids
+        assert "parent1" not in job_ids
+        assert "unrelated1" not in job_ids
+
+    async def test_filter_no_matching_children(self, client, auth_headers, test_app):
+        """Filter with a parent_job_id that has no children returns empty list."""
+        runner = test_app.state.ansible_runner
+        runner.jobs["loner"] = Job(
+            id="loner",
+            service="test",
+            action="deploy",
+            status="completed",
+            started_at="2024-01-01T00:00:00",
+            user_id=1,
+            username="admin",
+        )
+
+        resp = await client.get("/api/jobs?parent_job_id=loner", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["jobs"] == []
+
+    async def test_no_filter_returns_all(self, client, auth_headers, test_app):
+        """Without parent_job_id filter, all jobs are returned."""
+        runner = test_app.state.ansible_runner
+        runner.jobs["j1"] = Job(
+            id="j1", service="svc", action="deploy", status="completed",
+            started_at="2024-01-01T00:00:00", user_id=1, username="admin",
+        )
+        runner.jobs["j2"] = Job(
+            id="j2", service="svc2", action="stop", status="completed",
+            started_at="2024-01-01T00:00:01", user_id=1, username="admin",
+            parent_job_id="j1",
+        )
+
+        resp = await client.get("/api/jobs", headers=auth_headers)
+        assert resp.status_code == 200
+        jobs = resp.json()["jobs"]
+        job_ids = [j["id"] for j in jobs]
+        assert "j1" in job_ids
+        assert "j2" in job_ids

@@ -189,6 +189,27 @@ The `ssh` action type opens a real-time SSH terminal in the browser:
 
 Requires the `asyncssh` package.
 
+## Bulk Operations
+
+Multiple inventory objects can be acted on simultaneously via multi-select in the UI or the bulk API endpoints.
+
+### Available Bulk Actions
+
+| Action | Endpoint | Description |
+|--------|----------|-------------|
+| Delete | `POST /api/inventory/{type}/bulk/delete` | Delete multiple objects |
+| Add Tags | `POST /api/inventory/{type}/bulk/tags/add` | Add tags to multiple objects |
+| Remove Tags | `POST /api/inventory/{type}/bulk/tags/remove` | Remove tags from multiple objects |
+| Custom Action | `POST /api/inventory/{type}/bulk/action/{name}` | Run a type action (e.g., destroy, stop) on multiple objects |
+
+### Permission Model
+
+Each object in a bulk request is individually checked against the user's permissions (including per-object ACLs and tag-based permissions). Objects the user lacks permission for are **skipped** — not rejected — and reported in the response with a reason. This allows partial execution when a user has mixed permissions across selected objects.
+
+### Parent-Child Jobs
+
+Bulk action execution (destroy, stop, etc.) creates a parent job with child jobs per object. The parent job tracks overall completion and its output summarises per-child results. See [[API Endpoints#Bulk Operations]] for request/response formats.
+
 ## API Reference
 
 See [[API Endpoints#Inventory]] for the full endpoint list.
