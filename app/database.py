@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from sqlalchemy import (
     create_engine, Column, Integer, String, Boolean, Text, DateTime,
-    ForeignKey, Index, Table, event, text,
+    ForeignKey, Index, Table, event, text, UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -360,6 +360,23 @@ class ObjectACL(Base):
 
     object = relationship("InventoryObject", back_populates="acl_rules")
     role = relationship("Role")
+
+
+class ServiceACL(Base):
+    __tablename__ = "service_acl"
+    __table_args__ = (
+        UniqueConstraint("service_name", "role_id", "permission", name="uq_service_acl"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    service_name = Column(String(100), nullable=False, index=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    permission = Column(String(20), nullable=False)  # "view", "deploy", "stop", "config"
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    role = relationship("Role")
+    creator = relationship("User", foreign_keys=[created_by])
 
 
 class TagPermission(Base):

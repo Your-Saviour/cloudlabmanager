@@ -97,9 +97,71 @@ Inventory objects use a 4-layer permission check (see [[Inventory System]] for d
 4. **Tag-based permissions** — Tags on the object grant access via `TagPermission` rules
 5. **Role-based fallback** — Falls back to `inventory.{type}.{permission}` role check
 
+## Service-Level Access Control
+
+In addition to global RBAC, CloudLabManager supports **per-service ACLs** that restrict which roles can view, deploy, stop, or configure individual services. This is useful for multi-team or training environments where different users should only operate their assigned services.
+
+### How It Works
+
+Service ACLs are an **additional layer** on top of global RBAC:
+
+1. **Wildcard** — users with `*` permission (super-admin) bypass all service ACL checks
+2. **ACL exists for service** — if any ACL rows exist for a service, the user must have a matching ACL through one of their roles (exact permission or `full`)
+3. **No ACLs defined** — if no ACL rows exist for a service, global RBAC permissions apply (backwards compatible)
+
+This means existing deployments are unaffected — services only become restricted when an admin explicitly adds ACL rules.
+
+### Service Permissions
+
+| Permission | Grants Access To |
+|------------|-----------------|
+| `view` | View the service in lists, see its details and outputs |
+| `deploy` | Deploy the service, run scripts, create dry-runs |
+| `stop` | Stop the service |
+| `config` | View and edit service config files |
+| `full` | All of the above (meta-permission) |
+
+### Enforcement Scope
+
+Service ACLs are enforced consistently across:
+
+- **Service API routes** — all `GET/POST/PUT/DELETE /api/services/{name}/*` endpoints
+- **Service list** — `GET /api/services` returns only services the user can view
+- **Bulk operations** — `bulk-deploy` and `bulk-stop` skip services the user lacks permission for (reported in `skipped`)
+- **Summaries and outputs** — filtered by view permission
+- **Webhooks** — creating/updating/listing `service_script` webhooks checks service ACLs
+- **Schedules** — creating/updating/listing `service_script` schedules checks service ACLs
+
+### Database
+
+The `service_acl` table stores ACL rules:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | Integer (PK) | Auto-increment ID |
+| `service_name` | String(100) | Service name (indexed) |
+| `role_id` | Integer (FK → roles.id) | Target role (CASCADE delete) |
+| `permission` | String(20) | One of: `view`, `deploy`, `stop`, `config` |
+| `created_at` | DateTime | When the rule was created |
+| `created_by` | Integer (FK → users.id) | Who created the rule (nullable) |
+
+Unique constraint on `(service_name, role_id, permission)`.
+
+### UI
+
+- **Service Config Page** — a "Permissions" tab (visible to users with `inventory.acl.manage` permission) shows a grid of roles and their permissions, with add/remove controls
+- **Services Page** — bulk "Manage Access" action lets admins select multiple services and grant a role access in one operation
+- **Service Cross-Links** — an orange "ACL" chip appears on services with ACL rules, linking to the Permissions tab
+- **Users Page** — a "Service Access" option in the user dropdown shows which services a user can access, with what permissions, and the source (ACL role, Global RBAC, or Superadmin)
+
+### Audit
+
+All ACL changes (add, delete, replace) are logged in the audit trail with action prefix `service.acl`.
+
 ## Implementation
 
 - **Engine**: `app/permissions.py` — `require_permission()`, `has_permission()`, caching
+- **Service ACL layer**: `app/service_auth.py` — `check_service_permission()`, `require_service_permission()`, `filter_services_for_user()`, `check_service_script_permission()`
 - **Inventory layer**: `app/inventory_auth.py` — `check_inventory_permission()`, `check_type_permission()`
-- **Models**: `app/database.py` — `Role`, `Permission`, `ObjectACL`, `TagPermission` tables
+- **Models**: `app/database.py` — `Role`, `Permission`, `ObjectACL`, `TagPermission`, `ServiceACL` tables
 - **Seeding**: `permissions.py:seed_permissions()` — called on startup, creates/updates all permissions

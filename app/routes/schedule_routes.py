@@ -10,6 +10,7 @@ from permissions import require_permission, has_permission
 from db_session import get_db_session
 from audit import log_action
 from models import ScheduledJobCreate, ScheduledJobUpdate
+from service_auth import check_service_script_permission, check_service_permission
 
 router = APIRouter(prefix="/api/schedules", tags=["schedules"])
 
@@ -55,7 +56,14 @@ async def list_schedules(
     session: Session = Depends(get_db_session),
 ):
     schedules = session.query(ScheduledJob).order_by(ScheduledJob.created_at.desc()).all()
-    return {"schedules": [_schedule_to_dict(s) for s in schedules]}
+    # Filter service_script schedules by service ACL — non-service schedules always visible
+    filtered = [
+        s for s in schedules
+        if s.job_type != "service_script"
+        or not s.service_name
+        or check_service_permission(session, user, s.service_name, "view")
+    ]
+    return {"schedules": [_schedule_to_dict(s) for s in filtered]}
 
 
 @router.get("/preview")
@@ -97,6 +105,10 @@ async def get_schedule_history(
     schedule = session.query(ScheduledJob).filter_by(id=schedule_id).first()
     if not schedule:
         raise HTTPException(404, "Schedule not found")
+    # Service ACL check
+    if schedule.job_type == "service_script" and schedule.service_name:
+        if not check_service_permission(session, user, schedule.service_name, "view"):
+            raise HTTPException(403, "You don't have permission to view this schedule's history")
 
     query = (
         session.query(JobRecord)
@@ -135,6 +147,10 @@ async def get_schedule(
     schedule = session.query(ScheduledJob).filter_by(id=schedule_id).first()
     if not schedule:
         raise HTTPException(404, "Schedule not found")
+    # Service ACL check: deny if user can't view the target service
+    if schedule.job_type == "service_script" and schedule.service_name:
+        if not check_service_permission(session, user, schedule.service_name, "view"):
+            raise HTTPException(403, "You don't have permission to view this schedule's target service")
     return _schedule_to_dict(schedule)
 
 
@@ -164,6 +180,11 @@ async def create_schedule(
         allowed_tasks = ("refresh_instances", "refresh_costs")
         if body.system_task not in allowed_tasks:
             raise HTTPException(400, f"system_task must be one of: {allowed_tasks}")
+
+    # Service ACL check for service_script schedules
+    if body.job_type == "service_script":
+        if not check_service_script_permission(session, user, body.service_name, body.script_name):
+            raise HTTPException(403, f"You don't have permission to create a schedule for service '{body.service_name}'")
 
     schedule = ScheduledJob(
         name=body.name,
@@ -203,6 +224,11 @@ async def update_schedule(
     schedule = session.query(ScheduledJob).filter_by(id=schedule_id).first()
     if not schedule:
         raise HTTPException(404, "Schedule not found")
+
+    # Service ACL check: user must have permission on the schedule's target service
+    if schedule.job_type == "service_script" and schedule.service_name:
+        if not check_service_script_permission(session, user, schedule.service_name, schedule.script_name):
+            raise HTTPException(403, f"You don't have permission to modify a schedule for service '{schedule.service_name}'")
 
     if body.name is not None:
         schedule.name = body.name.strip()
@@ -248,6 +274,11 @@ async def delete_schedule(
     schedule = session.query(ScheduledJob).filter_by(id=schedule_id).first()
     if not schedule:
         raise HTTPException(404, "Schedule not found")
+
+    # Service ACL check
+    if schedule.job_type == "service_script" and schedule.service_name:
+        if not check_service_script_permission(session, user, schedule.service_name, schedule.script_name):
+            raise HTTPException(403, f"You don't have permission to delete a schedule for service '{schedule.service_name}'")
 
     name = schedule.name
     session.delete(schedule)

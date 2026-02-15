@@ -18,6 +18,7 @@ import {
   Plus,
   X,
   Star,
+  Shield,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -45,7 +46,14 @@ import { DryRunPreview } from '@/components/services/DryRunPreview'
 import { ServiceCrossLinks } from '@/components/services/ServiceCrossLinks'
 import type { ServiceSummary } from '@/components/services/ServiceCrossLinks'
 import { BulkActionBar } from '@/components/shared/BulkActionBar'
-import type { InventoryObject, ServiceScript } from '@/types'
+import type { InventoryObject, ServiceScript, Role, ServicePermission } from '@/types'
+
+const ALL_PERMISSIONS: { value: ServicePermission; label: string; color: string }[] = [
+  { value: 'view', label: 'View', color: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+  { value: 'deploy', label: 'Deploy', color: 'bg-green-500/15 text-green-400 border-green-500/30' },
+  { value: 'stop', label: 'Stop', color: 'bg-red-500/15 text-red-400 border-red-500/30' },
+  { value: 'config', label: 'Config', color: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
+]
 
 export default function ServicesPage() {
   const navigate = useNavigate()
@@ -55,6 +63,7 @@ export default function ServicesPage() {
   const canStopAll = useHasPermission('system.stop_all')
   const canConfig = useHasPermission('services.config.view')
   const canFiles = useHasPermission('services.files.view')
+  const canManageACL = useHasPermission('inventory.acl.manage')
 
   const {
     triggerAction,
@@ -73,6 +82,8 @@ export default function ServicesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkStopOpen, setBulkStopOpen] = useState(false)
   const [bulkDeployOpen, setBulkDeployOpen] = useState(false)
+  const [bulkAclOpen, setBulkAclOpen] = useState(false)
+  const [bulkAclForm, setBulkAclForm] = useState<{ role_id: string; permissions: ServicePermission[] }>({ role_id: '', permissions: [] })
   const togglePin = usePreferencesStore((s) => s.togglePinService)
   const isServicePinned = usePreferencesStore((s) => s.isServicePinned)
 
@@ -117,6 +128,16 @@ export default function ServicesPage() {
       return (data.summaries || {}) as Record<string, ServiceSummary>
     },
     refetchInterval: 30000,
+  })
+
+  // Get roles for bulk ACL assignment
+  const { data: roles = [] } = useQuery({
+    queryKey: ['roles'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/roles')
+      return (data.roles || []) as Role[]
+    },
+    enabled: canManageACL,
   })
 
   // Build scripts map: service name -> scripts[]
@@ -180,6 +201,32 @@ export default function ServicesPage() {
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Bulk deploy failed'),
   })
+
+  const bulkAclMutation = useMutation({
+    mutationFn: (body: { service_names: string[]; role_id: number; permissions: string[] }) =>
+      api.post('/api/services/actions/bulk-acl', body),
+    onSuccess: (res) => {
+      clearSelection()
+      setBulkAclOpen(false)
+      setBulkAclForm({ role_id: '', permissions: [] })
+      const succeeded = res.data.succeeded?.length ?? 0
+      toast.success(`Access granted to ${succeeded} service${succeeded !== 1 ? 's' : ''}`)
+      if (res.data.skipped?.length > 0) {
+        toast.warning(`${res.data.skipped.length} services skipped`)
+      }
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'service'] })
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Bulk ACL failed'),
+  })
+
+  const toggleBulkPermission = (perm: ServicePermission) => {
+    setBulkAclForm(prev => ({
+      ...prev,
+      permissions: prev.permissions.includes(perm)
+        ? prev.permissions.filter(p => p !== perm)
+        : [...prev.permissions, perm],
+    }))
+  }
 
   return (
     <div>
@@ -504,6 +551,70 @@ export default function ServicesPage() {
         }}
       />
 
+      {/* Bulk ACL Assignment */}
+      <Dialog open={bulkAclOpen} onOpenChange={(open) => {
+        setBulkAclOpen(open)
+        if (!open) setBulkAclForm({ role_id: '', permissions: [] })
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Grant Service Access</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Assign permissions to a role for {selectedIds.size} selected service{selectedIds.size !== 1 ? 's' : ''}.
+            </p>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={bulkAclForm.role_id} onValueChange={(v) => setBulkAclForm(prev => ({ ...prev, role_id: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Permissions</Label>
+              <div className="flex flex-wrap gap-3">
+                {ALL_PERMISSIONS.map((perm) => (
+                  <label key={perm.value} className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={bulkAclForm.permissions.includes(perm.value)}
+                      onCheckedChange={() => toggleBulkPermission(perm.value)}
+                    />
+                    <Badge variant="outline" className={perm.color}>
+                      {perm.label}
+                    </Badge>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkAclOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!bulkAclForm.role_id || bulkAclForm.permissions.length === 0 || bulkAclMutation.isPending}
+              onClick={() => {
+                const names = serviceObjects
+                  .filter(o => selectedIds.has(o.id))
+                  .map(o => (o.data.name as string) || o.name)
+                bulkAclMutation.mutate({
+                  service_names: names,
+                  role_id: Number(bulkAclForm.role_id),
+                  permissions: bulkAclForm.permissions,
+                })
+              }}
+            >
+              {bulkAclMutation.isPending ? 'Applying...' : `Apply to ${selectedIds.size} service${selectedIds.size !== 1 ? 's' : ''}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Bulk Action Bar */}
       <BulkActionBar
         selectedCount={selectedIds.size}
@@ -520,6 +631,11 @@ export default function ServicesPage() {
             icon: <Square className="h-3.5 w-3.5" />,
             variant: 'destructive' as const,
             onClick: () => setBulkStopOpen(true),
+          }] : []),
+          ...(canManageACL ? [{
+            label: 'Manage Access',
+            icon: <Shield className="h-3.5 w-3.5" />,
+            onClick: () => setBulkAclOpen(true),
           }] : []),
         ]}
       />

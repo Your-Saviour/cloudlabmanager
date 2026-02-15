@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
-from database import User, Role, SessionLocal, InviteToken
+from database import User, Role, SessionLocal, InviteToken, ServiceACL
 from auth import get_current_user, hash_password, create_invite_token
 from permissions import require_permission, get_user_permissions, invalidate_cache
 from db_session import get_db_session
@@ -152,6 +152,61 @@ async def assign_roles(user_id: int, req: UserRoleAssignment, request: Request,
                ip_address=request.client.host if request.client else None)
 
     return _user_response(target)
+
+
+@router.get("/{user_id}/service-access")
+async def user_service_access(user_id: int, request: Request,
+                              user: User = Depends(require_permission("users.view")),
+                              session: Session = Depends(get_db_session)):
+    """Returns which services a user can access and with what permissions."""
+    target = session.query(User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    runner = request.app.state.ansible_runner
+    from service_auth import get_user_service_permissions, _GLOBAL_PERM_MAP
+    from permissions import get_user_permissions
+    services = runner.get_services()
+
+    user_perms = get_user_permissions(session, target.id)
+    is_superadmin = "*" in user_perms
+    role_ids = [r.id for r in target.roles]
+    role_names = {r.id: r.name for r in target.roles}
+
+    result = []
+    for svc in services:
+        perms = get_user_service_permissions(session, target, svc["name"])
+        if "view" not in perms:
+            continue
+
+        # Determine the source of access
+        if is_superadmin:
+            source = "Superadmin"
+        else:
+            # Check if service has ACLs
+            acl_exists = session.query(ServiceACL).filter(
+                ServiceACL.service_name == svc["name"],
+            ).first() is not None
+
+            if acl_exists and role_ids:
+                # Find which role(s) grant access
+                acl_roles = session.query(ServiceACL.role_id).filter(
+                    ServiceACL.service_name == svc["name"],
+                    ServiceACL.role_id.in_(role_ids),
+                ).distinct().all()
+                matching_role_ids = [r[0] for r in acl_roles]
+                source_roles = [role_names[rid] for rid in matching_role_ids if rid in role_names]
+                source = f"Role: {', '.join(source_roles)}" if source_roles else "Global RBAC"
+            else:
+                source = "Global RBAC"
+
+        result.append({
+            "name": svc["name"],
+            "permissions": sorted(perms),
+            "source": source,
+        })
+
+    return {"services": result}
 
 
 @router.post("/{user_id}/resend-invite")

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Link2, Clock, DollarSign } from 'lucide-react'
+import { Link2, Clock, DollarSign, Shield } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useHasPermission } from '@/lib/permissions'
 import {
@@ -13,6 +13,7 @@ export interface ServiceSummary {
   webhook_count?: number
   schedule_count?: number
   monthly_cost?: number
+  acl_count?: number
 }
 
 interface ServiceCrossLinksProps {
@@ -33,8 +34,8 @@ export function ServiceCrossLinks({ serviceName, summary }: ServiceCrossLinksPro
 
   if (!summary) return null
 
-  const { health_status, webhook_count, schedule_count, monthly_cost } = summary
-  const hasAny = health_status || webhook_count || schedule_count || (canViewCosts && monthly_cost != null)
+  const { health_status, webhook_count, schedule_count, monthly_cost, acl_count } = summary
+  const hasAny = health_status || webhook_count || schedule_count || (canViewCosts && monthly_cost != null) || (acl_count != null && acl_count > 0)
   if (!hasAny) return null
 
   const health = health_status ? healthConfig[health_status] || healthConfig.unknown : null
@@ -129,6 +130,29 @@ export function ServiceCrossLinks({ serviceName, summary }: ServiceCrossLinksPro
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
             Monthly cost — click to view details
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* ACL chip */}
+      {acl_count != null && acl_count > 0 && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="outline"
+              className="text-[11px] px-2 py-0.5 cursor-pointer hover:bg-accent/50 transition-colors gap-1.5"
+              onClick={(e) => {
+                e.stopPropagation()
+                navigate(`/services/${encodeURIComponent(serviceName)}/config?tab=permissions`)
+              }}
+              aria-label={`Custom access controls configured — view permissions for ${serviceName}`}
+            >
+              <Shield className="h-3 w-3 text-orange-400" aria-hidden="true" />
+              <span>ACL</span>
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Custom access controls configured — click to view
           </TooltipContent>
         </Tooltip>
       )}

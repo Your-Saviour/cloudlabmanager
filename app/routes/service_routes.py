@@ -5,15 +5,20 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from database import (
-    User, HealthCheckResult, ScheduledJob, WebhookEndpoint,
-    AppMetadata, SessionLocal,
+    User, Role, HealthCheckResult, ScheduledJob, WebhookEndpoint,
+    AppMetadata, SessionLocal, ServiceACL,
 )
 from auth import get_current_user
-from permissions import require_permission
+from permissions import require_permission, invalidate_cache
 from db_session import get_db_session
 from audit import log_action
+from service_auth import require_service_permission, filter_services_for_user, check_service_permission
 from ansible_runner import ALLOWED_CONFIG_FILES
-from models import BulkServiceActionRequest, BulkActionResult
+from models import (
+    BulkServiceActionRequest, BulkActionResult,
+    ServiceACLCreate, ServiceACLBulkSet, BulkServiceACLRequest,
+    SERVICE_ACL_PERMISSIONS,
+)
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -29,10 +34,14 @@ class RunScriptRequest(BaseModel):
 
 
 @router.get("")
-async def list_services(request: Request, user: User = Depends(require_permission("services.view"))):
+async def list_services(request: Request,
+                        user: User = Depends(require_permission("services.view")),
+                        session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     services = runner.get_services()
-    return {"services": services}
+    allowed = filter_services_for_user(session, user, [s["name"] for s in services])
+    allowed_set = set(allowed)
+    return {"services": [s for s in services if s["name"] in allowed_set]}
 
 
 @router.post("/actions/stop-all")
@@ -57,10 +66,12 @@ async def bulk_stop(request: Request, body: BulkServiceActionRequest,
     valid_names = []
     skipped = []
     for name in body.service_names:
-        if runner.get_service(name):
-            valid_names.append(name)
-        else:
+        if not runner.get_service(name):
             skipped.append({"name": name, "reason": "Service not found"})
+        elif not check_service_permission(session, user, name, "stop"):
+            skipped.append({"name": name, "reason": "Permission denied"})
+        else:
+            valid_names.append(name)
 
     if not valid_names:
         return BulkActionResult(
@@ -92,10 +103,12 @@ async def bulk_deploy(request: Request, body: BulkServiceActionRequest,
     valid_names = []
     skipped = []
     for name in body.service_names:
-        if runner.get_service(name):
-            valid_names.append(name)
-        else:
+        if not runner.get_service(name):
             skipped.append({"name": name, "reason": "Service not found"})
+        elif not check_service_permission(session, user, name, "deploy"):
+            skipped.append({"name": name, "reason": "Permission denied"})
+        else:
+            valid_names.append(name)
 
     if not valid_names:
         return BulkActionResult(
@@ -116,6 +129,56 @@ async def bulk_deploy(request: Request, body: BulkServiceActionRequest,
         skipped=skipped,
         total=len(body.service_names),
     ).model_dump()
+
+
+@router.post("/actions/bulk-acl")
+async def bulk_acl(request: Request, body: BulkServiceACLRequest,
+                   user: User = Depends(require_permission("inventory.acl.manage")),
+                   session: Session = Depends(get_db_session)):
+    """Assign ACL rules across multiple services at once."""
+    runner = request.app.state.ansible_runner
+
+    role = session.query(Role).filter_by(id=body.role_id).first()
+    if not role:
+        raise HTTPException(status_code=400, detail="Role not found")
+
+    succeeded = []
+    skipped = []
+    for name in body.service_names:
+        if not runner.get_service(name):
+            skipped.append({"name": name, "reason": "Service not found"})
+            continue
+        for perm in body.permissions:
+            existing = session.query(ServiceACL).filter_by(
+                service_name=name, role_id=body.role_id, permission=perm
+            ).first()
+            if not existing:
+                acl = ServiceACL(
+                    service_name=name,
+                    role_id=body.role_id,
+                    permission=perm,
+                    created_by=user.id,
+                )
+                session.add(acl)
+        succeeded.append(name)
+
+    session.flush()
+
+    # Invalidate cache for all users with this role
+    for u in role.users:
+        invalidate_cache(u.id)
+
+    log_action(session, user.id, user.username, "service.acl.bulk_add",
+               "services",
+               details={"services": succeeded, "role_id": body.role_id,
+                         "permissions": body.permissions},
+               ip_address=request.client.host if request.client else None)
+
+    return {
+        "succeeded": succeeded,
+        "skipped": skipped,
+        "total": len(body.service_names),
+    }
 
 
 @router.get("/summaries")
@@ -213,6 +276,12 @@ async def get_service_summaries(
     except Exception:
         pass  # Cost data is best-effort; don't fail the whole endpoint
 
+    # 5. ACL counts: number of ACL rules per service
+    acl_counts = dict(
+        session.query(ServiceACL.service_name, func.count(ServiceACL.id))
+        .group_by(ServiceACL.service_name).all()
+    )
+
     # Build result: union of all known service names
     all_names = set()
     all_names.update(health_map.keys())
@@ -225,8 +294,13 @@ async def get_service_summaries(
     for svc in runner.get_services():
         all_names.add(svc["name"])
 
+    # Filter to services the user can view
+    allowed = set(filter_services_for_user(session, user, list(all_names)))
+
     summaries = {}
     for name in sorted(all_names):
+        if name not in allowed:
+            continue
         entry: dict = {}
         if name in health_map:
             entry["health_status"] = health_map[name]
@@ -236,6 +310,8 @@ async def get_service_summaries(
             entry["schedule_count"] = schedule_counts[name]
         if name in cost_map:
             entry["monthly_cost"] = round(cost_map[name], 2)
+        if name in acl_counts:
+            entry["acl_count"] = acl_counts[name]
         if entry:  # only include services that have at least one cross-link
             summaries[name] = entry
 
@@ -244,14 +320,18 @@ async def get_service_summaries(
 
 @router.get("/outputs")
 async def all_service_outputs(request: Request,
-                              user: User = Depends(require_permission("services.view"))):
+                              user: User = Depends(require_permission("services.view")),
+                              session: Session = Depends(get_db_session)):
     from service_outputs import get_all_service_outputs
-    return {"outputs": get_all_service_outputs()}
+    all_outputs = get_all_service_outputs()
+    allowed = set(filter_services_for_user(session, user, list(all_outputs.keys())))
+    return {"outputs": {k: v for k, v in all_outputs.items() if k in allowed}}
 
 
 @router.get("/active-deployments")
 async def active_deployments(request: Request,
-                             user: User = Depends(require_permission("services.view"))):
+                             user: User = Depends(require_permission("services.view")),
+                             session: Session = Depends(get_db_session)):
     import os
     from ansible_runner import SERVICES_DIR
     deployments = []
@@ -260,12 +340,13 @@ async def active_deployments(request: Request,
             inv_path = os.path.join(SERVICES_DIR, dirname, "outputs", "temp_inventory.yaml")
             if os.path.isfile(inv_path):
                 deployments.append({"name": dirname})
-    return {"deployments": deployments}
+    allowed = set(filter_services_for_user(session, user, [d["name"] for d in deployments]))
+    return {"deployments": [d for d in deployments if d["name"] in allowed]}
 
 
 @router.get("/{name}")
 async def get_service(name: str, request: Request,
-                      user: User = Depends(require_permission("services.view"))):
+                      user: User = Depends(require_service_permission("view"))):
     runner = request.app.state.ansible_runner
     service = runner.get_service(name)
     if not service:
@@ -275,14 +356,14 @@ async def get_service(name: str, request: Request,
 
 @router.get("/{name}/outputs")
 async def service_outputs(name: str, request: Request,
-                          user: User = Depends(require_permission("services.view"))):
+                          user: User = Depends(require_service_permission("view"))):
     from service_outputs import get_service_outputs
     return {"outputs": get_service_outputs(name)}
 
 
 @router.post("/{name}/dry-run")
 async def dry_run_service(name: str, request: Request,
-                          user: User = Depends(require_permission("services.deploy")),
+                          user: User = Depends(require_service_permission("deploy")),
                           session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     service = runner.get_service(name)
@@ -301,7 +382,7 @@ async def dry_run_service(name: str, request: Request,
 
 @router.post("/{name}/deploy")
 async def deploy_service(name: str, request: Request,
-                         user: User = Depends(require_permission("services.deploy")),
+                         user: User = Depends(require_service_permission("deploy")),
                          session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     service = runner.get_service(name)
@@ -318,7 +399,7 @@ async def deploy_service(name: str, request: Request,
 
 @router.post("/{name}/run")
 async def run_script(name: str, body: RunScriptRequest, request: Request,
-                     user: User = Depends(require_permission("services.deploy")),
+                     user: User = Depends(require_service_permission("deploy")),
                      session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     try:
@@ -342,7 +423,7 @@ async def run_script(name: str, body: RunScriptRequest, request: Request,
 
 @router.post("/{name}/stop")
 async def stop_service(name: str, request: Request,
-                       user: User = Depends(require_permission("services.stop")),
+                       user: User = Depends(require_service_permission("stop")),
                        session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     service = runner.get_service(name)
@@ -359,7 +440,7 @@ async def stop_service(name: str, request: Request,
 
 @router.get("/{name}/configs")
 async def list_configs(name: str, request: Request,
-                       user: User = Depends(require_permission("services.config.view"))):
+                       user: User = Depends(require_service_permission("config"))):
     runner = request.app.state.ansible_runner
     service = runner.get_service(name)
     if not service:
@@ -372,7 +453,7 @@ async def list_configs(name: str, request: Request,
 
 @router.get("/{name}/configs/{filename}")
 async def read_config(name: str, filename: str, request: Request,
-                      user: User = Depends(require_permission("services.config.view"))):
+                      user: User = Depends(require_service_permission("config"))):
     runner = request.app.state.ansible_runner
     service = runner.get_service(name)
     if not service:
@@ -388,7 +469,7 @@ async def read_config(name: str, filename: str, request: Request,
 
 @router.put("/{name}/configs/{filename}")
 async def write_config(name: str, filename: str, body: ConfigUpdate, request: Request,
-                       user: User = Depends(require_permission("services.config.edit")),
+                       user: User = Depends(require_service_permission("config")),
                        session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     service = runner.get_service(name)
@@ -422,7 +503,7 @@ async def write_config(name: str, filename: str, body: ConfigUpdate, request: Re
 
 @router.get("/{name}/configs/{filename}/versions")
 async def list_config_versions(name: str, filename: str, request: Request,
-                                user: User = Depends(require_permission("services.config.view")),
+                                user: User = Depends(require_service_permission("config")),
                                 session: Session = Depends(get_db_session)):
     """List all versions of a config file, newest first."""
     from database import ConfigVersion
@@ -454,7 +535,7 @@ async def list_config_versions(name: str, filename: str, request: Request,
 
 @router.get("/{name}/configs/{filename}/versions/{version_id}")
 async def get_config_version(name: str, filename: str, version_id: int, request: Request,
-                              user: User = Depends(require_permission("services.config.view")),
+                              user: User = Depends(require_service_permission("config")),
                               session: Session = Depends(get_db_session)):
     """Get the full content of a specific version."""
     if filename not in ALLOWED_CONFIG_FILES:
@@ -482,7 +563,7 @@ async def get_config_version(name: str, filename: str, version_id: int, request:
 async def diff_config_version(name: str, filename: str, version_id: int,
                                request: Request,
                                compare_to: int | None = None,
-                               user: User = Depends(require_permission("services.config.view")),
+                               user: User = Depends(require_service_permission("config")),
                                session: Session = Depends(get_db_session)):
     """Get unified diff between a version and its predecessor (or a specified version).
 
@@ -535,7 +616,7 @@ class RestoreRequest(BaseModel):
 async def restore_config_version(name: str, filename: str, version_id: int,
                                   body: RestoreRequest,
                                   request: Request,
-                                  user: User = Depends(require_permission("services.config.edit")),
+                                  user: User = Depends(require_service_permission("config")),
                                   session: Session = Depends(get_db_session)):
     """Restore a previous version: write its content to disk and create a new version."""
     if filename not in ALLOWED_CONFIG_FILES:
@@ -581,7 +662,7 @@ async def restore_config_version(name: str, filename: str, version_id: int,
 
 @router.get("/{name}/files/{subdir}")
 async def list_service_files(name: str, subdir: str, request: Request,
-                             user: User = Depends(require_permission("services.files.view"))):
+                             user: User = Depends(require_service_permission("config"))):
     runner = request.app.state.ansible_runner
     try:
         files = runner.list_service_files(name, subdir)
@@ -594,7 +675,7 @@ async def list_service_files(name: str, subdir: str, request: Request,
 
 @router.get("/{name}/files/{subdir}/{filename}")
 async def download_service_file(name: str, subdir: str, filename: str, request: Request,
-                                user: User = Depends(require_permission("services.files.view"))):
+                                user: User = Depends(require_service_permission("config"))):
     runner = request.app.state.ansible_runner
     try:
         file_path = runner.get_service_file_path(name, subdir, filename)
@@ -608,7 +689,7 @@ async def download_service_file(name: str, subdir: str, filename: str, request: 
 @router.post("/{name}/files/{subdir}")
 async def upload_service_file(name: str, subdir: str, request: Request,
                               file: UploadFile = File(...),
-                              user: User = Depends(require_permission("services.files.edit")),
+                              user: User = Depends(require_service_permission("config")),
                               session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     try:
@@ -629,7 +710,7 @@ async def upload_service_file(name: str, subdir: str, request: Request,
 @router.put("/{name}/files/{subdir}/{filename}")
 async def edit_service_file(name: str, subdir: str, filename: str, body: ConfigUpdate,
                             request: Request,
-                            user: User = Depends(require_permission("services.files.edit")),
+                            user: User = Depends(require_service_permission("config")),
                             session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     try:
@@ -648,7 +729,7 @@ async def edit_service_file(name: str, subdir: str, filename: str, body: ConfigU
 
 @router.delete("/{name}/files/{subdir}/{filename}")
 async def delete_service_file(name: str, subdir: str, filename: str, request: Request,
-                              user: User = Depends(require_permission("services.files.edit")),
+                              user: User = Depends(require_service_permission("config")),
                               session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     try:
@@ -663,3 +744,150 @@ async def delete_service_file(name: str, subdir: str, filename: str, request: Re
         raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# --- Service ACL endpoints ---
+
+
+def _acl_response(acl: ServiceACL) -> dict:
+    return {
+        "id": acl.id,
+        "service_name": acl.service_name,
+        "role_id": acl.role_id,
+        "role_name": acl.role.name if acl.role else None,
+        "permission": acl.permission,
+        "created_at": acl.created_at.isoformat() if acl.created_at else None,
+        "created_by": acl.created_by,
+        "created_by_username": acl.creator.username if acl.creator else None,
+    }
+
+
+@router.get("/{name}/acl")
+async def list_service_acl(name: str, request: Request,
+                           user: User = Depends(require_permission("inventory.acl.manage")),
+                           session: Session = Depends(get_db_session)):
+    """List all ACL rules for a service."""
+    runner = request.app.state.ansible_runner
+    if not runner.get_service(name):
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    acls = session.query(ServiceACL).filter_by(service_name=name).all()
+    return {"acl": [_acl_response(a) for a in acls]}
+
+
+@router.post("/{name}/acl")
+async def add_service_acl(name: str, body: ServiceACLCreate, request: Request,
+                          user: User = Depends(require_permission("inventory.acl.manage")),
+                          session: Session = Depends(get_db_session)):
+    """Add ACL rule(s) for a service."""
+    runner = request.app.state.ansible_runner
+    if not runner.get_service(name):
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    role = session.query(Role).filter_by(id=body.role_id).first()
+    if not role:
+        raise HTTPException(status_code=400, detail="Role not found")
+
+    created = []
+    for perm in body.permissions:
+        existing = session.query(ServiceACL).filter_by(
+            service_name=name, role_id=body.role_id, permission=perm
+        ).first()
+        if existing:
+            continue
+        acl = ServiceACL(
+            service_name=name,
+            role_id=body.role_id,
+            permission=perm,
+            created_by=user.id,
+        )
+        session.add(acl)
+        session.flush()
+        created.append(acl)
+
+    # Invalidate cache for all users with this role
+    for u in role.users:
+        invalidate_cache(u.id)
+
+    log_action(session, user.id, user.username, "service.acl.add", f"services/{name}",
+               details={"role_id": body.role_id, "permissions": body.permissions},
+               ip_address=request.client.host if request.client else None)
+
+    return {"acl": [_acl_response(a) for a in created]}
+
+
+@router.delete("/{name}/acl/{acl_id}")
+async def delete_service_acl(name: str, acl_id: int, request: Request,
+                             user: User = Depends(require_permission("inventory.acl.manage")),
+                             session: Session = Depends(get_db_session)):
+    """Remove a specific ACL rule."""
+    acl = session.query(ServiceACL).filter_by(id=acl_id, service_name=name).first()
+    if not acl:
+        raise HTTPException(status_code=404, detail="ACL rule not found")
+
+    role = acl.role
+    details = {"role_id": acl.role_id, "permission": acl.permission}
+    session.delete(acl)
+    session.flush()
+
+    # Invalidate cache for affected users
+    if role:
+        for u in role.users:
+            invalidate_cache(u.id)
+
+    log_action(session, user.id, user.username, "service.acl.remove", f"services/{name}",
+               details=details,
+               ip_address=request.client.host if request.client else None)
+
+    return {"status": "deleted"}
+
+
+@router.put("/{name}/acl")
+async def replace_service_acl(name: str, body: ServiceACLBulkSet, request: Request,
+                              user: User = Depends(require_permission("inventory.acl.manage")),
+                              session: Session = Depends(get_db_session)):
+    """Replace all ACL rules for a service."""
+    runner = request.app.state.ansible_runner
+    if not runner.get_service(name):
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    # Validate all role_ids first
+    role_ids = {rule.role_id for rule in body.rules}
+    roles = session.query(Role).filter(Role.id.in_(role_ids)).all()
+    found_ids = {r.id for r in roles}
+    missing = role_ids - found_ids
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Roles not found: {sorted(missing)}")
+
+    # Collect affected users before deleting (old + new roles)
+    old_acls = session.query(ServiceACL).filter_by(service_name=name).all()
+    affected_role_ids = {a.role_id for a in old_acls} | role_ids
+
+    # Delete existing
+    session.query(ServiceACL).filter_by(service_name=name).delete()
+
+    # Create new
+    created = []
+    for rule in body.rules:
+        for perm in rule.permissions:
+            acl = ServiceACL(
+                service_name=name,
+                role_id=rule.role_id,
+                permission=perm,
+                created_by=user.id,
+            )
+            session.add(acl)
+            session.flush()
+            created.append(acl)
+
+    # Invalidate cache for all affected users
+    affected_roles = session.query(Role).filter(Role.id.in_(affected_role_ids)).all()
+    for role in affected_roles:
+        for u in role.users:
+            invalidate_cache(u.id)
+
+    log_action(session, user.id, user.username, "service.acl.replace", f"services/{name}",
+               details={"rules": [{"role_id": r.role_id, "permissions": r.permissions} for r in body.rules]},
+               ip_address=request.client.host if request.client else None)
+
+    return {"acl": [_acl_response(a) for a in created]}

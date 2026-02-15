@@ -13,6 +13,7 @@ from db_session import get_db_session
 from audit import log_action
 from models import WebhookEndpointCreate, WebhookEndpointUpdate
 from notification_service import notify, EVENT_WEBHOOK_TRIGGERED
+from service_auth import check_service_script_permission, check_service_permission
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +222,14 @@ async def list_webhooks(
     session: Session = Depends(get_db_session),
 ):
     webhooks = session.query(WebhookEndpoint).order_by(WebhookEndpoint.created_at.desc()).all()
-    return {"webhooks": [_webhook_to_dict(w) for w in webhooks]}
+    # Filter service_script webhooks by service ACL — non-service webhooks always visible
+    filtered = [
+        w for w in webhooks
+        if w.job_type != "service_script"
+        or not w.service_name
+        or check_service_permission(session, user, w.service_name, "view")
+    ]
+    return {"webhooks": [_webhook_to_dict(w) for w in filtered]}
 
 
 @router.get("/{webhook_id}")
@@ -233,6 +241,10 @@ async def get_webhook(
     webhook = session.query(WebhookEndpoint).filter_by(id=webhook_id).first()
     if not webhook:
         raise HTTPException(404, "Webhook not found")
+    # Service ACL check: deny if user can't view the target service
+    if webhook.job_type == "service_script" and webhook.service_name:
+        if not check_service_permission(session, user, webhook.service_name, "view"):
+            raise HTTPException(403, "You don't have permission to view this webhook's target service")
     return _webhook_to_dict(webhook)
 
 
@@ -252,6 +264,10 @@ async def get_webhook_history(
     webhook = session.query(WebhookEndpoint).filter_by(id=webhook_id).first()
     if not webhook:
         raise HTTPException(404, "Webhook not found")
+    # Service ACL check
+    if webhook.job_type == "service_script" and webhook.service_name:
+        if not check_service_permission(session, user, webhook.service_name, "view"):
+            raise HTTPException(403, "You don't have permission to view this webhook's history")
 
     query = (
         session.query(JobRecord)
@@ -300,6 +316,11 @@ async def create_webhook(
         if body.system_task not in allowed_tasks:
             raise HTTPException(400, f"system_task must be one of: {allowed_tasks}")
 
+    # Service ACL check for service_script webhooks
+    if body.job_type == "service_script":
+        if not check_service_script_permission(session, user, body.service_name, body.script_name):
+            raise HTTPException(403, f"You don't have permission to create a webhook for service '{body.service_name}'")
+
     token = secrets.token_hex(16)
 
     webhook = WebhookEndpoint(
@@ -339,6 +360,11 @@ async def update_webhook(
     if not webhook:
         raise HTTPException(404, "Webhook not found")
 
+    # Service ACL check: user must have permission on the webhook's target service
+    if webhook.job_type == "service_script" and webhook.service_name:
+        if not check_service_script_permission(session, user, webhook.service_name, webhook.script_name):
+            raise HTTPException(403, f"You don't have permission to modify a webhook for service '{webhook.service_name}'")
+
     if body.name is not None:
         webhook.name = body.name.strip()
     if body.description is not None:
@@ -368,6 +394,11 @@ async def delete_webhook(
     if not webhook:
         raise HTTPException(404, "Webhook not found")
 
+    # Service ACL check
+    if webhook.job_type == "service_script" and webhook.service_name:
+        if not check_service_script_permission(session, user, webhook.service_name, webhook.script_name):
+            raise HTTPException(403, f"You don't have permission to delete a webhook for service '{webhook.service_name}'")
+
     name = webhook.name
     session.delete(webhook)
     session.flush()
@@ -390,6 +421,11 @@ async def regenerate_token(
     if not webhook:
         raise HTTPException(404, "Webhook not found")
 
+    # Service ACL check
+    if webhook.job_type == "service_script" and webhook.service_name:
+        if not check_service_script_permission(session, user, webhook.service_name, webhook.script_name):
+            raise HTTPException(403, f"You don't have permission to modify a webhook for service '{webhook.service_name}'")
+
     webhook.token = secrets.token_hex(16)
     session.flush()
 
@@ -410,6 +446,10 @@ async def get_webhook_token(
     webhook = session.query(WebhookEndpoint).filter_by(id=webhook_id).first()
     if not webhook:
         raise HTTPException(404, "Webhook not found")
+    # Service ACL check
+    if webhook.job_type == "service_script" and webhook.service_name:
+        if not check_service_script_permission(session, user, webhook.service_name, webhook.script_name):
+            raise HTTPException(403, f"You don't have permission to access this webhook's token")
     return {"token": webhook.token}
 
 
@@ -424,6 +464,11 @@ async def test_webhook(
     webhook = session.query(WebhookEndpoint).filter_by(id=webhook_id).first()
     if not webhook:
         raise HTTPException(404, "Webhook not found")
+
+    # Service ACL check
+    if webhook.job_type == "service_script" and webhook.service_name:
+        if not check_service_script_permission(session, user, webhook.service_name, webhook.script_name):
+            raise HTTPException(403, f"You don't have permission to test a webhook for service '{webhook.service_name}'")
 
     if not webhook.is_enabled:
         raise HTTPException(400, "Webhook is disabled")

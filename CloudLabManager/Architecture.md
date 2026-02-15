@@ -20,6 +20,7 @@ cloudlabmanager/
 │   ├── migration.py            # JSON→SQLite migration (one-time)
 │   ├── auth.py                 # JWT auth, password hashing, invite/reset tokens
 │   ├── permissions.py          # RBAC engine, permission seeding, caching
+│   ├── service_auth.py          # Service-level ACL permission checks
 │   ├── inventory_auth.py       # 4-layer inventory permission checks
 │   ├── inventory_sync.py       # Sync adapters (Vultr, services, users, deployments)
 │   ├── type_loader.py          # YAML inventory type loader + validation
@@ -133,6 +134,7 @@ All persistent state is stored in SQLite (`/data/cloudlab.db`) using SQLAlchemy 
 | `inventory_objects` | Typed objects (JSON data, search text, tags) |
 | `inventory_tags` | Tags for organization and access control |
 | `object_acl` | Per-object access control rules |
+| `service_acl` | Per-service role-based access control rules |
 | `tag_permissions` | Tag-based permission grants |
 | `scheduled_jobs` | Cron-based recurring job definitions |
 | `job_records` | Deployment and action job history |

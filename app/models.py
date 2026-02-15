@@ -235,6 +235,60 @@ class ObjectTagsUpdate(BaseModel):
     tag_ids: list[int]
 
 
+# --- Service ACL models ---
+
+SERVICE_ACL_PERMISSIONS = {"view", "deploy", "stop", "config"}
+
+class ServiceACLCreate(BaseModel):
+    role_id: int
+    permissions: list[str]
+
+    @field_validator("permissions")
+    @classmethod
+    def validate_permissions(cls, v):
+        for p in v:
+            if p not in SERVICE_ACL_PERMISSIONS:
+                raise ValueError(f"Invalid permission: {p}. Must be one of: {', '.join(sorted(SERVICE_ACL_PERMISSIONS))}")
+        return v
+
+class ServiceACLResponse(BaseModel):
+    id: int
+    service_name: str
+    role_id: int
+    role_name: Optional[str] = None
+    permission: str
+    created_at: Optional[datetime] = None
+    created_by: Optional[int] = None
+
+
+class ServiceACLBulkSet(BaseModel):
+    """Replace all ACL rules for a service."""
+    rules: list[ServiceACLCreate]
+
+
+class BulkServiceACLRequest(BaseModel):
+    """Assign ACL rules across multiple services at once."""
+    service_names: list[str] = Field(max_length=MAX_BULK_ITEMS)
+    role_id: int
+    permissions: list[str]
+
+    @field_validator("service_names")
+    @classmethod
+    def validate_service_names(cls, v):
+        for name in v:
+            if not re.match(r"^[a-zA-Z0-9_-]{1,100}$", name):
+                raise ValueError(f"Invalid service name: {name}")
+        return v
+
+    @field_validator("permissions")
+    @classmethod
+    def validate_permissions(cls, v):
+        for p in v:
+            if p not in SERVICE_ACL_PERMISSIONS:
+                raise ValueError(f"Invalid permission: {p}. Must be one of: {', '.join(sorted(SERVICE_ACL_PERMISSIONS))}")
+        return v
+
+
 # --- Bulk operation models ---
 
 class BulkServiceActionRequest(BaseModel):

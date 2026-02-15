@@ -256,5 +256,18 @@ export interface CostSummary {
   previous_instance_count: number
 }
 
+export interface ServiceACLEntry {
+  id: number
+  service_name: string
+  role_id: number
+  role_name: string | null
+  permission: string
+  created_at: string | null
+  created_by: number | null
+  created_by_username: string | null
+}
+
+export type ServicePermission = 'view' | 'deploy' | 'stop' | 'config'
+
 export type { ScheduledJob, CronPreview } from './schedule'
 export type { WebhookEndpoint } from './webhook'

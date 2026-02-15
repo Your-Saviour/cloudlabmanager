@@ -86,6 +86,11 @@ Returns: `{ "access_token": "...", "token_type": "bearer" }`
 | GET | `/api/services/summaries` | `services.view` | Aggregated cross-link data (health, webhooks, schedules, cost) for all services |
 | POST | `/api/services/actions/bulk-stop` | `services.stop` | Stop multiple services at once |
 | POST | `/api/services/actions/bulk-deploy` | `services.deploy` | Deploy multiple services in parallel |
+| GET | `/api/services/{name}/acl` | `inventory.acl.manage` | List ACL rules for a service |
+| POST | `/api/services/{name}/acl` | `inventory.acl.manage` | Add ACL rules to a service |
+| PUT | `/api/services/{name}/acl` | `inventory.acl.manage` | Replace all ACL rules for a service |
+| DELETE | `/api/services/{name}/acl/{acl_id}` | `inventory.acl.manage` | Remove a specific ACL rule |
+| POST | `/api/services/actions/bulk-acl` | `inventory.acl.manage` | Assign ACL rules across multiple services |
 
 ### GET `/api/services/summaries`
 
@@ -111,6 +116,7 @@ Fields per service:
 - `webhook_count` — number of enabled webhooks
 - `schedule_count` — number of enabled scheduled jobs
 - `monthly_cost` — estimated monthly cost in USD (best-effort, may be absent)
+- `acl_count` — number of service ACL rules (only included when > 0)
 
 Services with no cross-link data are omitted. Cost data failures are handled gracefully — partial data is still returned.
 
@@ -134,6 +140,54 @@ Both bulk endpoints accept a list of service names and return a `BulkActionResul
 ```
 
 Creates a **parent job** that spawns individual child jobs per service. If some services don't exist or fail permission checks, they appear in `skipped` with a `reason` field. Use `GET /api/jobs?parent_job_id={job_id}` to list child jobs.
+
+### Service ACL Management
+
+See [[RBAC#Service-Level Access Control]] for concepts.
+
+#### POST `/api/services/{name}/acl`
+
+Add ACL rules for a service. Duplicates are silently skipped.
+
+```json
+{
+  "role_id": 2,
+  "permissions": ["view", "deploy"]
+}
+```
+
+Returns the newly created ACL entries (excluding duplicates).
+
+#### PUT `/api/services/{name}/acl`
+
+Replace all ACL rules for a service. Deletes existing rules before creating new ones. All role IDs are validated upfront.
+
+```json
+{
+  "rules": [
+    { "role_id": 2, "permissions": ["view", "deploy"] },
+    { "role_id": 3, "permissions": ["view"] }
+  ]
+}
+```
+
+#### DELETE `/api/services/{name}/acl/{acl_id}`
+
+Remove a specific ACL rule by ID.
+
+#### POST `/api/services/actions/bulk-acl`
+
+Assign ACL rules across multiple services at once.
+
+```json
+{
+  "service_names": ["n8n-server", "velociraptor"],
+  "role_id": 2,
+  "permissions": ["view", "deploy"]
+}
+```
+
+Returns a summary with counts and any skipped services (e.g., services that don't exist).
 
 ### Service Config Management
 
@@ -333,6 +387,7 @@ Logged as `job.rerun` in the audit log.
 | PUT | `/api/users/{id}` | `users.edit` | Update user (display_name, email, is_active) |
 | DELETE | `/api/users/{id}` | `users.delete` | Deactivate a user |
 | POST | `/api/users/{id}/roles` | `users.assign_roles` | Assign roles to a user |
+| GET | `/api/users/{id}/service-access` | `users.view` | List services a user can access with permissions and source |
 | POST | `/api/users/{id}/resend-invite` | `users.create` | Resend invitation email |
 | PUT | `/api/users/profile` | Yes | Update own profile |
 | POST | `/api/users/password` | Yes | Change own password |
@@ -347,6 +402,32 @@ Logged as `job.rerun` in the audit log.
   "role_ids": [2]
 }
 ```
+
+### GET `/api/users/{id}/service-access`
+
+Returns which services a user can access and with what permissions. Useful for auditing access.
+
+Response:
+
+```json
+[
+  {
+    "service_name": "n8n-server",
+    "permissions": ["view", "deploy", "stop", "config"],
+    "source": "Role: Deployer"
+  },
+  {
+    "service_name": "velociraptor",
+    "permissions": ["view"],
+    "source": "Global RBAC"
+  }
+]
+```
+
+Source values:
+- `"Superadmin"` — user has wildcard `*` permission
+- `"Role: <name>"` — access granted via specific service ACL role(s)
+- `"Global RBAC"` — no service-specific ACLs exist, falling back to global permissions
 
 ## Roles
 

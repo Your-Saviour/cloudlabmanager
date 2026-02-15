@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, MoreHorizontal, Mail, Pencil, UserCheck, UserX, Copy } from 'lucide-react'
+import { Plus, MoreHorizontal, Mail, Pencil, UserCheck, UserX, Copy, Shield } from 'lucide-react'
 import api from '@/lib/api'
 import { useHasPermission } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/authStore'
@@ -29,6 +29,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
+import UserServiceAccess from '@/components/users/UserServiceAccess'
 import type { User, Role } from '@/types'
 
 export default function UsersPage() {
@@ -42,6 +43,7 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<User | null>(null)
   const [toggleUser, setToggleUser] = useState<User | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
+  const [accessUser, setAccessUser] = useState<User | null>(null)
 
   const [inviteForm, setInviteForm] = useState({ username: '', email: '', display_name: '', role_id: '' })
   const [editForm, setEditForm] = useState({ display_name: '', email: '', role_id: '' })
@@ -188,6 +190,9 @@ export default function UsersPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setAccessUser(row.original)}>
+                  <Shield className="mr-2 h-3 w-3" /> Service Access
+                </DropdownMenuItem>
                 {canEdit && (
                   <DropdownMenuItem onClick={() => openEditDialog(row.original)}>
                     <Pencil className="mr-2 h-3 w-3" /> Edit
@@ -363,6 +368,19 @@ export default function UsersPage() {
         variant="destructive"
         onConfirm={() => deleteUser && deleteMutation.mutate(deleteUser.id)}
       />
+
+      {/* Service Access Dialog */}
+      <Dialog open={!!accessUser} onOpenChange={() => setAccessUser(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              <Shield className="inline mr-2 h-4 w-4" />
+              Service Access — {accessUser?.display_name || accessUser?.username}
+            </DialogTitle>
+          </DialogHeader>
+          {accessUser && <UserServiceAccess userId={accessUser.id} />}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
