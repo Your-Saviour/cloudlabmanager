@@ -32,6 +32,20 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Stat cards: service count, running/completed/failed job counts
 - Recent jobs list (last 10)
 - "Stop All Instances" button with confirmation dialog
+- **Pinned Services section** — personalized panel at the top showing only favorited services (see below)
+- **Collapsible sections** — each dashboard section (Pinned Services, Stats, Quick Links, Health, Recent Jobs) has a clickable header with chevron toggle; collapsed state persists via user preferences
+- **Drag-and-drop section reordering** — sections can be reordered by dragging the grip handle (⠿) on each section header; order persists via user preferences
+- **Quick Links reordering** — quick link cards within the Quick Links section can be drag-and-drop reordered independently of section reordering
+
+### Pinned Services
+- Renders at the top of the dashboard when the user has pinned services
+- Each card shows: service name with status dot, IP address (if running), and action buttons (Deploy, Stop, Config, SSH)
+- Deploy/Stop buttons are permission-gated (`services.deploy`, `services.stop`)
+- Expandable outputs section per card — shows service URLs as clickable links, credentials with reveal/copy toggle, and plain text values
+- Unpin star button removes the service immediately
+- Returns `null` (hidden) when no services are pinned
+- Shares query cache with Services page for consistent data
+- Component: `components/dashboard/PinnedServices.tsx`
 
 ### Instances
 - Table: hostname, IP, region, plan, tags, status
@@ -41,6 +55,7 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 ### Services
 - Card grid showing each deployable service
 - Each card shows instance specs (label, plan, region) from instance.yaml
+- **Pin/unpin toggle** — star icon in the top-right of each service card; click to pin (filled amber star) or unpin (outline star) a service to the dashboard; state persists via user preferences API
 - "Deploy" and "Stop" buttons with confirmation dialogs
 - Clicking Deploy opens a **Dry-Run Preview** modal before executing (see below)
 - Non-deploy scripts (e.g., add-users) bypass the preview and use the existing input modal or direct execution flow
@@ -118,6 +133,16 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Loading skeletons during data fetch
 - Empty state when no health checks are configured
 - Requires `health.view` permission
+
+### Quick Links (Dashboard)
+- Displays auto-discovered service URLs and user-created custom links in a responsive grid
+- Each card has a grip handle for drag-and-drop reordering (uses `@dnd-kit` with `rectSortingStrategy`)
+- **Custom links**: dashed border style with "custom" badge; 3-dot dropdown menu with Edit and Delete actions
+- **Add custom link**: dashed card with plus icon at the end of the grid; opens a dialog with Label, URL fields and live preview
+- Custom link dialog supports both add and edit modes with `react-hook-form` + `zod` validation
+- Auto-discovered links are read-only (no edit/delete controls)
+- Link order persists via user preferences (`quick_links.order` array)
+- Component: `components/dashboard/QuickLinksSection.tsx`, `components/dashboard/AddLinkDialog.tsx`
 
 ### Dashboard Health Panel
 - "Service Health" stat card showing healthy/total count

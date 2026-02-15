@@ -360,6 +360,12 @@ class NotificationRuleOut(BaseModel):
     created_at: str
 
 
+class UserPreferencesUpdate(BaseModel):
+    pinned_services: Optional[list[str]] = Field(None, max_length=50)
+    dashboard_sections: Optional[dict[str, Any]] = None
+    quick_links: Optional[dict[str, Any]] = None
+
+
 class NotificationChannelCreate(BaseModel):
     channel_type: str      # "slack"
     name: str

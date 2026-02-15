@@ -16,8 +16,11 @@ import {
   Copy,
   Plus,
   X,
+  Star,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { cn } from '@/lib/utils'
+import { usePreferencesStore } from '@/stores/preferencesStore'
 import { useHasPermission } from '@/lib/permissions'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -65,6 +68,8 @@ export default function ServicesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkStopOpen, setBulkStopOpen] = useState(false)
   const [bulkDeployOpen, setBulkDeployOpen] = useState(false)
+  const togglePin = usePreferencesStore((s) => s.togglePinService)
+  const isServicePinned = usePreferencesStore((s) => s.isServicePinned)
 
   // Get service inventory objects
   const { data: serviceObjects = [], isLoading: objectsLoading } = useQuery({
@@ -353,14 +358,37 @@ export default function ServicesPage() {
                     )}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground"
-                    onClick={() => setExpandedService(isExpanded ? null : name)}
-                  >
-                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    {/* Pin toggle */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        "h-7 w-7",
+                        isServicePinned(name)
+                          ? "text-amber-400 hover:text-amber-300"
+                          : "text-muted-foreground hover:text-amber-400"
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        togglePin(name)
+                      }}
+                      title={isServicePinned(name) ? "Unpin from dashboard" : "Pin to dashboard"}
+                      aria-label={isServicePinned(name) ? `Unpin ${name} from dashboard` : `Pin ${name} to dashboard`}
+                    >
+                      <Star
+                        className={cn("h-4 w-4", isServicePinned(name) && "fill-current")}
+                      />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground"
+                      onClick={() => setExpandedService(isExpanded ? null : name)}
+                    >
+                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Zone B: Data Cells */}

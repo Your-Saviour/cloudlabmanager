@@ -69,6 +69,7 @@ _SESSION_LOCAL_MODULES = [
     "routes.drift_routes",
     "notification_service",
     "routes.notification_routes",
+    "routes.preference_routes",
 ]
 
 
@@ -274,6 +275,9 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     app.include_router(health_router)
     app.include_router(drift_router)
     app.include_router(notification_router)
+
+    from routes.preference_routes import router as preference_router
+    app.include_router(preference_router)
 
     return app
 

@@ -666,6 +666,57 @@ Returns available event types:
 
 Sends a test message to the configured channel. Returns `200` on success or an error if the webhook is unreachable.
 
+## User Preferences
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/users/me/preferences` | Yes | Get current user's preferences (returns `{}` if none saved) |
+| PUT | `/api/users/me/preferences` | Yes | Update current user's preferences (merge semantics) |
+
+Preferences are per-user and require no special permissions — each user manages their own.
+
+### PUT `/api/users/me/preferences`
+
+Accepts any combination of the following fields. Only provided fields are merged into existing preferences (unset fields are left unchanged).
+
+```json
+{
+  "pinned_services": ["n8n-server", "velociraptor"],
+  "dashboard_sections": {
+    "order": ["pinned_services", "stats", "quick_links", "health", "recent_jobs"],
+    "collapsed": ["stats"]
+  },
+  "quick_links": {
+    "order": ["n8n-server:N8N", "custom:1234567890"],
+    "custom_links": [
+      {
+        "id": "1234567890",
+        "label": "My Wiki",
+        "url": "https://wiki.example.com"
+      }
+    ]
+  }
+}
+```
+
+Returns:
+
+```json
+{
+  "preferences": { ... }
+}
+```
+
+### Preference Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pinned_services` | `string[]` | Service names pinned to the dashboard |
+| `dashboard_sections.order` | `string[]` | Dashboard section display order |
+| `dashboard_sections.collapsed` | `string[]` | IDs of collapsed dashboard sections |
+| `quick_links.order` | `string[]` | Quick link display order (format: `service:label` or `custom:id`) |
+| `quick_links.custom_links` | `object[]` | User-created custom links (id, label, url) |
+
 ## Inventory
 
 See [[Inventory System]] for concepts. All inventory endpoints require authentication.

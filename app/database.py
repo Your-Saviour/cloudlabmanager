@@ -124,6 +124,17 @@ class PasswordResetToken(Base):
     user = relationship("User")
 
 
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    preferences = Column(Text, nullable=False, default="{}")  # JSON blob
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("User")
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

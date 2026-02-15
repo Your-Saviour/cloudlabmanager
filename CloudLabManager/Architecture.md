@@ -50,6 +50,7 @@ cloudlabmanager/
 │   │   ├── drift_routes.py     # /api/drift/* endpoints
 │   │   ├── schedule_routes.py  # /api/schedules/* endpoints
 │   │   ├── notification_routes.py # /api/notifications/* endpoints
+│   │   ├── preference_routes.py # /api/users/me/preferences endpoints
 │   │   └── audit_routes.py     # /api/audit/* endpoints
 │   └── static/
 │       ├── index.html          # SPA shell
@@ -142,6 +143,7 @@ All persistent state is stored in SQLite (`/data/cloudlab.db`) using SQLAlchemy 
 | `notifications` | Per-user in-app notifications (title, body, severity, read status) |
 | `notification_rules` | Event-to-channel routing rules (event type, channel, role target, filters) |
 | `notification_channels` | External notification channels (Slack webhooks, etc.) |
+| `user_preferences` | Per-user dashboard preferences (pinned services, section order, quick links) |
 | `app_metadata` | Key-value store (secret key, vault password, cache) |
 | `invite_tokens` | User invitation tokens (72h expiry) |
 | `password_reset_tokens` | Password reset tokens (1h expiry) |
