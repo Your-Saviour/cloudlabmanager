@@ -83,8 +83,36 @@ Returns: `{ "access_token": "...", "token_type": "bearer" }`
 | POST | `/api/services/{name}/run` | `services.deploy` | Run a named script from scripts.yaml |
 | POST | `/api/services/{name}/stop` | `services.stop` | Stop instances for this service |
 | POST | `/api/services/actions/stop-all` | `system.stop_all` | Stop all running Vultr instances |
+| GET | `/api/services/summaries` | `services.view` | Aggregated cross-link data (health, webhooks, schedules, cost) for all services |
 | POST | `/api/services/actions/bulk-stop` | `services.stop` | Stop multiple services at once |
 | POST | `/api/services/actions/bulk-deploy` | `services.deploy` | Deploy multiple services in parallel |
+
+### GET `/api/services/summaries`
+
+Returns aggregated cross-link data for all services that have at least one non-empty field. Used by the service cross-link chips on the Services page.
+
+Response:
+
+```json
+{
+  "summaries": {
+    "n8n-server": {
+      "health_status": "healthy",
+      "webhook_count": 2,
+      "schedule_count": 1,
+      "monthly_cost": 12.00
+    }
+  }
+}
+```
+
+Fields per service:
+- `health_status` — `healthy`, `degraded`, `unhealthy`, or `unknown` (based on latest check results)
+- `webhook_count` — number of enabled webhooks
+- `schedule_count` — number of enabled scheduled jobs
+- `monthly_cost` — estimated monthly cost in USD (best-effort, may be absent)
+
+Services with no cross-link data are omitted. Cost data failures are handled gracefully — partial data is still returned.
 
 ### Bulk Service Operations
 

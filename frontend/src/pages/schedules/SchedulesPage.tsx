@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import { Plus, MoreHorizontal, Pencil, Trash, Play, Pause, History } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, MoreHorizontal, Pencil, Trash, Play, Pause, History, X } from 'lucide-react'
 import api from '@/lib/api'
 import { useHasPermission } from '@/lib/permissions'
 import { relativeTime } from '@/lib/utils'
@@ -94,6 +94,8 @@ interface EditForm {
 export default function SchedulesPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const serviceFilter = searchParams.get('service') || ''
   const canCreate = useHasPermission('schedules.create')
   const canEdit = useHasPermission('schedules.edit')
   const canDelete = useHasPermission('schedules.delete')
@@ -353,6 +355,10 @@ export default function SchedulesPage() {
     [canEdit, canDelete, navigate, openEditDialog, toggleMutation]
   )
 
+  const filteredSchedules = serviceFilter
+    ? schedules.filter((s) => s.service_name === serviceFilter)
+    : schedules
+
   const isCreateValid =
     createForm.name.trim() !== '' &&
     createForm.job_type !== '' &&
@@ -371,12 +377,29 @@ export default function SchedulesPage() {
         )}
       </PageHeader>
 
+      {serviceFilter && (
+        <div className="mb-4">
+          <Badge variant="secondary" className="gap-1.5">
+            Service: {serviceFilter}
+            <X
+              className="h-3 w-3 cursor-pointer"
+              role="button"
+              aria-label={`Clear ${serviceFilter} filter`}
+              onClick={() => {
+                searchParams.delete('service')
+                setSearchParams(searchParams)
+              }}
+            />
+          </Badge>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
         </div>
       ) : (
-        <DataTable columns={columns} data={schedules} searchKey="name" searchPlaceholder="Search schedules..." />
+        <DataTable columns={columns} data={filteredSchedules} searchKey="name" searchPlaceholder="Search schedules..." />
       )}
 
       {/* Create Dialog */}

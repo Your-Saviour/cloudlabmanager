@@ -59,6 +59,7 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - "Deploy" and "Stop" buttons with confirmation dialogs
 - Clicking Deploy opens a **Dry-Run Preview** modal before executing (see below)
 - Non-deploy scripts (e.g., add-users) bypass the preview and use the existing input modal or direct execution flow
+- **Cross-link chips** — compact badge chips below the tags row showing: health status (colored dot), webhook count, schedule count, and monthly cost. Clicking a chip navigates to the relevant page pre-filtered to that service (e.g., `/webhooks?service=n8n-server`). Cost chip is permission-gated behind `costs.view`. Data fetched from `GET /api/services/summaries` with 30-second auto-refresh. Component: `components/services/ServiceCrossLinks.tsx`
 - **Multi-select**: checkbox on each service card for bulk operations
 - **Select All / Deselect All** button in the page header
 - **Bulk Action Bar**: floating bar at the bottom when services are selected, with Deploy and Stop actions (respects permissions)
@@ -126,6 +127,7 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Cron expression input with debounced preview showing next 5 run times
 - Edit, delete, and enable/disable toggle from actions dropdown
 - **Execution history dialog** — view past runs for a schedule with job ID links, status badges, and timestamps
+- Supports `?service=<name>` query parameter to filter by service (shows removable filter badge)
 - Requires `schedules.*` permissions
 
 ### Health
@@ -137,6 +139,7 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - 15-second auto-refresh
 - Loading skeletons during data fetch
 - Empty state when no health checks are configured
+- Supports `?service=<name>` query parameter to filter by service (shows removable filter badge)
 - Requires `health.view` permission
 
 ### Quick Links (Dashboard)

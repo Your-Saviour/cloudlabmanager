@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { HeartPulse, RefreshCw, ChevronDown, ChevronRight, AlertCircle, Loader2 } from 'lucide-react'
+import { HeartPulse, RefreshCw, ChevronDown, ChevronRight, AlertCircle, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import { cn, relativeTime } from '@/lib/utils'
@@ -14,6 +15,8 @@ import type { HealthStatusResponse, ServiceHealth, HealthCheck } from '@/types/h
 
 export default function HealthPage() {
   const canManage = useHasPermission('health.manage')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const serviceFilter = searchParams.get('service') || ''
   const [reloading, setReloading] = useState(false)
   const [rechecking, setRechecking] = useState(false)
 
@@ -26,7 +29,10 @@ export default function HealthPage() {
     refetchInterval: 15000,
   })
 
-  const services = healthStatus?.services || []
+  const allServices = healthStatus?.services || []
+  const services = serviceFilter
+    ? allServices.filter((s) => s.service_name === serviceFilter)
+    : allServices
   const healthy = services.filter((s) => s.overall_status === 'healthy').length
   const unhealthy = services.filter((s) => s.overall_status === 'unhealthy').length
   const degraded = services.filter((s) => s.overall_status === 'degraded').length
@@ -78,6 +84,23 @@ export default function HealthPage() {
           </div>
         )}
       </PageHeader>
+
+      {serviceFilter && (
+        <div className="mb-4">
+          <Badge variant="secondary" className="gap-1.5">
+            Service: {serviceFilter}
+            <X
+              className="h-3 w-3 cursor-pointer"
+              role="button"
+              aria-label={`Clear ${serviceFilter} filter`}
+              onClick={() => {
+                searchParams.delete('service')
+                setSearchParams(searchParams)
+              }}
+            />
+          </Badge>
+        </div>
+      )}
 
       {/* Summary bar */}
       <div className="flex flex-wrap gap-3 mb-6">

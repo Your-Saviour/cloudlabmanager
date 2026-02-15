@@ -40,6 +40,8 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { DryRunPreview } from '@/components/services/DryRunPreview'
+import { ServiceCrossLinks } from '@/components/services/ServiceCrossLinks'
+import type { ServiceSummary } from '@/components/services/ServiceCrossLinks'
 import { BulkActionBar } from '@/components/shared/BulkActionBar'
 import type { InventoryObject, ServiceScript, ScriptInput } from '@/types'
 
@@ -102,6 +104,16 @@ export default function ServicesPage() {
       const { data } = await api.get('/api/services')
       return data.services || []
     },
+  })
+
+  // Get cross-link summaries for all services
+  const { data: summariesMap = {} } = useQuery({
+    queryKey: ['service-summaries'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/services/summaries')
+      return (data.summaries || {}) as Record<string, ServiceSummary>
+    },
+    refetchInterval: 30000,
   })
 
   // Build scripts map: service name -> scripts[]
@@ -356,6 +368,11 @@ export default function ServicesPage() {
                         ))}
                       </div>
                     )}
+                    {/* Cross-link chips */}
+                    <ServiceCrossLinks
+                      serviceName={name}
+                      summary={summariesMap[name]}
+                    />
                     </div>
                   </div>
                   <div className="flex items-center gap-1">

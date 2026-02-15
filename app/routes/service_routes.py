@@ -3,7 +3,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Any, Optional
 from sqlalchemy.orm import Session
-from database import User
+from sqlalchemy import func, and_
+from database import (
+    User, HealthCheckResult, ScheduledJob, WebhookEndpoint,
+    AppMetadata, SessionLocal,
+)
 from auth import get_current_user
 from permissions import require_permission
 from db_session import get_db_session
@@ -112,6 +116,130 @@ async def bulk_deploy(request: Request, body: BulkServiceActionRequest,
         skipped=skipped,
         total=len(body.service_names),
     ).model_dump()
+
+
+@router.get("/summaries")
+async def get_service_summaries(
+    request: Request,
+    user: User = Depends(require_permission("services.view")),
+    session: Session = Depends(get_db_session),
+):
+    """Batch cross-link data for all services: health, webhooks, schedules, cost."""
+    result: dict[str, dict] = {}
+
+    # 1. Health: latest check per service+check, compute overall status
+    from health_checker import get_health_configs
+    health_configs = get_health_configs()
+
+    subq = (
+        session.query(
+            HealthCheckResult.service_name,
+            HealthCheckResult.check_name,
+            func.max(HealthCheckResult.checked_at).label("max_at"),
+        )
+        .group_by(HealthCheckResult.service_name, HealthCheckResult.check_name)
+        .subquery()
+    )
+    latest_checks = (
+        session.query(
+            HealthCheckResult.service_name,
+            HealthCheckResult.status,
+        )
+        .join(subq, and_(
+            HealthCheckResult.service_name == subq.c.service_name,
+            HealthCheckResult.check_name == subq.c.check_name,
+            HealthCheckResult.checked_at == subq.c.max_at,
+        ))
+        .all()
+    )
+
+    health_map: dict[str, str] = {}  # service_name -> overall_status
+    for svc_name, status in latest_checks:
+        current = health_map.get(svc_name, "healthy")
+        if status == "unhealthy":
+            health_map[svc_name] = "unhealthy"
+        elif status == "degraded" and current == "healthy":
+            health_map[svc_name] = "degraded"
+        elif svc_name not in health_map:
+            health_map[svc_name] = status
+
+    # Services with health configs but no results yet
+    for svc_name in health_configs:
+        if svc_name not in health_map:
+            health_map[svc_name] = "unknown"
+
+    # 2. Webhooks: count enabled per service_name
+    webhook_counts = dict(
+        session.query(
+            WebhookEndpoint.service_name,
+            func.count(WebhookEndpoint.id),
+        )
+        .filter(
+            WebhookEndpoint.service_name.isnot(None),
+            WebhookEndpoint.is_enabled == True,
+        )
+        .group_by(WebhookEndpoint.service_name)
+        .all()
+    )
+
+    # 3. Schedules: count enabled per service_name
+    schedule_counts = dict(
+        session.query(
+            ScheduledJob.service_name,
+            func.count(ScheduledJob.id),
+        )
+        .filter(
+            ScheduledJob.service_name.isnot(None),
+            ScheduledJob.is_enabled == True,
+        )
+        .group_by(ScheduledJob.service_name)
+        .all()
+    )
+
+    # 4. Cost: compute per-service from cost cache (using first tag as service name)
+    cost_map: dict[str, float] = {}
+    try:
+        from routes.cost_routes import _get_cost_data
+        cost_session = SessionLocal()
+        try:
+            cost_data = _get_cost_data(cost_session)
+            for inst in cost_data.get("instances", []):
+                tags = inst.get("tags", [])
+                if tags:
+                    svc_tag = tags[0]  # convention: first tag = service name
+                    cost_map[svc_tag] = cost_map.get(svc_tag, 0.0) + float(inst.get("monthly_cost", 0))
+        finally:
+            cost_session.close()
+    except Exception:
+        pass  # Cost data is best-effort; don't fail the whole endpoint
+
+    # Build result: union of all known service names
+    all_names = set()
+    all_names.update(health_map.keys())
+    all_names.update(webhook_counts.keys())
+    all_names.update(schedule_counts.keys())
+    all_names.update(cost_map.keys())
+
+    # Also include services from the runner (file-based discovery)
+    runner = request.app.state.ansible_runner
+    for svc in runner.get_services():
+        all_names.add(svc["name"])
+
+    summaries = {}
+    for name in sorted(all_names):
+        entry: dict = {}
+        if name in health_map:
+            entry["health_status"] = health_map[name]
+        if name in webhook_counts:
+            entry["webhook_count"] = webhook_counts[name]
+        if name in schedule_counts:
+            entry["schedule_count"] = schedule_counts[name]
+        if name in cost_map:
+            entry["monthly_cost"] = round(cost_map[name], 2)
+        if entry:  # only include services that have at least one cross-link
+            summaries[name] = entry
+
+    return {"summaries": summaries}
 
 
 @router.get("/outputs")

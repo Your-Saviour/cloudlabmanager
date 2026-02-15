@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, MoreHorizontal, Pencil, Trash, Play, History, Copy, RefreshCw, Link2, X } from 'lucide-react'
 import api from '@/lib/api'
 import { useHasPermission } from '@/lib/permissions'
@@ -109,6 +109,8 @@ function arrayToMapping(arr: Array<{ key: string; value: string }>): Record<stri
 export default function WebhooksPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const serviceFilter = searchParams.get('service') || ''
   const canCreate = useHasPermission('webhooks.create')
   const canEdit = useHasPermission('webhooks.edit')
   const canDelete = useHasPermission('webhooks.delete')
@@ -401,6 +403,10 @@ export default function WebhooksPage() {
     [canEdit, canDelete, navigate, openEditDialog, testTriggerMutation.mutate, copyToClipboard]
   )
 
+  const filteredWebhooks = serviceFilter
+    ? webhooks.filter((w) => w.service_name === serviceFilter)
+    : webhooks
+
   const isCreateValid =
     createForm.name.trim() !== '' &&
     createForm.job_type !== '' &&
@@ -418,12 +424,29 @@ export default function WebhooksPage() {
         )}
       </PageHeader>
 
+      {serviceFilter && (
+        <div className="mb-4">
+          <Badge variant="secondary" className="gap-1.5">
+            Service: {serviceFilter}
+            <X
+              className="h-3 w-3 cursor-pointer"
+              role="button"
+              aria-label={`Clear ${serviceFilter} filter`}
+              onClick={() => {
+                searchParams.delete('service')
+                setSearchParams(searchParams)
+              }}
+            />
+          </Badge>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
         </div>
       ) : (
-        <DataTable columns={columns} data={webhooks} searchKey="name" searchPlaceholder="Search webhooks..." />
+        <DataTable columns={columns} data={filteredWebhooks} searchKey="name" searchPlaceholder="Search webhooks..." />
       )}
 
       {/* Create Dialog */}
