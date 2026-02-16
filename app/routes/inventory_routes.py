@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.orm import Session
@@ -13,6 +14,15 @@ from permissions import require_permission, has_permission
 from inventory_auth import check_inventory_permission, check_type_permission
 from db_session import get_db_session
 from audit import log_action
+
+
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 from models import (
     InventoryObjectCreate, InventoryObjectUpdate,
     TagCreate, TagUpdate, ACLRuleCreate, TagPermissionSet, ObjectTagsUpdate,
@@ -65,8 +75,8 @@ def _serialize_object(obj: InventoryObject, type_config: dict | None = None) -> 
         "data": data,
         "tags": tags,
         "created_by": obj.created_by,
-        "created_at": obj.created_at.isoformat() if obj.created_at else None,
-        "updated_at": obj.updated_at.isoformat() if obj.updated_at else None,
+        "created_at": _utc_iso(obj.created_at),
+        "updated_at": _utc_iso(obj.updated_at),
     }
 
 
@@ -1120,7 +1130,7 @@ async def list_service_config_versions(obj_id: int, filename: str, request: Requ
             "size_bytes": v.size_bytes,
             "change_note": v.change_note,
             "created_by_username": v.created_by_username,
-            "created_at": v.created_at.isoformat() if v.created_at else None,
+            "created_at": _utc_iso(v.created_at),
         }
         for v in versions
     ]}
@@ -1155,7 +1165,7 @@ async def get_service_config_version(obj_id: int, filename: str, version_id: int
         "size_bytes": version.size_bytes,
         "change_note": version.change_note,
         "created_by_username": version.created_by_username,
-        "created_at": version.created_at.isoformat() if version.created_at else None,
+        "created_at": _utc_iso(version.created_at),
     }
 
 

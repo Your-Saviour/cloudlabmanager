@@ -120,10 +120,10 @@ function RulesTab() {
       name: rule.name,
       event_type: rule.event_type,
       channel: rule.channel,
-      slack_channel_id: rule.slack_channel_id ? String(rule.slack_channel_id) : '',
+      slack_channel_id: rule.channel_id ? String(rule.channel_id) : '',
       role_id: rule.role_id ? String(rule.role_id) : '',
       filters: rule.filters ? JSON.stringify(rule.filters, null, 2) : '',
-      enabled: rule.enabled,
+      enabled: rule.is_enabled,
     })
     setEditRule(rule)
   }
@@ -142,10 +142,10 @@ function RulesTab() {
       name: form.name,
       event_type: form.event_type,
       channel: form.channel,
-      slack_channel_id: form.channel === 'slack' && form.slack_channel_id ? Number(form.slack_channel_id) : null,
+      channel_id: form.channel === 'slack' && form.slack_channel_id ? Number(form.slack_channel_id) : null,
       role_id: form.role_id ? Number(form.role_id) : null,
       filters,
-      enabled: form.enabled,
+      is_enabled: form.enabled,
     }
   }
 
@@ -176,8 +176,8 @@ function RulesTab() {
   }
 
   function handleToggle(rule: NotificationRule) {
-    toggleMutation.mutate({ id: rule.id, enabled: !rule.enabled }, {
-      onSuccess: () => toast.success(`Rule ${rule.enabled ? 'disabled' : 'enabled'}`),
+    toggleMutation.mutate({ id: rule.id, is_enabled: !rule.is_enabled }, {
+      onSuccess: () => toast.success(`Rule ${rule.is_enabled ? 'disabled' : 'enabled'}`),
       onError: () => toast.error('Toggle failed'),
     })
   }
@@ -220,11 +220,11 @@ function RulesTab() {
         ),
       },
       {
-        accessorKey: 'enabled',
+        accessorKey: 'is_enabled',
         header: 'Enabled',
         cell: ({ row }) => (
           <Switch
-            checked={row.original.enabled}
+            checked={row.original.is_enabled}
             onCheckedChange={() => handleToggle(row.original)}
             disabled={!canManage}
           />
@@ -289,7 +289,7 @@ function RulesTab() {
           <Select value={form.slack_channel_id} onValueChange={(v) => setForm({ ...form, slack_channel_id: v })}>
             <SelectTrigger><SelectValue placeholder="Select Slack channel..." /></SelectTrigger>
             <SelectContent>
-              {slackChannels.filter((c) => c.enabled).map((c) => (
+              {slackChannels.filter((c) => c.is_enabled).map((c) => (
                 <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
               ))}
             </SelectContent>
@@ -433,16 +433,16 @@ function ChannelsTab() {
   function openEdit(ch: NotificationChannel) {
     setForm({
       name: ch.name,
-      type: ch.type,
+      type: ch.channel_type,
       webhook_url: ch.config.webhook_url || '',
-      enabled: ch.enabled,
+      enabled: ch.is_enabled,
     })
     setEditChannel(ch)
   }
 
   function handleCreate() {
     createMutation.mutate(
-      { name: form.name, type: form.type, config: { webhook_url: form.webhook_url }, enabled: form.enabled },
+      { name: form.name, channel_type: form.type, config: { webhook_url: form.webhook_url }, is_enabled: form.enabled },
       {
         onSuccess: () => {
           setCreateOpen(false)
@@ -457,7 +457,7 @@ function ChannelsTab() {
   function handleUpdate() {
     if (!editChannel) return
     updateMutation.mutate(
-      { id: editChannel.id, name: form.name, type: form.type, config: { webhook_url: form.webhook_url }, enabled: form.enabled },
+      { id: editChannel.id, name: form.name, channel_type: form.type, config: { webhook_url: form.webhook_url }, is_enabled: form.enabled },
       {
         onSuccess: () => {
           setEditChannel(null)
@@ -483,21 +483,21 @@ function ChannelsTab() {
         cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
       },
       {
-        accessorKey: 'type',
+        accessorKey: 'channel_type',
         header: 'Type',
         cell: ({ row }) => (
           <Badge variant="secondary" className="text-xs gap-1">
             <Hash className="h-3 w-3" />
-            {row.original.type.charAt(0).toUpperCase() + row.original.type.slice(1)}
+            {row.original.channel_type.charAt(0).toUpperCase() + row.original.channel_type.slice(1)}
           </Badge>
         ),
       },
       {
-        accessorKey: 'enabled',
+        accessorKey: 'is_enabled',
         header: 'Enabled',
         cell: ({ row }) => (
-          <Badge variant={row.original.enabled ? 'success' : 'secondary'}>
-            {row.original.enabled ? 'Active' : 'Disabled'}
+          <Badge variant={row.original.is_enabled ? 'success' : 'secondary'}>
+            {row.original.is_enabled ? 'Active' : 'Disabled'}
           </Badge>
         ),
       },
@@ -510,7 +510,7 @@ function ChannelsTab() {
                 variant="ghost"
                 size="sm"
                 onClick={() => handleTest(row.original.id)}
-                disabled={!row.original.enabled || testMutation.isPending}
+                disabled={!row.original.is_enabled || testMutation.isPending}
               >
                 <Send className="mr-1 h-3 w-3" /> Test
               </Button>

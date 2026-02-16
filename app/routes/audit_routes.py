@@ -13,6 +13,15 @@ from audit import log_action
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 
 
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 def _escape_like(value: str) -> str:
     """Escape SQL LIKE wildcard characters."""
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -99,7 +108,7 @@ async def export_audit_log(
             for i, entry in enumerate(entries):
                 row = {
                     "id": entry.id,
-                    "timestamp": entry.created_at.isoformat() if entry.created_at else None,
+                    "timestamp": _utc_iso(entry.created_at),
                     "username": entry.username,
                     "action": entry.action,
                     "resource": entry.resource,
@@ -128,7 +137,7 @@ async def export_audit_log(
         for entry in entries:
             writer.writerow([
                 entry.id,
-                entry.created_at.isoformat() if entry.created_at else "",
+                _utc_iso(entry.created_at) or "",
                 entry.username or "",
                 entry.action,
                 entry.resource or "",
@@ -184,7 +193,7 @@ async def list_audit_log(
                 "resource": e.resource,
                 "details": json.loads(e.details) if e.details else None,
                 "ip_address": e.ip_address,
-                "created_at": e.created_at.isoformat() if e.created_at else None,
+                "created_at": _utc_iso(e.created_at),
             }
             for e in entries
         ],

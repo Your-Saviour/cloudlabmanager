@@ -86,7 +86,11 @@ def check_inventory_permission(session: Session, user: User, object_id: int,
         except (json.JSONDecodeError, AttributeError):
             service_name = ""
         if service_name:
-            return check_service_permission(session, user, service_name, permission_suffix)
+            # Map inventory action names to service permission suffixes
+            svc_perm = {"run_script": "deploy", "destroy": "stop"}.get(
+                permission_suffix, permission_suffix
+            )
+            return check_service_permission(session, user, service_name, svc_perm)
 
     # 6. Role-based type permissions (non-service types)
     return full_perm in perms

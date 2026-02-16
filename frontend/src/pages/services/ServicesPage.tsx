@@ -84,7 +84,7 @@ export default function ServicesPage() {
   const [bulkAclOpen, setBulkAclOpen] = useState(false)
   const [bulkAclForm, setBulkAclForm] = useState<{ role_id: string; permissions: ServicePermission[] }>({ role_id: '', permissions: [] })
   const togglePin = usePreferencesStore((s) => s.togglePinService)
-  const isServicePinned = usePreferencesStore((s) => s.isServicePinned)
+  const pinnedServices = usePreferencesStore((s) => s.preferences.pinned_services)
 
   // Get service inventory objects
   const { data: serviceObjects = [], isLoading: objectsLoading } = useQuery({
@@ -384,7 +384,7 @@ export default function ServicesPage() {
                       size="icon"
                       className={cn(
                         "h-7 w-7",
-                        isServicePinned(name)
+                        pinnedServices.includes(name)
                           ? "text-amber-400 hover:text-amber-300"
                           : "text-muted-foreground hover:text-amber-400"
                       )}
@@ -392,11 +392,11 @@ export default function ServicesPage() {
                         e.stopPropagation()
                         togglePin(name)
                       }}
-                      title={isServicePinned(name) ? "Unpin from dashboard" : "Pin to dashboard"}
-                      aria-label={isServicePinned(name) ? `Unpin ${name} from dashboard` : `Pin ${name} to dashboard`}
+                      title={pinnedServices.includes(name) ? "Unpin from dashboard" : "Pin to dashboard"}
+                      aria-label={pinnedServices.includes(name) ? `Unpin ${name} from dashboard` : `Pin ${name} to dashboard`}
                     >
                       <Star
-                        className={cn("h-4 w-4", isServicePinned(name) && "fill-current")}
+                        className={cn("h-4 w-4", pinnedServices.includes(name) && "fill-current")}
                       />
                     </Button>
                     <Button

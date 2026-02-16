@@ -356,25 +356,32 @@ class AnsibleRunner:
         if not os.path.isdir(SERVICES_DIR):
             return None
         for dirname in os.listdir(SERVICES_DIR):
-            inv_path = os.path.join(SERVICES_DIR, dirname, "outputs", "temp_inventory.yaml")
-            if not os.path.isfile(inv_path):
+            outputs_dir = os.path.join(SERVICES_DIR, dirname, "outputs")
+            if not os.path.isdir(outputs_dir):
                 continue
-            try:
-                with open(inv_path, "r") as f:
-                    inv_data = yaml.safe_load(f)
-                hosts = inv_data.get("all", {}).get("hosts", {})
-                if hostname in hosts:
-                    info = hosts[hostname]
-                    key_file = info.get("ansible_ssh_private_key_file")
-                    if key_file and os.path.isfile(key_file):
-                        return {
-                            "ansible_host": info.get("ansible_host"),
-                            "ansible_user": info.get("ansible_user", "root"),
-                            "ansible_ssh_private_key_file": key_file,
-                            "service": dirname,
-                        }
-            except Exception:
-                continue
+            # Check top-level temp_inventory.yaml and per-instance subdirectories
+            candidates = [os.path.join(outputs_dir, "temp_inventory.yaml")]
+            for entry in os.listdir(outputs_dir):
+                sub_inv = os.path.join(outputs_dir, entry, "temp_inventory.yaml")
+                if os.path.isfile(sub_inv):
+                    candidates.append(sub_inv)
+            for inv_path in candidates:
+                try:
+                    with open(inv_path, "r") as f:
+                        inv_data = yaml.safe_load(f)
+                    hosts = inv_data.get("all", {}).get("hosts", {})
+                    if hostname in hosts:
+                        info = hosts[hostname]
+                        key_file = info.get("ansible_ssh_private_key_file")
+                        if key_file and os.path.isfile(key_file):
+                            return {
+                                "ansible_host": info.get("ansible_host"),
+                                "ansible_user": info.get("ansible_user", "root"),
+                                "ansible_ssh_private_key_file": key_file,
+                                "service": dirname,
+                            }
+                except Exception:
+                    continue
         return None
 
     # --- Generic inventory action execution ---

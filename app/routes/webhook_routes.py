@@ -3,6 +3,15 @@ import logging
 import secrets
 import json
 from datetime import datetime, timezone
+
+
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -202,14 +211,14 @@ def _webhook_to_dict(w: WebhookEndpoint, include_token: bool = False) -> dict:
         "system_task": w.system_task,
         "payload_mapping": json.loads(w.payload_mapping) if w.payload_mapping else None,
         "is_enabled": w.is_enabled,
-        "last_trigger_at": w.last_trigger_at.isoformat() if w.last_trigger_at else None,
+        "last_trigger_at": _utc_iso(w.last_trigger_at),
         "last_job_id": w.last_job_id,
         "last_status": w.last_status,
         "trigger_count": w.trigger_count,
         "created_by": w.created_by,
         "created_by_username": w.creator.username if w.creator else None,
-        "created_at": w.created_at.isoformat() if w.created_at else None,
-        "updated_at": w.updated_at.isoformat() if w.updated_at else None,
+        "created_at": _utc_iso(w.created_at),
+        "updated_at": _utc_iso(w.updated_at),
     }
     if include_token:
         d["token"] = w.token

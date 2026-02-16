@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from database import Role, Permission
@@ -10,13 +11,22 @@ from models import RoleCreateRequest, RoleUpdateRequest
 router = APIRouter(prefix="/api/roles", tags=["roles"])
 
 
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 def _role_response(role: Role) -> dict:
     return {
         "id": role.id,
         "name": role.name,
         "description": role.description,
         "is_system": role.is_system,
-        "created_at": role.created_at.isoformat() if role.created_at else None,
+        "created_at": _utc_iso(role.created_at),
         "permissions": [
             {"id": p.id, "codename": p.codename, "category": p.category, "label": p.label}
             for p in role.permissions

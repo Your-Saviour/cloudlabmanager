@@ -4,6 +4,7 @@ import { Plus, Trash, ExternalLink, Copy, Monitor, TimerReset } from 'lucide-rea
 import { toast } from 'sonner'
 
 import { useHasPermission } from '@/lib/permissions'
+import { useAuthStore } from '@/stores/authStore'
 import {
   usePersonalServices,
   usePersonalInstances,
@@ -14,6 +15,7 @@ import {
   type PersonalInstance,
 } from '@/hooks/usePersonalInstances'
 
+import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
@@ -82,6 +84,9 @@ export default function PersonalInstancesPage() {
   const [activeTab, setActiveTab] = useState('all')
   const serviceFilter = activeTab === 'all' ? undefined : activeTab
   const { data: hosts = [], isLoading } = usePersonalInstances(serviceFilter)
+  const currentUsername = useAuthStore((s) => s.user?.username)
+  // For limit checks, only count the current user's instances
+  const myHosts = useMemo(() => hosts.filter((h) => h.owner === currentUsername), [hosts, currentUsername])
 
   const createMutation = useCreatePersonalInstance()
   const destroyMutation = useDestroyPersonalInstance()
@@ -96,24 +101,24 @@ export default function PersonalInstancesPage() {
   // Load config for the selected service in the create dialog
   const { data: selectedConfig } = usePersonalInstanceConfig(createService)
 
-  // Per-service limit display
+  // Per-service limit display (only count current user's instances)
   const limitText = useMemo(() => {
     if (services.length === 0) return null
     // When filtered to a single service, show that service's limit
     if (serviceFilter) {
       const svc = services.find((s) => s.service === serviceFilter)
       const max = svc?.config.max_per_user ?? 0
-      return max > 0 ? `${hosts.length}/${max} used` : `${hosts.length} active`
+      return max > 0 ? `${myHosts.length}/${max} used` : `${myHosts.length} active`
     }
     // When showing all, show per-service breakdown
     return services
       .map((svc) => {
-        const count = hosts.filter((h) => h.service === svc.service).length
+        const count = myHosts.filter((h) => h.service === svc.service).length
         const max = svc.config.max_per_user
         return max > 0 ? `${svc.service}: ${count}/${max}` : `${svc.service}: ${count}`
       })
       .join(' | ')
-  }, [services, hosts, serviceFilter])
+  }, [services, myHosts, serviceFilter])
 
   const handleCreate = () => {
     if (!createService) {
@@ -158,17 +163,17 @@ export default function PersonalInstancesPage() {
     })
   }
 
-  // Check if create button should be disabled (at limit for selected service or all services)
+  // Check if create button should be disabled (only count current user's instances)
   const createDisabled = useMemo(() => {
     if (services.length === 0) return true
     // If only one service, check its limit
     if (services.length === 1) {
       const max = services[0].config.max_per_user
-      return max > 0 && hosts.length >= max
+      return max > 0 && myHosts.length >= max
     }
     // If multiple services, don't disable — let the dialog handle per-service limits
     return false
-  }, [services, hosts])
+  }, [services, myHosts])
 
   if (isLoading) {
     return (
@@ -306,6 +311,21 @@ export default function PersonalInstancesPage() {
                       <TooltipContent>Open in new tab</TooltipContent>
                     </Tooltip>
                   </div>
+
+                  {/* Credentials */}
+                  {host.outputs?.filter((o) => o.type === 'credential').length > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-sm text-muted-foreground">Credentials</span>
+                      {host.outputs
+                        .filter((o) => o.type === 'credential')
+                        .map((cred) => (
+                          <div key={cred.name} className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground w-16 shrink-0">{cred.label}</span>
+                            <CredentialDisplay value={cred.value} username={cred.username} />
+                          </div>
+                        ))}
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="flex justify-end gap-2 pt-2 border-t">

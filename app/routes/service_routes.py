@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -22,6 +23,15 @@ from models import (
 )
 
 router = APIRouter(prefix="/api/services", tags=["services"])
+
+
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 class ConfigUpdate(BaseModel):
@@ -547,7 +557,7 @@ async def list_config_versions(name: str, filename: str, request: Request,
             "size_bytes": v.size_bytes,
             "change_note": v.change_note,
             "created_by_username": v.created_by_username,
-            "created_at": v.created_at.isoformat() if v.created_at else None,
+            "created_at": _utc_iso(v.created_at),
         }
         for v in versions
     ]}
@@ -575,7 +585,7 @@ async def get_config_version(name: str, filename: str, version_id: int, request:
         "size_bytes": version.size_bytes,
         "change_note": version.change_note,
         "created_by_username": version.created_by_username,
-        "created_at": version.created_at.isoformat() if version.created_at else None,
+        "created_at": _utc_iso(version.created_at),
     }
 
 
@@ -776,7 +786,7 @@ def _acl_response(acl: ServiceACL) -> dict:
         "role_id": acl.role_id,
         "role_name": acl.role.name if acl.role else None,
         "permission": acl.permission,
-        "created_at": acl.created_at.isoformat() if acl.created_at else None,
+        "created_at": _utc_iso(acl.created_at),
         "created_by": acl.created_by,
         "created_by_username": acl.creator.username if acl.creator else None,
     }

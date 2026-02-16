@@ -6,10 +6,10 @@ export interface NotificationRule {
   name: string
   event_type: string
   channel: 'in_app' | 'email' | 'slack'
-  slack_channel_id: number | null
+  channel_id: number | null
   role_id: number | null
   filters: Record<string, unknown> | null
-  enabled: boolean
+  is_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -17,9 +17,9 @@ export interface NotificationRule {
 export interface NotificationChannel {
   id: number
   name: string
-  type: 'slack'
+  channel_type: 'slack'
   config: { webhook_url: string }
-  enabled: boolean
+  is_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -47,10 +47,10 @@ export function useCreateRule() {
       name: string
       event_type: string
       channel: string
-      slack_channel_id?: number | null
+      channel_id?: number | null
       role_id?: number | null
       filters?: Record<string, unknown> | null
-      enabled?: boolean
+      is_enabled?: boolean
     }) => api.post('/api/notifications/rules', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notification-rules'] })
@@ -65,10 +65,10 @@ export function useUpdateRule() {
       name: string
       event_type: string
       channel: string
-      slack_channel_id: number | null
+      channel_id: number | null
       role_id: number | null
       filters: Record<string, unknown> | null
-      enabled: boolean
+      is_enabled: boolean
     }>) => api.put(`/api/notifications/rules/${id}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notification-rules'] })
@@ -112,9 +112,9 @@ export function useCreateChannel() {
   return useMutation({
     mutationFn: (body: {
       name: string
-      type: string
+      channel_type: string
       config: { webhook_url: string }
-      enabled?: boolean
+      is_enabled?: boolean
     }) => api.post('/api/notifications/channels', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notification-channels'] })
@@ -127,9 +127,9 @@ export function useUpdateChannel() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: number } & Partial<{
       name: string
-      type: string
+      channel_type: string
       config: { webhook_url: string }
-      enabled: boolean
+      is_enabled: boolean
     }>) => api.put(`/api/notifications/channels/${id}`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notification-channels'] })

@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ServicePortalCard } from '@/components/portal/ServicePortalCard'
+import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
 import { toast } from 'sonner'
 import { usePersonalInstances, useDestroyPersonalInstance, useExtendPersonalInstanceTTL } from '@/hooks/usePersonalInstances'
 import { useHasPermission } from '@/lib/permissions'
@@ -258,6 +259,20 @@ function PersonalInstancesSection() {
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
                   <Clock className="h-3 w-3" />
                   <span>{formatTTLRemaining(inst.ttl_hours, inst.created_at)}</span>
+                </div>
+              )}
+
+              {/* Credentials */}
+              {inst.outputs?.filter((o) => o.type === 'credential').length > 0 && (
+                <div className="space-y-1.5 mb-3">
+                  {inst.outputs
+                    .filter((o) => o.type === 'credential')
+                    .map((cred) => (
+                      <div key={cred.name} className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium w-14 shrink-0">Pass</span>
+                        <CredentialDisplay value={cred.value} username={cred.username} />
+                      </div>
+                    ))}
                 </div>
               )}
 

@@ -24,8 +24,19 @@ from permissions import require_permission, has_permission
 from db_session import get_db_session
 from audit import log_action
 import yaml
+from service_outputs import get_instance_outputs
 
 router = APIRouter(prefix="/api/personal-instances", tags=["personal-instances"])
+
+
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
 
 PI_TAG = "personal-instance"
 PI_USER_TAG_PREFIX = "pi-user:"
@@ -121,7 +132,7 @@ def _list_personal_services(runner) -> list[dict]:
 
 def _generate_hostname(config: dict, username: str, service: str, region: str) -> str:
     template = config.get("hostname_template", "{username}-{service}-{region}")
-    return template.format(username=username, service=service, region=region)
+    return template.format(username=username.lower(), service=service, region=region)
 
 
 def _get_user_instances(session: Session, username: str, service_name: str | None = None) -> list[dict]:
@@ -155,8 +166,10 @@ def _get_user_instances(session: Session, username: str, service_name: str | Non
             elif tag.startswith(PI_SERVICE_TAG_PREFIX):
                 service = tag.split(":", 1)[1]
 
+        hostname = data.get("hostname", "")
+        outputs = get_instance_outputs(service, hostname) if service and hostname else []
         results.append({
-            "hostname": data.get("hostname", ""),
+            "hostname": hostname,
             "ip_address": data.get("ip_address", ""),
             "region": data.get("region", ""),
             "plan": data.get("plan", ""),
@@ -166,7 +179,8 @@ def _get_user_instances(session: Session, username: str, service_name: str | Non
             "service": service,
             "ttl_hours": ttl,
             "inventory_object_id": obj.id,
-            "created_at": obj.created_at.isoformat() if obj.created_at else None,
+            "created_at": _utc_iso(obj.created_at),
+            "outputs": outputs,
         })
 
     return results
@@ -205,8 +219,10 @@ def _get_all_instances(session: Session, service_name: str | None = None) -> lis
             elif tag.startswith(PI_SERVICE_TAG_PREFIX):
                 service = tag.split(":", 1)[1]
 
+        hostname = data.get("hostname", "")
+        outputs = get_instance_outputs(service, hostname) if service and hostname else []
         results.append({
-            "hostname": data.get("hostname", ""),
+            "hostname": hostname,
             "ip_address": data.get("ip_address", ""),
             "region": data.get("region", ""),
             "plan": data.get("plan", ""),
@@ -216,7 +232,8 @@ def _get_all_instances(session: Session, service_name: str | None = None) -> lis
             "service": service,
             "ttl_hours": ttl,
             "inventory_object_id": obj.id,
-            "created_at": obj.created_at.isoformat() if obj.created_at else None,
+            "created_at": _utc_iso(obj.created_at),
+            "outputs": outputs,
         })
 
     return results
@@ -285,11 +302,14 @@ async def list_personal_services(
         "services": [
             {
                 "service": s["service"],
-                "default_plan": s["config"].get("default_plan", "vc2-1c-1gb"),
-                "default_region": s["config"].get("default_region", "mel"),
-                "default_ttl_hours": s["config"].get("default_ttl_hours", 24),
-                "max_per_user": s["config"].get("max_per_user", 3),
-                "required_inputs": s["config"].get("required_inputs", []),
+                "config": {
+                    "default_plan": s["config"].get("default_plan", "vc2-1c-1gb"),
+                    "default_region": s["config"].get("default_region", "mel"),
+                    "default_ttl_hours": s["config"].get("default_ttl_hours", 24),
+                    "max_per_user": s["config"].get("max_per_user", 3),
+                    "hostname_template": s["config"].get("hostname_template", "{username}-{service}-{region}"),
+                    "required_inputs": s["config"].get("required_inputs", []),
+                },
             }
             for s in services
         ]
@@ -515,5 +535,5 @@ async def extend_instance_ttl(
     return {
         "hostname": hostname,
         "ttl_hours": ttl_hours,
-        "extended_at": obj.created_at.isoformat(),
+        "extended_at": _utc_iso(obj.created_at),
     }

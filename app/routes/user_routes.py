@@ -1,5 +1,14 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Request
+
+
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 from sqlalchemy.orm import Session
 from database import User, Role, SessionLocal, InviteToken, ServiceACL
 from auth import get_current_user, hash_password, create_invite_token
@@ -18,9 +27,9 @@ def _user_response(user: User, session: Session | None = None) -> dict:
         "email": user.email,
         "display_name": user.display_name,
         "is_active": user.is_active,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
-        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
-        "invite_accepted_at": user.invite_accepted_at.isoformat() if user.invite_accepted_at else None,
+        "created_at": _utc_iso(user.created_at),
+        "last_login_at": _utc_iso(user.last_login_at),
+        "invite_accepted_at": _utc_iso(user.invite_accepted_at),
         "roles": [{"id": r.id, "name": r.name} for r in user.roles],
     }
     if session:

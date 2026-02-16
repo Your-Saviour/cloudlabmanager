@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from pydantic import BaseModel, field_validator
@@ -9,6 +10,15 @@ from db_session import get_db_session
 from audit import log_action
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
+
+
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 # Alphanumeric, hyphens, underscores, dots, spaces — safe for Ansible extra vars
 _SAFE_RE = re.compile(r"^[a-zA-Z0-9._\- ]+$")
@@ -84,8 +94,8 @@ def _snapshot_to_dict(snap: Snapshot) -> dict:
         "vultr_created_at": snap.vultr_created_at,
         "created_by": snap.created_by,
         "created_by_username": snap.created_by_username,
-        "created_at": snap.created_at.isoformat() if snap.created_at else None,
-        "updated_at": snap.updated_at.isoformat() if snap.updated_at else None,
+        "created_at": _utc_iso(snap.created_at),
+        "updated_at": _utc_iso(snap.updated_at),
     }
 
 

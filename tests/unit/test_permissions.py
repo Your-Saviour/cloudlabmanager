@@ -44,6 +44,26 @@ class TestSeedPermissions:
 
         assert count1 == count2
 
+    def test_removes_stale_permissions(self, db_session):
+        """Permissions no longer in definitions (e.g. legacy personal_jumphosts.*) are removed."""
+        # Simulate a legacy permission that was previously seeded
+        stale = Permission(
+            codename="personal_jumphosts.create",
+            category="personal_jumphosts",
+            label="Create Personal Jump Hosts",
+            description="Legacy permission",
+        )
+        db_session.add(stale)
+        db_session.flush()
+
+        seed_permissions(db_session)
+        db_session.commit()
+
+        # Stale permission should be gone
+        assert db_session.query(Permission).filter_by(codename="personal_jumphosts.create").first() is None
+        # Only valid permissions remain
+        assert db_session.query(Permission).count() == len(STATIC_PERMISSION_DEFS)
+
     def test_seed_with_type_configs(self, db_session):
         configs = [{"slug": "server", "label": "Server", "fields": []}]
         seed_permissions(db_session, type_configs=configs)

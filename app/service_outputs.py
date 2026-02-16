@@ -9,18 +9,49 @@ from ansible_runner import SERVICES_DIR
 OUTPUTS_FILENAME = "service_outputs.yaml"
 
 
-def get_service_outputs(service_name: str) -> list[dict]:
-    """Read runtime outputs from a service's outputs/service_outputs.yaml."""
-    outputs_path = os.path.join(SERVICES_DIR, service_name, "outputs", OUTPUTS_FILENAME)
-    if not os.path.isfile(outputs_path):
-        return []
+def _read_outputs_file(path: str) -> list[dict]:
+    """Read a single service_outputs.yaml file and return its outputs list."""
     try:
-        with open(outputs_path, "r") as f:
+        with open(path, "r") as f:
             data = yaml.safe_load(f)
         if data and isinstance(data, dict) and "outputs" in data:
             return data["outputs"]
     except Exception:
         pass
+    return []
+
+
+def get_service_outputs(service_name: str) -> list[dict]:
+    """Read runtime outputs from a service's outputs directory.
+
+    Checks the top-level outputs/service_outputs.yaml first, then scans
+    per-instance subdirectories (e.g. outputs/{hostname}/service_outputs.yaml)
+    used by personal instance services.
+    """
+    outputs_dir = os.path.join(SERVICES_DIR, service_name, "outputs")
+
+    # Check top-level file first
+    top_level = os.path.join(outputs_dir, OUTPUTS_FILENAME)
+    if os.path.isfile(top_level):
+        return _read_outputs_file(top_level)
+
+    # Scan per-instance subdirectories
+    if not os.path.isdir(outputs_dir):
+        return []
+    all_outputs = []
+    for entry in sorted(os.listdir(outputs_dir)):
+        sub_path = os.path.join(outputs_dir, entry, OUTPUTS_FILENAME)
+        if os.path.isfile(sub_path):
+            all_outputs.extend(_read_outputs_file(sub_path))
+    return all_outputs
+
+
+def get_instance_outputs(service_name: str, hostname: str) -> list[dict]:
+    """Read runtime outputs for a specific instance hostname."""
+    outputs_dir = os.path.join(SERVICES_DIR, service_name, "outputs")
+    instance_file = os.path.join(outputs_dir, hostname, OUTPUTS_FILENAME)
+    if os.path.isfile(instance_file):
+        return _read_outputs_file(instance_file)
     return []
 
 

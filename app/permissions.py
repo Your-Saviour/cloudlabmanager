@@ -140,8 +140,9 @@ def get_all_permission_defs(type_configs: list[dict] | None = None) -> list[tupl
 
 
 def seed_permissions(session: Session, type_configs: list[dict] | None = None):
-    """Insert or update all permission definitions. Create super-admin role with all permissions."""
+    """Insert or update all permission definitions. Remove stale permissions. Create super-admin role with all permissions."""
     all_defs = get_all_permission_defs(type_configs)
+    valid_codenames = {codename for codename, _, _, _ in all_defs}
 
     for codename, category, label, description in all_defs:
         perm = session.query(Permission).filter_by(codename=codename).first()
@@ -153,6 +154,13 @@ def seed_permissions(session: Session, type_configs: list[dict] | None = None):
             perm = Permission(codename=codename, category=category, label=label, description=description)
             session.add(perm)
     session.flush()
+
+    # Remove permissions no longer in the definitions (e.g. legacy personal_jumphosts.*)
+    stale = session.query(Permission).filter(~Permission.codename.in_(valid_codenames)).all()
+    for perm in stale:
+        session.delete(perm)
+    if stale:
+        session.flush()
 
     # Ensure super-admin role exists with all permissions
     super_admin = session.query(Role).filter_by(name="super-admin").first()

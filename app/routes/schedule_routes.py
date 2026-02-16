@@ -15,6 +15,18 @@ from service_auth import check_service_script_permission, check_service_permissi
 router = APIRouter(prefix="/api/schedules", tags=["schedules"])
 
 
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Serialize a datetime as ISO 8601 with explicit UTC offset.
+
+    SQLite drops timezone info, so naive datetimes from the DB are assumed UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 def _schedule_to_dict(s: ScheduledJob) -> dict:
     """Convert a ScheduledJob ORM object to a JSON-safe dict."""
     return {
@@ -32,14 +44,14 @@ def _schedule_to_dict(s: ScheduledJob) -> dict:
         "is_enabled": s.is_enabled,
         "inputs": json.loads(s.inputs) if s.inputs else None,
         "skip_if_running": s.skip_if_running,
-        "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+        "last_run_at": _utc_iso(s.last_run_at),
         "last_job_id": s.last_job_id,
         "last_status": s.last_status,
-        "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
+        "next_run_at": _utc_iso(s.next_run_at),
         "created_by": s.created_by,
         "created_by_username": s.creator.username if s.creator else None,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+        "created_at": _utc_iso(s.created_at),
+        "updated_at": _utc_iso(s.updated_at),
     }
 
 

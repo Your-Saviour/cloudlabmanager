@@ -13,6 +13,14 @@ export interface PersonalInstance {
   ttl_hours: number | null
   inventory_object_id: number
   created_at: string | null
+  outputs: Array<{
+    name: string
+    type: string
+    label: string
+    value: string
+    username?: string
+    credential_type?: string
+  }>
 }
 
 export interface PersonalInstanceConfig {

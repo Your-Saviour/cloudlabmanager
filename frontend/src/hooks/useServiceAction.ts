@@ -47,14 +47,8 @@ export function useServiceAction() {
   })
 
   const triggerAction = (serviceName: string, objId: number | undefined, script: ServiceScript) => {
-    if (script.name === 'deploy') {
-      if (objId) {
-        setDryRunModal({ serviceName, objId, script })
-      } else {
-        // No inventory object — can't do dry-run, use service deploy API
-        runServiceScriptMutation.mutate({ serviceName, script: 'deploy', inputs: {} })
-      }
-    } else if (script.inputs && script.inputs.length > 0) {
+    if (script.inputs && script.inputs.length > 0) {
+      // Scripts with inputs always show the input modal first
       const defaults: Record<string, any> = {}
       script.inputs.forEach((inp) => {
         if (inp.type === 'list') defaults[inp.name] = inp.default ? [inp.default] : ['']
@@ -63,6 +57,12 @@ export function useServiceAction() {
       })
       setScriptInputs(defaults)
       setScriptModal({ serviceName, objId: objId ?? -1, script })
+    } else if (script.name === 'deploy') {
+      if (objId) {
+        setDryRunModal({ serviceName, objId, script })
+      } else {
+        runServiceScriptMutation.mutate({ serviceName, script: 'deploy', inputs: {} })
+      }
     } else {
       if (objId) {
         runActionMutation.mutate({
