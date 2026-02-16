@@ -840,7 +840,9 @@ Returns available event types:
   { "value": "snapshot.created", "label": "Snapshot Created" },
   { "value": "snapshot.deleted", "label": "Snapshot Deleted" },
   { "value": "snapshot.failed", "label": "Snapshot Failed" },
-  { "value": "snapshot.restored", "label": "Snapshot Restored" }
+  { "value": "snapshot.restored", "label": "Snapshot Restored" },
+  { "value": "feedback.submitted", "label": "Feedback Submitted" },
+  { "value": "feedback.status_changed", "label": "Feedback Status Changed" }
 ]
 ```
 
@@ -1137,3 +1139,68 @@ Each object is individually permission-checked. Objects the user lacks `edit` pe
 | WebSocket | `/api/inventory/ws/{id}/action` | Yes (token param) | Real-time action output / SSH terminal |
 
 The WebSocket endpoint accepts the JWT token as a query parameter for authentication. For SSH actions, it opens a bidirectional terminal session to the target host.
+
+## Feedback
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| POST | `/api/feedback` | `feedback.submit` | Submit a feature request or bug report |
+| POST | `/api/feedback/{id}/screenshot` | Owner or `feedback.manage` | Upload a screenshot for a feedback entry |
+| GET | `/api/feedback/{id}/screenshot` | Owner or `feedback.view_all` | Download a screenshot |
+| GET | `/api/feedback` | Authenticated (scoped) | List feedback with filters |
+| GET | `/api/feedback/{id}` | Owner or `feedback.view_all` | Get a single feedback entry |
+| PATCH | `/api/feedback/{id}` | `feedback.manage` | Update status and/or admin notes |
+| DELETE | `/api/feedback/{id}` | `feedback.manage` | Delete feedback and associated screenshot |
+
+### POST `/api/feedback`
+
+```json
+{
+  "type": "feature_request",
+  "title": "Dark mode support",
+  "description": "Add a dark mode toggle to the settings page",
+  "priority": "medium"
+}
+```
+
+- `type` — `feature_request` or `bug_report`
+- `priority` — `low`, `medium`, or `high` (defaults to `medium`)
+
+Returns the created feedback entry. Screenshot is uploaded separately via the screenshot endpoint.
+
+### POST `/api/feedback/{id}/screenshot`
+
+Multipart file upload. Accepts PNG, JPG, GIF, WebP (max 5MB). Files are stored in `/data/persistent/uploads/feedback/` with UUID-based filenames.
+
+### GET `/api/feedback`
+
+Query parameters:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `type` | string | Filter by type (`feature_request` or `bug_report`) |
+| `status` | string | Filter by status |
+| `search` | string | Search title and description (case-insensitive) |
+| `my_requests` | boolean | Show only the current user's feedback |
+| `page` | int | Page number (default 1) |
+| `per_page` | int | Results per page (default 20) |
+
+Users without `feedback.view_all` only see their own feedback. Users with `feedback.view_all` see all feedback unless `my_requests=true`.
+
+### PATCH `/api/feedback/{id}`
+
+```json
+{
+  "status": "reviewed",
+  "admin_notes": "This is planned for the next sprint"
+}
+```
+
+Valid statuses: `new`, `reviewed`, `planned`, `in_progress`, `completed`, `declined`.
+
+Status changes trigger an in-app notification to the original submitter.
+
+### Notification Events
+
+- `feedback.submitted` — dispatched when feedback is submitted (targets admin roles via notification rules)
+- `feedback.status_changed` — dispatched when an admin changes the status (direct notification to submitter)

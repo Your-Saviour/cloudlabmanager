@@ -536,6 +536,24 @@ class BugReport(Base):
     user = relationship("User")
 
 
+class FeedbackRequest(Base):
+    __tablename__ = "feedback_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type = Column(String(20), nullable=False, index=True)  # "feature_request" | "bug_report"
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    priority = Column(String(20), default="medium", nullable=False)  # "low" | "medium" | "high"
+    screenshot_path = Column(String(500), nullable=True)
+    status = Column(String(20), default="new", nullable=False, index=True)  # "new" | "reviewed" | "planned" | "in_progress" | "completed" | "declined"
+    admin_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("User", lazy="selectin")
+
+
 def create_tables():
     Base.metadata.create_all(bind=engine)
     # Migration: add new columns if missing (idempotent)

@@ -45,7 +45,8 @@ cloudlabmanager/
 │   │   ├── webhook_routes.py  # /api/webhooks/* (CRUD + trigger)
 │   │   ├── audit_routes.py    # /api/audit/*
 │   │   ├── personal_instance_routes.py # /api/personal-instances/*
-│   │   └── bug_report_routes.py # /api/bug-reports/*
+│   │   ├── bug_report_routes.py # /api/bug-reports/*
+│   │   └── feedback_routes.py # /api/feedback/*
 │   ├── static/                # Frontend SPA
 │   ├── app.py                 # FastAPI entry point
 │   ├── startup.py             # Startup: clone, symlinks, DB init, sync
@@ -115,6 +116,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 - **Webhook permissions**: `webhooks.view`, `webhooks.create`, `webhooks.edit`, `webhooks.delete`
 - **Personal instance permissions**: `personal_instances.create`, `personal_instances.destroy`, `personal_instances.view_all`, `personal_instances.manage_all`
 - **Bug report permissions**: `bug_reports.submit`, `bug_reports.view_own`, `bug_reports.view_all`, `bug_reports.manage`
+- **Feedback permissions**: `feedback.submit`, `feedback.view_all`, `feedback.manage`
 
 ## Environment Variables
 
@@ -138,6 +140,6 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 
 ## Database
 
-SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `cost_snapshots`, `notifications`, `notification_rules`, `notification_channels`, `user_preferences`, `portal_bookmarks`, `webhook_endpoints`, `bug_reports`.
+SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `cost_snapshots`, `notifications`, `notification_rules`, `notification_channels`, `user_preferences`, `portal_bookmarks`, `webhook_endpoints`, `bug_reports`, `feedback_requests`.
 
 See `app/database.py` for full schema.

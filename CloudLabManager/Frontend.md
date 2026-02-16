@@ -279,6 +279,33 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Recent store: `src/stores/commandPaletteStore.ts`
 - Component: `components/layout/CommandPalette.tsx`
 
+### Help Menu
+- `?` (HelpCircle) icon button in the header, positioned before the notification bell
+- DropdownMenu with items: "Request a Feature" (MessageSquare icon), "Report a Bug" (Bug icon), separator, "View Feedback" (navigates to `/feedback`)
+- Clicking "Request a Feature" or "Report a Bug" opens the `SubmitFeedbackModal` with the appropriate type pre-selected
+- Component: `components/layout/HelpMenu.tsx`
+
+### Submit Feedback Modal
+- Reusable modal for submitting feature requests or bug reports
+- Fields: Title (required, max 200 chars), Description (required textarea), Priority (Low/Medium/High dropdown, defaults to Medium), Screenshot (optional file upload, max 5MB)
+- Uses `react-hook-form` + `zod` validation (matches `ReportBugModal` pattern)
+- Submit flow: POST JSON to `/api/feedback`, then uploads screenshot via `/api/feedback/{id}/screenshot` if provided
+- Placeholder text varies by type (feature request vs bug report)
+- Component: `components/feedback/SubmitFeedbackModal.tsx`
+
+### Feedback Page
+- Dedicated `/feedback` page for viewing and managing feedback submissions
+- **DataTable** with columns: type icon (lightbulb for features, bug icon for bugs), title, priority badge, status badge, submitted by (admin only), date
+- **Tab switcher** (All Requests / My Requests) — visible only for users with `feedback.view_all` permission
+- **Filters**: type filter (All/Features/Bugs) and status filter (All/New/Reviewed/Planned/In Progress/Completed/Declined)
+- **Action buttons**: "Request Feature" and "Report Bug" in the page header open the `SubmitFeedbackModal`
+- **Detail dialog**: click a title to open a dialog showing full description, screenshot (if available), priority/status badges
+  - Admin controls (with `feedback.manage`): status dropdown, admin notes textarea, Save/Cancel buttons
+  - Non-admin: read-only view with admin notes shown if set
+- Non-admin users without `feedback.view_all` only see their own feedback (tab switcher hidden, `my_requests=true` always sent)
+- Sidebar link with `MessageSquareMore` icon under Admin section (requires `feedback.view_all` permission)
+- Component: `pages/feedback/FeedbackPage.tsx`
+
 ## Files
 
 | File | Purpose |

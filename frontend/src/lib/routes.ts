@@ -22,6 +22,7 @@ import {
   SquareTerminal,
   Monitor,
   Bug,
+  MessageSquareMore,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -58,6 +59,7 @@ export const routeIcons: Record<string, LucideIcon> = {
   SquareTerminal,
   Monitor,
   Bug,
+  MessageSquareMore,
 }
 
 export const mainRoutes: RouteDefinition[] = [
@@ -82,6 +84,7 @@ export const adminRoutes: RouteDefinition[] = [
   { label: 'Audit Log', href: '/audit', icon: 'ScrollText', section: 'admin', permission: 'system.audit_log', keywords: ['log', 'activity', 'history', 'events'] },
   { label: 'Notifications', href: '/notifications/rules', icon: 'Bell', section: 'admin', permission: 'notifications.rules.view', keywords: ['alerts', 'rules', 'channels'] },
   { label: 'Bug Reports', href: '/bug-reports', icon: 'Bug', section: 'admin', permission: 'bug_reports.view_all', keywords: ['bugs', 'feedback', 'issues', 'reports'] },
+  { label: 'Feedback', href: '/feedback', icon: 'MessageSquareMore', section: 'admin', permission: 'feedback.view_all', keywords: ['feature', 'bug', 'request', 'feedback'] },
 ]
 
 export const quickRoutes: RouteDefinition[] = [

@@ -541,3 +541,38 @@ class BugReportOut(BaseModel):
     admin_notes: Optional[str]
     created_at: str
     updated_at: Optional[str]
+
+
+# --- Feedback models ---
+
+class FeedbackSubmitRequest(BaseModel):
+    type: str  # "feature_request" | "bug_report"
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(min_length=10, max_length=10000)
+    priority: str = "medium"
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v):
+        if v not in ("feature_request", "bug_report"):
+            raise ValueError("Type must be 'feature_request' or 'bug_report'")
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, v):
+        if v not in ("low", "medium", "high"):
+            raise ValueError("Priority must be 'low', 'medium', or 'high'")
+        return v
+
+
+class FeedbackUpdateRequest(BaseModel):
+    status: Optional[str] = None
+    admin_notes: Optional[str] = Field(None, max_length=10000)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v is not None and v not in ("new", "reviewed", "planned", "in_progress", "completed", "declined"):
+            raise ValueError("Invalid status")
+        return v

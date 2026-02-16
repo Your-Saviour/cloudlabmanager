@@ -66,6 +66,9 @@ These are always present:
 | Personal Jump Hosts | `personal_jumphosts.destroy` | Destroy own personal jump hosts |
 | Personal Jump Hosts | `personal_jumphosts.view_all` | View all users' personal jump hosts |
 | Personal Jump Hosts | `personal_jumphosts.manage_all` | Manage (destroy, extend) any user's hosts |
+| Feedback | `feedback.submit` | Submit feature requests and bug reports |
+| Feedback | `feedback.view_all` | View feedback from all users |
+| Feedback | `feedback.manage` | Update status, add notes, delete feedback |
 
 ### Dynamic Permissions
 

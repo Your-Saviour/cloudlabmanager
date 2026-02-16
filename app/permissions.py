@@ -86,6 +86,10 @@ STATIC_PERMISSION_DEFS = [
     ("bug_reports.view_own", "bug_reports", "View Own Bug Reports", "View bug reports submitted by this user"),
     ("bug_reports.view_all", "bug_reports", "View All Bug Reports", "View all bug reports (admin)"),
     ("bug_reports.manage", "bug_reports", "Manage Bug Reports", "Update status and add notes to bug reports (admin)"),
+    # feedback
+    ("feedback.submit", "feedback", "Submit Feedback", "Submit feature requests and bug reports"),
+    ("feedback.view_all", "feedback", "View All Feedback", "View feedback from all users"),
+    ("feedback.manage", "feedback", "Manage Feedback", "Update status, add notes, delete feedback"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)
