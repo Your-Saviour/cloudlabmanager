@@ -82,6 +82,10 @@ export function CommandPalette() {
       setOpen(false)
       setSearch('')
       triggerAction(cmd.serviceName, cmd.objId, cmd.script)
+    } else if (cmd.action) {
+      setOpen(false)
+      setSearch('')
+      cmd.action()
     } else if (cmd.href) {
       go(cmd.href, { id: cmd.id, label: cmd.label, icon: cmd.icon })
     }
@@ -229,7 +233,7 @@ export function CommandPalette() {
                         key={action.id}
                         value={action.label}
                         keywords={action.keywords}
-                        onSelect={() => go(action.href!, { id: action.id, label: action.label, icon: action.icon })}
+                        onSelect={() => handleCommandSelect(action)}
                         className={itemClassName}
                       >
                         <Icon className="h-4 w-4 text-muted-foreground" /> {action.label}

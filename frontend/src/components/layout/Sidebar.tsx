@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
+  Bug,
   ChevronLeft,
   ChevronRight,
   Hexagon,
@@ -25,6 +26,7 @@ interface NavItem {
 export function Sidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const setReportBugOpen = useUIStore((s) => s.setReportBugOpen)
   const location = useLocation()
   const types = useInventoryStore((s) => s.types)
 
@@ -87,8 +89,34 @@ export function Sidebar() {
           </div>
         </ScrollArea>
 
-        {/* Collapse toggle */}
-        <div className="border-t border-sidebar-border p-2">
+        {/* Footer */}
+        <div className="border-t border-sidebar-border p-2 space-y-1">
+          {collapsed ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="w-full h-8 text-muted-foreground hover:text-foreground"
+                  onClick={() => setReportBugOpen(true)}
+                  aria-label="Report Bug"
+                >
+                  <Bug className="h-4 w-4 shrink-0" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Report Bug</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full h-8 text-muted-foreground hover:text-foreground gap-2 justify-start"
+              onClick={() => setReportBugOpen(true)}
+            >
+              <Bug className="h-4 w-4 shrink-0" />
+              <span className="text-xs">Report Bug</span>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"

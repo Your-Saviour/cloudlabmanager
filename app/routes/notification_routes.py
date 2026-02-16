@@ -30,6 +30,8 @@ EVENT_TYPES = [
     {"value": "budget.threshold_exceeded", "label": "Budget Threshold Exceeded"},
     {"value": "webhook.triggered", "label": "Webhook Triggered"},
     {"value": "bulk.completed", "label": "Bulk Operation Completed"},
+    {"value": "bug_report.submitted", "label": "Bug Report Submitted"},
+    {"value": "bug_report.status_changed", "label": "Bug Report Status Changed"},
 ]
 
 VALID_CHANNELS = ("in_app", "email", "slack")

@@ -37,6 +37,7 @@ import PortalPage from '@/pages/portal/PortalPage'
 import WebhooksPage from '@/pages/webhooks/WebhooksPage'
 import SnapshotsPage from '@/pages/snapshots/SnapshotsPage'
 import PersonalInstancesPage from '@/pages/personal-instances/PersonalInstancesPage'
+import BugReportsPage from '@/pages/feedback/BugReportsPage'
 
 // Redirect /services/:name/files to /services/:name/config?tab=files
 function ServiceFilesRedirect() {
@@ -127,6 +128,7 @@ function AppRoutes() {
         <Route path="/notifications/rules" element={<NotificationRulesPage />} />
         <Route path="/snapshots" element={<SnapshotsPage />} />
         <Route path="/personal-instances" element={<PersonalInstancesPage />} />
+        <Route path="/bug-reports" element={<BugReportsPage />} />
         <Route path="/portal" element={<PortalPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>

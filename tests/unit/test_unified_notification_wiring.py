@@ -36,9 +36,9 @@ class TestNewEventConstants:
 # ---------------------------------------------------------------------------
 
 class TestNewEventTypesInList:
-    def test_event_types_has_nine_entries(self):
+    def test_event_types_has_eleven_entries(self):
         from routes.notification_routes import EVENT_TYPES
-        assert len(EVENT_TYPES) == 9
+        assert len(EVENT_TYPES) == 11
 
     def test_drift_state_change_in_list(self):
         from routes.notification_routes import EVENT_TYPES

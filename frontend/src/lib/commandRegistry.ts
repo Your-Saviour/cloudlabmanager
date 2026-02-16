@@ -11,6 +11,7 @@ export function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`
 }
 import { useInventoryStore } from '@/stores/inventoryStore'
+import { useUIStore } from '@/stores/uiStore'
 import { hasPermission } from '@/lib/permissions'
 import api from '@/lib/api'
 import type { InventoryObject, Service } from '@/types'
@@ -22,6 +23,7 @@ export interface CommandAction {
   icon: string
   keywords?: string[]
   href?: string
+  action?: () => void
   permission?: string
   category: 'system' | 'service' | 'inventory' | 'admin' | 'deploy' | 'run'
   // Fields for executable commands
@@ -42,6 +44,8 @@ const STATIC_ACTIONS: CommandAction[] = [
   { id: 'create-webhook', label: 'Create Webhook', icon: 'Webhook', href: '/webhooks', permission: 'webhooks.create', keywords: ['hook', 'trigger', 'new'], category: 'admin' },
   { id: 'create-schedule', label: 'Create Schedule', icon: 'Clock', href: '/schedules', permission: 'schedules.create', keywords: ['cron', 'timer', 'new'], category: 'admin' },
   { id: 'invite-user', label: 'Invite User', icon: 'UserPlus', href: '/users', permission: 'users.create', keywords: ['new user', 'add user'], category: 'admin' },
+  // Feedback
+  { id: 'report-bug', label: 'Report Bug', icon: 'Bug', keywords: ['bug', 'report', 'issue', 'feedback'], permission: 'bug_reports.submit', action: () => useUIStore.getState().setReportBugOpen(true), category: 'system' },
 ]
 
 export function useCommandActions() {

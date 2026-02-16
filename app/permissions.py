@@ -81,6 +81,11 @@ STATIC_PERMISSION_DEFS = [
     ("personal_instances.destroy", "personal_instances", "Destroy Personal Instances", "Destroy own personal instances"),
     ("personal_instances.view_all", "personal_instances", "View All Personal Instances", "View all users' personal instances (admin)"),
     ("personal_instances.manage_all", "personal_instances", "Manage All Personal Instances", "Create and destroy personal instances for any user (admin)"),
+    # bug reports
+    ("bug_reports.submit", "bug_reports", "Submit Bug Reports", "Submit bug reports from the app"),
+    ("bug_reports.view_own", "bug_reports", "View Own Bug Reports", "View bug reports submitted by this user"),
+    ("bug_reports.view_all", "bug_reports", "View All Bug Reports", "View all bug reports (admin)"),
+    ("bug_reports.manage", "bug_reports", "Manage Bug Reports", "Update status and add notes to bug reports (admin)"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

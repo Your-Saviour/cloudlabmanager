@@ -516,6 +516,26 @@ class Notification(Base):
     user = relationship("User")
 
 
+class BugReport(Base):
+    __tablename__ = "bug_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(200), nullable=False)
+    steps_to_reproduce = Column(Text, nullable=False)
+    expected_vs_actual = Column(Text, nullable=False)
+    severity = Column(String(20), default="medium", nullable=False)  # low, medium, high, critical
+    page_url = Column(String(500), nullable=True)
+    browser_info = Column(String(500), nullable=True)
+    screenshot_path = Column(String(500), nullable=True)  # relative path within /data/persistent/feedback/
+    status = Column(String(20), default="new", nullable=False)  # new, investigating, fixed, wont-fix, duplicate
+    admin_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    user = relationship("User")
+
+
 def create_tables():
     Base.metadata.create_all(bind=engine)
     # Migration: add new columns if missing (idempotent)

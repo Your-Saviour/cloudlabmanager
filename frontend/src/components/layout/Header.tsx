@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Search, LogOut, User, Settings } from 'lucide-react'
+import { Search, LogOut, User, Bug } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { useUIStore } from '@/stores/uiStore'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ export function Header() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const setCommandPaletteOpen = useUIStore((s) => s.setCommandPaletteOpen)
+  const setReportBugOpen = useUIStore((s) => s.setReportBugOpen)
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -61,6 +62,10 @@ export function Header() {
           <DropdownMenuItem onClick={() => navigate('/profile')}>
             <User className="mr-2 h-4 w-4" />
             Profile
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setReportBugOpen(true)}>
+            <Bug className="mr-2 h-4 w-4" />
+            Report Bug
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">

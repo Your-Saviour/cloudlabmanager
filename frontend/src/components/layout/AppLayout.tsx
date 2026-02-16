@@ -7,9 +7,12 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { CommandPalette } from './CommandPalette'
+import { ReportBugModal } from '@/components/feedback/ReportBugModal'
 
 export function AppLayout() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
+  const reportBugOpen = useUIStore((s) => s.reportBugOpen)
+  const setReportBugOpen = useUIStore((s) => s.setReportBugOpen)
   const loadPreferences = usePreferencesStore((s) => s.loadPreferences)
   const prefsLoaded = usePreferencesStore((s) => s.loaded)
   useKeyboardShortcuts()
@@ -28,6 +31,7 @@ export function AppLayout() {
         </main>
       </div>
       <CommandPalette />
+      <ReportBugModal open={reportBugOpen} onOpenChange={setReportBugOpen} />
     </div>
   )
 }

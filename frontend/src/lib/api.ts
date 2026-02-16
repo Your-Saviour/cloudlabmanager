@@ -26,3 +26,34 @@ api.interceptors.response.use(
 )
 
 export default api
+
+// --- Bug Reports ---
+
+export async function submitBugReport(formData: FormData) {
+  const res = await api.post('/api/bug-reports', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res.data
+}
+
+export async function getMyBugReports(params?: { page?: number; per_page?: number }) {
+  const res = await api.get('/api/bug-reports/mine', { params })
+  return res.data
+}
+
+export async function getAllBugReports(params?: {
+  page?: number; per_page?: number; search?: string; status?: string; severity?: string
+}) {
+  const res = await api.get('/api/bug-reports', { params })
+  return res.data
+}
+
+export async function getBugReport(id: number) {
+  const res = await api.get(`/api/bug-reports/${id}`)
+  return res.data
+}
+
+export async function updateBugReport(id: number, data: { status?: string; admin_notes?: string }) {
+  const res = await api.put(`/api/bug-reports/${id}`, data)
+  return res.data
+}

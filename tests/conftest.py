@@ -75,6 +75,7 @@ _SESSION_LOCAL_MODULES = [
     "snapshot_poller",
     "routes.personal_instance_routes",
     "personal_instance_cleanup",
+    "routes.bug_report_routes",
 ]
 
 
@@ -295,6 +296,9 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
 
     from routes.personal_instance_routes import router as personal_instance_router
     app.include_router(personal_instance_router)
+
+    from routes.bug_report_routes import router as bug_report_router
+    app.include_router(bug_report_router)
 
     return app
 

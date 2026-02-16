@@ -23,6 +23,8 @@ EVENT_SNAPSHOT_CREATED = "snapshot.created"
 EVENT_SNAPSHOT_DELETED = "snapshot.deleted"
 EVENT_SNAPSHOT_FAILED = "snapshot.failed"
 EVENT_SNAPSHOT_RESTORED = "snapshot.restored"
+EVENT_BUG_REPORT_SUBMITTED = "bug_report.submitted"
+EVENT_BUG_REPORT_STATUS_CHANGED = "bug_report.status_changed"
 
 
 async def notify(event_type: str, context: dict):

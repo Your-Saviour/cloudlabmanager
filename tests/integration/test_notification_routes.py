@@ -215,7 +215,7 @@ class TestEventTypes:
         resp = await client.get("/api/notifications/rules/event-types", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["event_types"]) == 9
+        assert len(data["event_types"]) == 11
         values = [e["value"] for e in data["event_types"]]
         assert "job.completed" in values
         assert "job.failed" in values
@@ -224,6 +224,8 @@ class TestEventTypes:
         assert "budget.threshold_exceeded" in values
         assert "webhook.triggered" in values
         assert "bulk.completed" in values
+        assert "bug_report.submitted" in values
+        assert "bug_report.status_changed" in values
 
 
 # ---------------------------------------------------------------------------

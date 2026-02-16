@@ -472,3 +472,72 @@ class NotificationChannelOut(BaseModel):
     config: dict
     is_enabled: bool
     created_at: str
+
+
+# --- Bug report models ---
+
+class BugReportCreate(BaseModel):
+    title: str
+    steps_to_reproduce: str
+    expected_vs_actual: str
+    severity: str = "medium"
+    page_url: Optional[str] = Field(None, max_length=500)
+    browser_info: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v):
+        if not 3 <= len(v.strip()) <= 200:
+            raise ValueError("Title must be 3-200 characters")
+        return v.strip()
+
+    @field_validator("steps_to_reproduce")
+    @classmethod
+    def validate_steps(cls, v):
+        if len(v.strip()) < 10:
+            raise ValueError("Steps to reproduce must be at least 10 characters")
+        return v.strip()
+
+    @field_validator("expected_vs_actual")
+    @classmethod
+    def validate_behavior(cls, v):
+        if len(v.strip()) < 10:
+            raise ValueError("Expected vs actual behavior must be at least 10 characters")
+        return v.strip()
+
+    @field_validator("severity")
+    @classmethod
+    def validate_severity(cls, v):
+        if v not in ("low", "medium", "high", "critical"):
+            raise ValueError("Severity must be low, medium, high, or critical")
+        return v
+
+
+class BugReportAdminUpdate(BaseModel):
+    status: Optional[str] = None
+    admin_notes: Optional[str] = Field(None, max_length=10000)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v is not None and v not in ("new", "investigating", "fixed", "wont-fix", "duplicate"):
+            raise ValueError("Status must be new, investigating, fixed, wont-fix, or duplicate")
+        return v
+
+
+class BugReportOut(BaseModel):
+    id: int
+    user_id: Optional[int]
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    title: str
+    steps_to_reproduce: str
+    expected_vs_actual: str
+    severity: str
+    page_url: Optional[str]
+    browser_info: Optional[str]
+    screenshot_path: Optional[bool]
+    status: str
+    admin_notes: Optional[str]
+    created_at: str
+    updated_at: Optional[str]
