@@ -84,19 +84,15 @@ export default function ServicePermissions({ serviceName }: Props) {
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to add permissions'),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (aclId: number) =>
-      api.delete(`/api/services/${serviceName}/acl/${aclId}`),
+  const deleteRoleMutation = useMutation({
+    mutationFn: (aclIds: number[]) =>
+      Promise.all(aclIds.map((id) => api.delete(`/api/services/${serviceName}/acl/${id}`))),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service', serviceName, 'acl'] })
-      toast.success('Permission removed')
+      toast.success('Role permissions removed')
     },
-    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to remove permission'),
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to remove permissions'),
   })
-
-  const removeAllForRole = (entries: ServiceACLEntry[]) => {
-    entries.forEach((entry) => deleteMutation.mutate(entry.id))
-  }
 
   const togglePermission = (perm: ServicePermission) => {
     setForm((prev) => ({
@@ -164,8 +160,8 @@ export default function ServicePermissions({ serviceName }: Props) {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
-                    onClick={() => removeAllForRole(group.permissions)}
-                    disabled={deleteMutation.isPending}
+                    onClick={() => deleteRoleMutation.mutate(group.permissions.map((e) => e.id))}
+                    disabled={deleteRoleMutation.isPending}
                     aria-label={`Remove all permissions for ${group.role_name}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />

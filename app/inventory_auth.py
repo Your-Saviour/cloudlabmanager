@@ -76,8 +76,30 @@ def check_inventory_permission(session: Session, user: User, object_id: int,
         if tag_perm:
             return True
 
-    # 5. Role-based type permissions
+    # 5. For service objects, delegate to ServiceACL-aware check
+    if type_slug == "service":
+        import json
+        from service_auth import check_service_permission
+        try:
+            data = json.loads(obj.data) if isinstance(obj.data, str) else obj.data
+            service_name = data.get("name", "")
+        except (json.JSONDecodeError, AttributeError):
+            service_name = ""
+        if service_name:
+            return check_service_permission(session, user, service_name, permission_suffix)
+
+    # 6. Role-based type permissions (non-service types)
     return full_perm in perms
+
+
+_LEGACY_SERVICE_PERM_MAP = {
+    "view": "services.view",
+    "deploy": "services.deploy",
+    "stop": "services.stop",
+    "config": "services.config.view",
+    "files": "services.files.view",
+    "edit": "services.config.edit",
+}
 
 
 def check_type_permission(session: Session, user: User, type_slug: str,
@@ -86,7 +108,14 @@ def check_type_permission(session: Session, user: User, type_slug: str,
     perms = get_user_permissions(session, user.id)
     if "*" in perms:
         return True
-    return f"inventory.{type_slug}.{permission_suffix}" in perms
+    if f"inventory.{type_slug}.{permission_suffix}" in perms:
+        return True
+    # Fall back to legacy services.* permissions for the service type
+    if type_slug == "service":
+        legacy = _LEGACY_SERVICE_PERM_MAP.get(permission_suffix)
+        if legacy and legacy in perms:
+            return True
+    return False
 
 
 def require_inventory_permission(type_slug: str, permission_suffix: str):

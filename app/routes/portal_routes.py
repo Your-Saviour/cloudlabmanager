@@ -18,6 +18,7 @@ from db_session import get_db_session
 from permissions import require_permission
 from health_checker import get_health_configs
 from service_outputs import get_all_service_outputs
+from service_auth import filter_services_for_user
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
@@ -238,14 +239,15 @@ async def get_portal_services(
             "sort_order": bm.sort_order,
         })
 
-    # Collect all known service names
+    # Collect all known service names, filtered by user permissions
     service_names = set()
     service_names.update(all_outputs.keys())
     service_names.update(instance_configs.keys())
     service_names.update(health_data.keys())
+    allowed = set(filter_services_for_user(session, user, list(service_names)))
 
     result = []
-    for name in sorted(service_names):
+    for name in sorted(allowed):
         ic = instance_configs.get(name, {})
         instances = ic.get("instances", [])
         first_instance = instances[0] if instances else {}

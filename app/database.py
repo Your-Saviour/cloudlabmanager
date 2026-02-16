@@ -529,6 +529,7 @@ def create_tables():
         "ALTER TABLE jobs ADD COLUMN inputs TEXT",
         "ALTER TABLE jobs ADD COLUMN parent_job_id VARCHAR(20) REFERENCES jobs(id) ON DELETE SET NULL",
         "ALTER TABLE jobs ADD COLUMN webhook_id INTEGER REFERENCES webhook_endpoints(id) ON DELETE SET NULL",
+        "ALTER TABLE users ADD COLUMN email VARCHAR(255)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

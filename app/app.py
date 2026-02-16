@@ -29,6 +29,7 @@ from routes.preference_routes import router as preference_router
 from routes.portal_routes import router as portal_router
 from routes.webhook_routes import router as webhook_router
 from routes.snapshot_routes import router as snapshot_router
+from routes.personal_jumphost_routes import router as personal_jumphost_router
 from health_checker import HealthPoller, load_health_configs
 from drift_checker import DriftPoller
 from snapshot_poller import SnapshotPoller
@@ -149,6 +150,7 @@ app.include_router(preference_router)
 app.include_router(portal_router)
 app.include_router(webhook_router)
 app.include_router(snapshot_router)
+app.include_router(personal_jumphost_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

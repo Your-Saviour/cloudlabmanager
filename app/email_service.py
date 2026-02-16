@@ -17,6 +17,7 @@ except (ValueError, TypeError):
 SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
+SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "false").lower() == "true"
 SMTP_SENDER_EMAIL = os.environ.get("SMTP_SENDER_EMAIL", "")
 SMTP_SENDER_NAME = os.environ.get("SMTP_SENDER_NAME", "CloudLab Manager")
 
@@ -50,9 +51,10 @@ async def _send_email_smtp(to_email: str, subject: str, html_body: str, text_bod
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        smtp = aiosmtplib.SMTP(hostname=SMTP_HOST, port=SMTP_PORT, timeout=15.0)
+        smtp = aiosmtplib.SMTP(hostname=SMTP_HOST, port=SMTP_PORT, timeout=15.0,
+                               use_tls=SMTP_USE_SSL)
         await smtp.connect()
-        if SMTP_USE_TLS:
+        if SMTP_USE_TLS and not SMTP_USE_SSL:
             await smtp.starttls()
         if SMTP_USERNAME and SMTP_PASSWORD:
             await smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
@@ -96,7 +98,7 @@ async def _send_email(to_email: str, subject: str, html_body: str, text_body: st
 
 async def send_invite(to_email: str, invite_token: str, inviter_name: str, base_url: str):
     """Send invite email with link to accept."""
-    accept_url = f"{base_url}/#accept-invite-{invite_token}"
+    accept_url = f"{base_url}/accept-invite/{invite_token}"
 
     html_body = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0a0c10; color: #e8edf5; padding: 2rem; border: 1px solid #1e2738; border-radius: 8px;">
@@ -126,7 +128,7 @@ This link expires in 72 hours."""
 
 async def send_password_reset(to_email: str, reset_token: str, base_url: str):
     """Send password reset email."""
-    reset_url = f"{base_url}/#reset-password-{reset_token}"
+    reset_url = f"{base_url}/reset-password/{reset_token}"
 
     html_body = f"""
     <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0a0c10; color: #e8edf5; padding: 2rem; border: 1px solid #1e2738; border-radius: 8px;">
@@ -164,6 +166,7 @@ def get_email_transport_status():
             "host": SMTP_HOST,
             "port": SMTP_PORT,
             "tls": SMTP_USE_TLS,
+            "ssl": SMTP_USE_SSL,
         }
     configured = bool(SENDAMATIC_API_KEY and SENDAMATIC_SENDER_EMAIL)
     return {"transport": "sendamatic", "configured": configured}

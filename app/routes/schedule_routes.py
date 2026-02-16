@@ -177,7 +177,7 @@ async def create_schedule(
         if not body.type_slug or not body.action_name:
             raise HTTPException(400, "type_slug and action_name required for inventory_action")
     elif body.job_type == "system_task":
-        allowed_tasks = ("refresh_instances", "refresh_costs")
+        allowed_tasks = ("refresh_instances", "refresh_costs", "personal_jumphost_cleanup")
         if body.system_task not in allowed_tasks:
             raise HTTPException(400, f"system_task must be one of: {allowed_tasks}")
 

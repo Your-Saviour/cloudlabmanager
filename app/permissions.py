@@ -76,6 +76,11 @@ STATIC_PERMISSION_DEFS = [
     # portal
     ("portal.view", "portal", "View Portal", "View the service access portal"),
     ("portal.bookmarks.edit", "portal", "Edit Bookmarks", "Create, edit, and delete personal portal bookmarks"),
+    # personal jump hosts
+    ("personal_jumphosts.create", "personal_jumphosts", "Create Personal Jump Hosts", "Create personal jump hosts (self-service)"),
+    ("personal_jumphosts.destroy", "personal_jumphosts", "Destroy Personal Jump Hosts", "Destroy own personal jump hosts"),
+    ("personal_jumphosts.view_all", "personal_jumphosts", "View All Personal Jump Hosts", "View all users' personal jump hosts (admin)"),
+    ("personal_jumphosts.manage_all", "personal_jumphosts", "Manage All Personal Jump Hosts", "Create and destroy personal jump hosts for any user (admin)"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)
@@ -191,12 +196,34 @@ def get_user_permissions(session: Session, user_id: int) -> set[str]:
     return perms
 
 
+# Map legacy permission codenames to their inventory-based equivalents
+_LEGACY_TO_INVENTORY = {
+    "instances.view": "inventory.server.view",
+    "instances.stop": "inventory.server.destroy",
+    "instances.ssh": "inventory.server.ssh",
+    "instances.refresh": "inventory.server.refresh",
+    "services.view": "inventory.service.view",
+    "services.deploy": "inventory.service.deploy",
+    "services.stop": "inventory.service.stop",
+    "services.config.view": "inventory.service.config",
+    "services.config.edit": "inventory.service.edit",
+    "services.files.view": "inventory.service.files",
+    "services.files.edit": "inventory.service.edit",
+}
+
+
 def has_permission(session: Session, user_id: int, codename: str) -> bool:
     """Check if a user has a specific permission."""
     perms = get_user_permissions(session, user_id)
     if "*" in perms:
         return True
-    return codename in perms
+    if codename in perms:
+        return True
+    # Accept inventory-based equivalent for legacy permission checks
+    mapped = _LEGACY_TO_INVENTORY.get(codename)
+    if mapped and mapped in perms:
+        return True
+    return False
 
 
 def require_permission(codename: str):

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -21,7 +21,7 @@ import JobsListPage from '@/pages/jobs/JobsListPage'
 import JobDetailPage from '@/pages/jobs/JobDetailPage'
 import ServicesPage from '@/pages/services/ServicesPage'
 import ServiceConfigPage from '@/pages/services/ServiceConfigPage'
-import ServiceFilesPage from '@/pages/services/ServiceFilesPage'
+// ServiceFilesPage merged into ServiceConfigPage as a tab
 import SSHTerminalPage from '@/pages/ssh/SSHTerminalPage'
 import UsersPage from '@/pages/users/UsersPage'
 import RolesPage from '@/pages/roles/RolesPage'
@@ -36,6 +36,13 @@ import NotificationRulesPage from '@/pages/notifications/NotificationRulesPage'
 import PortalPage from '@/pages/portal/PortalPage'
 import WebhooksPage from '@/pages/webhooks/WebhooksPage'
 import SnapshotsPage from '@/pages/snapshots/SnapshotsPage'
+import PersonalJumphostsPage from '@/pages/personal-jumphosts/PersonalJumphostsPage'
+
+// Redirect /services/:name/files to /services/:name/config?tab=files
+function ServiceFilesRedirect() {
+  const { name } = useParams<{ name: string }>()
+  return <Navigate to={`/services/${name}/config?tab=files`} replace />
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -106,7 +113,7 @@ function AppRoutes() {
         <Route path="/webhooks" element={<WebhooksPage />} />
         <Route path="/services" element={<ServicesPage />} />
         <Route path="/services/:name/config" element={<ServiceConfigPage />} />
-        <Route path="/services/:name/files" element={<ServiceFilesPage />} />
+        <Route path="/services/:name/files" element={<ServiceFilesRedirect />} />
         <Route path="/ssh/:hostname/:ip" element={<SSHTerminalPage />} />
         <Route path="/ssh/:hostname/:ip/:user" element={<SSHTerminalPage />} />
         <Route path="/users" element={<UsersPage />} />
@@ -119,6 +126,7 @@ function AppRoutes() {
         <Route path="/drift" element={<DriftPage />} />
         <Route path="/notifications/rules" element={<NotificationRulesPage />} />
         <Route path="/snapshots" element={<SnapshotsPage />} />
+        <Route path="/personal-jumphosts" element={<PersonalJumphostsPage />} />
         <Route path="/portal" element={<PortalPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>

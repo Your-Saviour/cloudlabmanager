@@ -6,7 +6,6 @@ import {
   Play,
   Square,
   Settings,
-  FolderOpen,
   OctagonX,
   Terminal,
   ChevronDown,
@@ -463,29 +462,16 @@ export default function ServicesPage() {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {/* Config */}
-                    {canConfig && (
+                    {/* Config & Files */}
+                    {(canConfig || canFiles) && (
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-9 w-9"
-                        title="Config"
+                        title="Config & Files"
                         onClick={() => navigate(`/services/${name}/config`)}
                       >
                         <Settings className="h-4 w-4" />
-                      </Button>
-                    )}
-
-                    {/* Files */}
-                    {canFiles && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9"
-                        title="Files"
-                        onClick={() => navigate(`/services/${name}/files`)}
-                      >
-                        <FolderOpen className="h-4 w-4" />
                       </Button>
                     )}
 

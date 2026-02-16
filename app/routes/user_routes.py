@@ -120,16 +120,22 @@ async def delete_user(user_id: int, request: Request,
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     if user_id == user.id:
-        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
 
-    target.is_active = False
+    username = target.username
+
+    # Null out FKs that don't have ondelete=CASCADE/SET NULL
+    session.query(User).filter_by(invited_by_id=user_id).update({"invited_by_id": None})
+    session.query(ServiceACL).filter_by(created_by=user_id).update({"created_by": None})
+
+    session.delete(target)
     session.flush()
 
-    log_action(session, user.id, user.username, "user.deactivate", f"users/{user_id}",
-               details={"deactivated_username": target.username},
+    log_action(session, user.id, user.username, "user.delete", f"users/{user_id}",
+               details={"deleted_username": username},
                ip_address=request.client.host if request.client else None)
 
-    return {"status": "deactivated"}
+    return {"status": "deleted"}
 
 
 @router.put("/{user_id}/roles")

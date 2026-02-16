@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import type { Job } from '@/types'
 
 export function useJobStream(jobId: string) {
+  const queryClient = useQueryClient()
   const [output, setOutput] = useState<string[]>([])
   const [status, setStatus] = useState<Job['status']>('running')
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
@@ -29,6 +30,11 @@ export function useJobStream(jobId: string) {
           setStatus(data.status)
           if (data.status !== 'running') {
             clearInterval(intervalRef.current)
+            // Invalidate inventory and service queries when job finishes
+            queryClient.invalidateQueries({ queryKey: ['inventory'] })
+            queryClient.invalidateQueries({ queryKey: ['services'] })
+            queryClient.invalidateQueries({ queryKey: ['active-deployments'] })
+            queryClient.invalidateQueries({ queryKey: ['service-summaries'] })
           }
         } catch {
           clearInterval(intervalRef.current)

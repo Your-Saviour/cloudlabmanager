@@ -543,7 +543,7 @@ Returns a streaming download with `Content-Disposition` header. The export is lo
 Valid `job_type` values: `service_script`, `system_task`, `inventory_action`.
 
 - **`service_script`** — requires `service_name` and `script_name`
-- **`system_task`** — requires `system_task` (one of `refresh_instances`, `refresh_costs`, `drift_check`)
+- **`system_task`** — requires `system_task` (one of `refresh_instances`, `refresh_costs`, `drift_check`, `personal_jumphost_cleanup`)
 - **`inventory_action`** — requires `inventory_type_slug`, `inventory_object_id`, `inventory_action_name`
 
 ### GET `/api/schedules/preview`
@@ -986,6 +986,70 @@ Services are sorted alphabetically by name.
 ### PUT `/api/portal/bookmarks/{id}`
 
 Same body as POST (all fields optional). Returns 404 if the bookmark doesn't exist or belongs to another user.
+
+## Personal Jump Hosts
+
+Self-service personal jump host management. See [[Personal Jump Hosts]] in the CloudLab docs for the full feature overview.
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/personal-jumphosts` | `personal_jumphosts.create` | List current user's hosts (admins with `view_all` see all) |
+| POST | `/api/personal-jumphosts` | `personal_jumphosts.create` | Create a personal jump host |
+| DELETE | `/api/personal-jumphosts/{hostname}` | `personal_jumphosts.destroy` | Destroy a personal jump host |
+| POST | `/api/personal-jumphosts/{hostname}/extend` | `personal_jumphosts.destroy` | Extend TTL (resets countdown) |
+| GET | `/api/personal-jumphosts/config` | `personal_jumphosts.create` | Get default config values (plan, region, TTL, limits) |
+
+### POST `/api/personal-jumphosts`
+
+```json
+{
+  "region": "mel"
+}
+```
+
+`region` is optional — defaults to the value in `services/personal-jump-hosts/config.yaml`. The hostname is auto-generated as `pjh-{username}-{region}`.
+
+Returns:
+
+```json
+{
+  "job_id": "abc123",
+  "hostname": "pjh-jake-mel"
+}
+```
+
+Enforcements:
+- **Per-user limit**: Returns 400 if the user has reached `max_per_user` (default 3)
+- **Hostname collision**: Returns 409 if `pjh-{username}-{region}` already exists in inventory
+
+### DELETE `/api/personal-jumphosts/{hostname}`
+
+Ownership enforced — users can only destroy their own hosts. Users with `personal_jumphosts.manage_all` can destroy any user's hosts.
+
+Returns a job ID for the async destroy operation.
+
+### POST `/api/personal-jumphosts/{hostname}/extend`
+
+Resets the TTL countdown by updating `created_at` to the current time. Ownership enforced (same rules as destroy).
+
+### GET `/api/personal-jumphosts/config`
+
+Returns the default configuration from `services/personal-jump-hosts/config.yaml`:
+
+```json
+{
+  "default_plan": "vc2-1c-1gb",
+  "default_region": "mel",
+  "default_ttl_hours": 24,
+  "max_per_user": 3
+}
+```
+
+### Auto-Expire (TTL Cleanup)
+
+A scheduled system task (`personal_jumphost_cleanup`) runs every 15 minutes and destroys expired hosts. Hosts are identified by `personal-jump-host` and `pjh-ttl:{hours}` tags on server inventory objects. Destroy jobs triggered by cleanup use username `system:ttl-cleanup`.
+
+The schedule is seeded automatically on startup and can be managed via the Schedules API.
 
 ## Inventory
 

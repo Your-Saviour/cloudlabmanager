@@ -61,6 +61,11 @@ These are always present:
 | Portal | `portal.view` | View the service access portal |
 | Portal | `portal.bookmarks.edit` | Create, edit, and delete personal portal bookmarks |
 | Inventory | `inventory.tags.manage` | Create/edit/delete tags |
+| Inventory | `inventory.acl.manage` | Manage service ACLs |
+| Personal Jump Hosts | `personal_jumphosts.create` | Create and list own personal jump hosts |
+| Personal Jump Hosts | `personal_jumphosts.destroy` | Destroy own personal jump hosts |
+| Personal Jump Hosts | `personal_jumphosts.view_all` | View all users' personal jump hosts |
+| Personal Jump Hosts | `personal_jumphosts.manage_all` | Manage (destroy, extend) any user's hosts |
 
 ### Dynamic Permissions
 

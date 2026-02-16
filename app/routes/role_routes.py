@@ -28,9 +28,14 @@ def _role_response(role: Role) -> dict:
 @router.get("/permissions")
 async def list_permissions(user=Depends(require_permission("roles.view")),
                            session: Session = Depends(get_db_session)):
+    # Legacy categories superseded by inventory-based permissions
+    HIDDEN_CATEGORIES = {"instances", "services"}
+
     perms = session.query(Permission).order_by(Permission.category, Permission.codename).all()
     grouped = {}
     for p in perms:
+        if p.category in HIDDEN_CATEGORIES:
+            continue
         if p.category not in grouped:
             grouped[p.category] = []
         grouped[p.category].append({

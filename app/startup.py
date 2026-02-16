@@ -150,6 +150,47 @@ def seed_default_notification_rules():
         session.close()
 
 
+def seed_jumphost_cleanup_schedule():
+    """Create the personal jump host TTL cleanup scheduled job if it doesn't exist."""
+    from database import SessionLocal, ScheduledJob
+    from croniter import croniter
+    from datetime import datetime, timezone
+
+    session = SessionLocal()
+    try:
+        existing = (
+            session.query(ScheduledJob)
+            .filter_by(system_task="personal_jumphost_cleanup")
+            .first()
+        )
+        if existing:
+            return
+
+        now = datetime.now(timezone.utc)
+        cron_expr = "*/15 * * * *"
+        cron = croniter(cron_expr, now)
+        next_run = cron.get_next(datetime).replace(tzinfo=timezone.utc)
+
+        schedule = ScheduledJob(
+            name="Personal Jump Host Cleanup",
+            description="Destroy personal jump hosts whose TTL has expired",
+            job_type="system_task",
+            system_task="personal_jumphost_cleanup",
+            cron_expression=cron_expr,
+            is_enabled=True,
+            skip_if_running=True,
+            next_run_at=next_run,
+        )
+        session.add(schedule)
+        session.commit()
+        print("  Seeded personal jump host cleanup schedule (every 15 min)")
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Could not seed jumphost cleanup schedule: {e}")
+    finally:
+        session.close()
+
+
 def load_inventory_types():
     """Load inventory type definitions from YAML and sync to DB.
     Returns the list of type configs for use by app.state."""
@@ -232,6 +273,9 @@ def init_database():
 
     # Seed default notification rules (idempotent — only if no rules exist)
     seed_default_notification_rules()
+
+    # Seed personal jump host cleanup schedule (idempotent)
+    seed_jumphost_cleanup_schedule()
 
     return type_configs
 

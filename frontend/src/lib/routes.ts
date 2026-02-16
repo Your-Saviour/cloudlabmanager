@@ -19,6 +19,7 @@ import {
   UserPlus,
   Rocket,
   PlayCircle,
+  SquareTerminal,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -52,11 +53,13 @@ export const routeIcons: Record<string, LucideIcon> = {
   UserPlus,
   Rocket,
   PlayCircle,
+  SquareTerminal,
 }
 
 export const mainRoutes: RouteDefinition[] = [
   { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', section: 'main', keywords: ['home', 'overview'] },
   { label: 'Portal', href: '/portal', icon: 'Compass', section: 'main', permission: 'portal.view', keywords: ['access', 'links', 'bookmarks'] },
+  { label: 'My Jump Hosts', href: '/personal-jumphosts', icon: 'SquareTerminal', section: 'main', permission: 'personal_jumphosts.create', keywords: ['jump', 'terminal', 'ssh', 'personal'] },
   { label: 'Services', href: '/services', icon: 'Boxes', section: 'main', permission: 'services.view', keywords: ['deploy', 'stop', 'manage'] },
   { label: 'Inventory', href: '/inventory', icon: 'Server', section: 'main', keywords: ['servers', 'instances', 'objects'] },
   { label: 'Jobs', href: '/jobs', icon: 'Play', section: 'main', keywords: ['tasks', 'running', 'logs', 'history'] },
