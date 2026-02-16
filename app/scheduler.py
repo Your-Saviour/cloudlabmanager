@@ -124,8 +124,8 @@ class Scheduler:
                 schedule.last_status = "completed"
                 schedule.next_run_at = self._next_run(schedule.cron_expression)
                 return
-            elif schedule.system_task == "personal_jumphost_cleanup":
-                from jumphost_cleanup import check_and_cleanup_expired
+            elif schedule.system_task == "personal_instance_cleanup":
+                from personal_instance_cleanup import check_and_cleanup_expired
                 destroyed = await check_and_cleanup_expired(self.runner)
                 schedule.last_run_at = datetime.now(timezone.utc)
                 schedule.last_status = "completed"

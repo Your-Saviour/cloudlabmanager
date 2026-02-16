@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -282,12 +283,30 @@ async def get_service_summaries(
         .group_by(ServiceACL.service_name).all()
     )
 
+    # 6. Personal instances: check which services have personal.yaml enabled
+    import yaml
+    from ansible_runner import SERVICES_DIR as _SERVICES_DIR
+    personal_enabled_set: set[str] = set()
+    if os.path.isdir(_SERVICES_DIR):
+        for dirname in os.listdir(_SERVICES_DIR):
+            personal_path = os.path.join(_SERVICES_DIR, dirname, "personal.yaml")
+            if os.path.isfile(personal_path):
+                try:
+                    with open(personal_path) as f:
+                        pc = yaml.safe_load(f)
+                    if pc and pc.get("enabled"):
+                        personal_enabled_set.add(dirname)
+                except Exception:
+                    pass
+
     # Build result: union of all known service names
     all_names = set()
     all_names.update(health_map.keys())
     all_names.update(webhook_counts.keys())
     all_names.update(schedule_counts.keys())
     all_names.update(cost_map.keys())
+
+    all_names.update(personal_enabled_set)
 
     # Also include services from the runner (file-based discovery)
     runner = request.app.state.ansible_runner
@@ -312,6 +331,8 @@ async def get_service_summaries(
             entry["monthly_cost"] = round(cost_map[name], 2)
         if name in acl_counts:
             entry["acl_count"] = acl_counts[name]
+        if name in personal_enabled_set:
+            entry["personal_enabled"] = True
         if entry:  # only include services that have at least one cross-link
             summaries[name] = entry
 
@@ -332,7 +353,6 @@ async def all_service_outputs(request: Request,
 async def active_deployments(request: Request,
                              user: User = Depends(require_permission("services.view")),
                              session: Session = Depends(get_db_session)):
-    import os
     from ansible_runner import SERVICES_DIR
     deployments = []
     if os.path.isdir(SERVICES_DIR):

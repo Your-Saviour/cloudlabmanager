@@ -1,27 +1,30 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Trash, ExternalLink, Copy, Monitor, TimerReset } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useHasPermission } from '@/lib/permissions'
 import {
-  usePersonalJumphosts,
-  usePersonalJumphostConfig,
-  useCreateJumphost,
-  useDestroyJumphost,
-  useExtendJumphostTTL,
-  type PersonalJumphost,
-} from '@/hooks/usePersonalJumphosts'
+  usePersonalServices,
+  usePersonalInstances,
+  usePersonalInstanceConfig,
+  useCreatePersonalInstance,
+  useDestroyPersonalInstance,
+  useExtendPersonalInstanceTTL,
+  type PersonalInstance,
+} from '@/hooks/usePersonalInstances'
 
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
   DialogContent,
@@ -56,7 +59,6 @@ function formatTTL(ttlHours: number | null, createdAt: string | null): { text: s
   const minutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000))
   const text = hours > 0 ? `${hours}h ${minutes}m remaining` : `${minutes}m remaining`
 
-  // Color: red < 15min, amber < 1h, default otherwise
   let color = ''
   if (remainingMs < 15 * 60 * 1000) color = 'text-red-500'
   else if (remainingMs < 60 * 60 * 1000) color = 'text-amber-500'
@@ -71,35 +73,75 @@ function copyToClipboard(text: string) {
   )
 }
 
-export default function PersonalJumphostsPage() {
+export default function PersonalInstancesPage() {
   const navigate = useNavigate()
-  const canCreate = useHasPermission('personal_jumphosts.create')
-  const canDestroy = useHasPermission('personal_jumphosts.destroy')
+  const canCreate = useHasPermission('personal_instances.create')
+  const canDestroy = useHasPermission('personal_instances.destroy')
 
-  const { data: hosts = [], isLoading } = usePersonalJumphosts()
-  const { data: config } = usePersonalJumphostConfig()
+  const { data: services = [] } = usePersonalServices()
+  const [activeTab, setActiveTab] = useState('all')
+  const serviceFilter = activeTab === 'all' ? undefined : activeTab
+  const { data: hosts = [], isLoading } = usePersonalInstances(serviceFilter)
 
-  const createMutation = useCreateJumphost()
-  const destroyMutation = useDestroyJumphost()
-  const extendMutation = useExtendJumphostTTL()
+  const createMutation = useCreatePersonalInstance()
+  const destroyMutation = useDestroyPersonalInstance()
+  const extendMutation = useExtendPersonalInstanceTTL()
 
   const [createOpen, setCreateOpen] = useState(false)
+  const [createService, setCreateService] = useState('')
   const [createRegion, setCreateRegion] = useState('')
-  const [destroyHost, setDestroyHost] = useState<PersonalJumphost | null>(null)
+  const [createInputs, setCreateInputs] = useState<Record<string, string>>({})
+  const [destroyHost, setDestroyHost] = useState<PersonalInstance | null>(null)
+
+  // Load config for the selected service in the create dialog
+  const { data: selectedConfig } = usePersonalInstanceConfig(createService)
+
+  // Per-service limit display
+  const limitText = useMemo(() => {
+    if (services.length === 0) return null
+    // When filtered to a single service, show that service's limit
+    if (serviceFilter) {
+      const svc = services.find((s) => s.service === serviceFilter)
+      const max = svc?.config.max_per_user ?? 0
+      return max > 0 ? `${hosts.length}/${max} used` : `${hosts.length} active`
+    }
+    // When showing all, show per-service breakdown
+    return services
+      .map((svc) => {
+        const count = hosts.filter((h) => h.service === svc.service).length
+        const max = svc.config.max_per_user
+        return max > 0 ? `${svc.service}: ${count}/${max}` : `${svc.service}: ${count}`
+      })
+      .join(' | ')
+  }, [services, hosts, serviceFilter])
 
   const handleCreate = () => {
-    const region = createRegion || config?.default_region || 'mel'
-    createMutation.mutate(region, {
-      onSuccess: (data) => {
-        toast.success(`Creating jump host: ${data.hostname}`)
-        setCreateOpen(false)
-        setCreateRegion('')
-        if (data.job_id) navigate(`/jobs/${data.job_id}`)
+    if (!createService) {
+      toast.error('Please select a service')
+      return
+    }
+    const region = createRegion || selectedConfig?.default_region || 'mel'
+    const inputs = Object.keys(createInputs).length > 0 ? createInputs : undefined
+    createMutation.mutate(
+      { service: createService, region, inputs },
+      {
+        onSuccess: (data) => {
+          toast.success(`Creating instance: ${data.hostname}`)
+          setCreateOpen(false)
+          resetCreateDialog()
+          if (data.job_id) navigate(`/jobs/${data.job_id}`)
+        },
+        onError: (err: any) => {
+          toast.error(err.response?.data?.detail || 'Failed to create instance')
+        },
       },
-      onError: (err: any) => {
-        toast.error(err.response?.data?.detail || 'Failed to create jump host')
-      },
-    })
+    )
+  }
+
+  const resetCreateDialog = () => {
+    setCreateService('')
+    setCreateRegion('')
+    setCreateInputs({})
   }
 
   const handleDestroy = () => {
@@ -111,13 +153,22 @@ export default function PersonalJumphostsPage() {
         if (data.job_id) navigate(`/jobs/${data.job_id}`)
       },
       onError: (err: any) => {
-        toast.error(err.response?.data?.detail || 'Failed to destroy jump host')
+        toast.error(err.response?.data?.detail || 'Failed to destroy instance')
       },
     })
   }
 
-  const maxPerUser = config?.max_per_user ?? 3
-  const limitText = maxPerUser > 0 ? `${hosts.length}/${maxPerUser} used` : `${hosts.length} active`
+  // Check if create button should be disabled (at limit for selected service or all services)
+  const createDisabled = useMemo(() => {
+    if (services.length === 0) return true
+    // If only one service, check its limit
+    if (services.length === 1) {
+      const max = services[0].config.max_per_user
+      return max > 0 && hosts.length >= max
+    }
+    // If multiple services, don't disable — let the dialog handle per-service limits
+    return false
+  }, [services, hosts])
 
   if (isLoading) {
     return (
@@ -130,12 +181,12 @@ export default function PersonalJumphostsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="My Jump Hosts" description="Personal web-based terminal hosts">
+      <PageHeader title="My Instances" description="Personal cloud instances">
         {canCreate && (
           <Button
             size="sm"
             onClick={() => setCreateOpen(true)}
-            disabled={maxPerUser > 0 && hosts.length >= maxPerUser}
+            disabled={createDisabled}
           >
             <Plus className="mr-2 h-4 w-4" />
             Create
@@ -143,20 +194,36 @@ export default function PersonalJumphostsPage() {
         )}
       </PageHeader>
 
-      {/* Limit indicator */}
-      <div className="flex items-center gap-2">
-        <Badge variant="secondary">{limitText}</Badge>
-      </div>
+      {/* Service filter tabs */}
+      {services.length > 1 && (
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="all">All</TabsTrigger>
+            {services.map((svc) => (
+              <TabsTrigger key={svc.service} value={svc.service}>
+                {svc.service}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
 
-      {/* Host cards */}
+      {/* Limit indicator */}
+      {limitText && (
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary">{limitText}</Badge>
+        </div>
+      )}
+
+      {/* Instance cards */}
       {hosts.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Monitor className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
-            <p className="text-muted-foreground">No personal jump hosts running.</p>
+            <p className="text-muted-foreground">No personal instances running.</p>
             {canCreate && (
               <p className="text-sm text-muted-foreground mt-1">
-                Click "Create" to spin up a web terminal.
+                Click "Create" to provision a personal instance.
               </p>
             )}
           </CardContent>
@@ -170,7 +237,10 @@ export default function PersonalJumphostsPage() {
               <Card key={host.hostname}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-mono">{host.hostname}</CardTitle>
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base font-mono">{host.hostname}</CardTitle>
+                      <Badge variant="outline">{host.service}</Badge>
+                    </div>
                     <StatusBadge status={host.power_status} />
                   </div>
                 </CardHeader>
@@ -282,42 +352,99 @@ export default function PersonalJumphostsPage() {
         open={createOpen}
         onOpenChange={(open) => {
           setCreateOpen(open)
-          if (!open) setCreateRegion('')
+          if (!open) resetCreateDialog()
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Personal Jump Host</DialogTitle>
+            <DialogTitle>Create Personal Instance</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Service selection */}
             <div className="space-y-2">
-              <Label>Region</Label>
+              <Label>Service</Label>
               <Select
-                value={createRegion || config?.default_region || 'mel'}
-                onValueChange={setCreateRegion}
+                value={createService}
+                onValueChange={(val) => {
+                  setCreateService(val)
+                  setCreateRegion('')
+                  setCreateInputs({})
+                }}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a region" />
+                <SelectTrigger aria-label="Service">
+                  <SelectValue placeholder="Select a service" />
                 </SelectTrigger>
                 <SelectContent>
-                  {REGIONS.map((r) => (
-                    <SelectItem key={r.value} value={r.value}>
-                      {r.label}
+                  {services.map((svc) => (
+                    <SelectItem key={svc.service} value={svc.service}>
+                      {svc.service}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-sm text-muted-foreground">
-              A web-based terminal will be provisioned in the selected region.
-              {config?.default_ttl_hours ? ` It will auto-expire after ${config.default_ttl_hours} hours.` : ''}
-            </p>
+
+            {/* Region selection (shows after service is picked) */}
+            {createService && (
+              <div className="space-y-2">
+                <Label>Region</Label>
+                <Select
+                  value={createRegion || selectedConfig?.default_region || 'mel'}
+                  onValueChange={setCreateRegion}
+                >
+                  <SelectTrigger aria-label="Region">
+                    <SelectValue placeholder="Select a region" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REGIONS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Dynamic required inputs */}
+            {createService && selectedConfig?.required_inputs?.map((input) => (
+              <div key={input.name} className="space-y-2">
+                <Label>
+                  {input.label}
+                  {input.required !== false && <span className="text-red-500 ml-1">*</span>}
+                </Label>
+                {input.description && (
+                  <p className="text-xs text-muted-foreground">{input.description}</p>
+                )}
+                <Input
+                  type={input.type === 'password' ? 'password' : 'text'}
+                  value={createInputs[input.name] || ''}
+                  onChange={(e) =>
+                    setCreateInputs((prev) => ({ ...prev, [input.name]: e.target.value }))
+                  }
+                  placeholder={input.label}
+                  aria-required={input.required !== false}
+                />
+              </div>
+            ))}
+
+            {createService && (
+              <p className="text-sm text-muted-foreground">
+                A personal instance will be provisioned in the selected region.
+                {selectedConfig?.default_ttl_hours
+                  ? ` It will auto-expire after ${selectedConfig.default_ttl_hours} hours.`
+                  : ''}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={createMutation.isPending}>
+            <Button
+              onClick={handleCreate}
+              disabled={createMutation.isPending || !createService}
+            >
               {createMutation.isPending ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>
@@ -328,7 +455,7 @@ export default function PersonalJumphostsPage() {
       <ConfirmDialog
         open={!!destroyHost}
         onOpenChange={(open) => { if (!open) setDestroyHost(null) }}
-        title="Destroy Jump Host"
+        title="Destroy Instance"
         description={`This will permanently destroy "${destroyHost?.hostname}" and delete all data on it. This cannot be undone.`}
         confirmLabel="Destroy"
         variant="destructive"

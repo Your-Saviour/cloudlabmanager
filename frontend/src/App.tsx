@@ -36,7 +36,7 @@ import NotificationRulesPage from '@/pages/notifications/NotificationRulesPage'
 import PortalPage from '@/pages/portal/PortalPage'
 import WebhooksPage from '@/pages/webhooks/WebhooksPage'
 import SnapshotsPage from '@/pages/snapshots/SnapshotsPage'
-import PersonalJumphostsPage from '@/pages/personal-jumphosts/PersonalJumphostsPage'
+import PersonalInstancesPage from '@/pages/personal-instances/PersonalInstancesPage'
 
 // Redirect /services/:name/files to /services/:name/config?tab=files
 function ServiceFilesRedirect() {
@@ -126,7 +126,7 @@ function AppRoutes() {
         <Route path="/drift" element={<DriftPage />} />
         <Route path="/notifications/rules" element={<NotificationRulesPage />} />
         <Route path="/snapshots" element={<SnapshotsPage />} />
-        <Route path="/personal-jumphosts" element={<PersonalJumphostsPage />} />
+        <Route path="/personal-instances" element={<PersonalInstancesPage />} />
         <Route path="/portal" element={<PortalPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>

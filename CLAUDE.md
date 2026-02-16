@@ -44,7 +44,7 @@ cloudlabmanager/
 │   │   ├── portal_routes.py   # /api/portal/*
 │   │   ├── webhook_routes.py  # /api/webhooks/* (CRUD + trigger)
 │   │   ├── audit_routes.py    # /api/audit/*
-│   │   └── personal_jumphost_routes.py # /api/personal-jumphosts/*
+│   │   └── personal_instance_routes.py # /api/personal-instances/*
 │   ├── static/                # Frontend SPA
 │   ├── app.py                 # FastAPI entry point
 │   ├── startup.py             # Startup: clone, symlinks, DB init, sync
@@ -57,7 +57,7 @@ cloudlabmanager/
 │   ├── ansible_runner.py      # Async Ansible execution + job tracking
 │   ├── scheduler.py           # Background cron scheduler for recurring jobs
 │   ├── health_checker.py      # Health check config loader + background poller
-│   ├── jumphost_cleanup.py     # Personal jump host TTL cleanup
+│   ├── personal_instance_cleanup.py # Personal instance TTL cleanup
 │   ├── audit.py               # Audit logging
 │   ├── email_service.py       # Email integration (SMTP + Sendamatic)
 │   ├── notification_service.py# Notification dispatch engine
@@ -112,7 +112,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 - **Notification permissions**: `notifications.view`, `notifications.rules.view`, `notifications.rules.manage`, `notifications.channels.manage`
 - **Portal permissions**: `portal.view`, `portal.bookmarks.edit`
 - **Webhook permissions**: `webhooks.view`, `webhooks.create`, `webhooks.edit`, `webhooks.delete`
-- **Personal jump host permissions**: `personal_jumphosts.create`, `personal_jumphosts.destroy`, `personal_jumphosts.view_all`, `personal_jumphosts.manage_all`
+- **Personal instance permissions**: `personal_instances.create`, `personal_instances.destroy`, `personal_instances.view_all`, `personal_instances.manage_all`
 
 ## Environment Variables
 

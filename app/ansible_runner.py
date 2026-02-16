@@ -13,7 +13,7 @@ VAULT_PASS_FILE = "/tmp/.vault_pass.txt"
 CLOUDLAB_PATH = "/app/cloudlab"
 SERVICES_DIR = os.path.join(CLOUDLAB_PATH, "services")
 INVENTORY_FILE = "/inventory/vultr.yml"
-ALLOWED_CONFIG_FILES = {"instance.yaml", "config.yaml", "scripts.yaml", "outputs.yaml"}
+ALLOWED_CONFIG_FILES = {"instance.yaml", "config.yaml", "scripts.yaml"}
 ALLOWED_FILE_SUBDIRS = {"inputs", "outputs"}
 MAX_CONFIG_SIZE = 100 * 1024  # 100KB
 MAX_FILE_SIZE = 100 * 1024  # 100KB
@@ -131,6 +131,18 @@ class AnsibleRunner:
                 pass
         return [{"name": "deploy", "label": "Deploy", "file": "deploy.sh"}]
 
+    def get_service_output_definitions(self, name: str) -> list[dict]:
+        scripts_path = os.path.join(SERVICES_DIR, name, "scripts.yaml")
+        if os.path.isfile(scripts_path):
+            try:
+                with open(scripts_path, "r") as f:
+                    data = yaml.safe_load(f)
+                if data and "outputs" in data:
+                    return data["outputs"]
+            except Exception:
+                pass
+        return []
+
     def get_services(self) -> list[dict]:
         results = []
         if not os.path.isdir(SERVICES_DIR):
@@ -139,11 +151,15 @@ class AnsibleRunner:
             service_path = os.path.join(SERVICES_DIR, dirname)
             deploy_path = os.path.join(service_path, "deploy.sh")
             if os.path.isdir(service_path) and os.path.isfile(deploy_path):
-                results.append({
+                output_defs = self.get_service_output_definitions(dirname)
+                entry = {
                     "name": dirname,
                     "service_dir": f"/services/{dirname}",
                     "scripts": self.get_service_scripts(dirname),
-                })
+                }
+                if output_defs:
+                    entry["output_definitions"] = output_defs
+                results.append(entry)
         return results
 
     def get_service(self, name: str) -> dict | None:

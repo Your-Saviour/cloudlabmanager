@@ -8,22 +8,44 @@ import {
   Compass,
   Copy,
   Terminal,
+  Clock,
+  Trash2,
+  RefreshCw,
+  User,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ServicePortalCard } from '@/components/portal/ServicePortalCard'
 import { toast } from 'sonner'
+import { usePersonalInstances, useDestroyPersonalInstance, useExtendPersonalInstanceTTL } from '@/hooks/usePersonalInstances'
+import { useHasPermission } from '@/lib/permissions'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import type { PortalService, PortalServicesResponse } from '@/types/portal'
+
+function formatTTLRemaining(ttlHours: number | null, createdAt: string | null): string {
+  if (!ttlHours || !createdAt) return 'No TTL'
+  const created = new Date(createdAt)
+  const expiresAt = new Date(created.getTime() + ttlHours * 60 * 60 * 1000)
+  const now = new Date()
+  const remainingMs = expiresAt.getTime() - now.getTime()
+  if (remainingMs <= 0) return 'Expired'
+  const hours = Math.floor(remainingMs / (60 * 60 * 1000))
+  const minutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000))
+  if (hours > 0) return `${hours}h ${minutes}m remaining`
+  return `${minutes}m remaining`
+}
 
 export default function PortalPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [searchQuery, setSearchQuery] = useState('')
   const [groupBy, setGroupBy] = useState<'none' | 'tag' | 'region'>('none')
+  const canPersonal = useHasPermission('personal_instances.create')
 
   const { data, isLoading } = useQuery({
     queryKey: ['portal-services'],
@@ -125,6 +147,9 @@ export default function PortalPage() {
         </div>
       </div>
 
+      {/* Personal Instances Section */}
+      {canPersonal && <PersonalInstancesSection />}
+
       {/* Content */}
       {isLoading ? (
         <LoadingSkeleton viewMode={viewMode} />
@@ -158,6 +183,137 @@ export default function PortalPage() {
           </div>
         ))
       )}
+    </div>
+  )
+}
+
+function PersonalInstancesSection() {
+  const { data: instances = [], isLoading } = usePersonalInstances()
+  const destroyMutation = useDestroyPersonalInstance()
+  const extendMutation = useExtendPersonalInstanceTTL()
+  const canDestroy = useHasPermission('personal_instances.destroy')
+  const [destroyTarget, setDestroyTarget] = useState<string | null>(null)
+
+  if (isLoading) return null
+  if (instances.length === 0) return null
+
+  return (
+    <div className="mb-8">
+      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
+        <User className="h-4 w-4" />
+        My Personal Instances
+      </h2>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {instances.map((inst) => {
+          const isRunning = inst.power_status === 'running'
+          return (
+            <div
+              key={inst.hostname}
+              className="relative overflow-hidden rounded-xl border border-border/50 bg-card p-5 hover:border-border transition-all"
+            >
+              {/* Status strip */}
+              <div
+                className={cn(
+                  'absolute top-0 left-0 right-0 h-[3px]',
+                  isRunning ? 'bg-emerald-500' : 'bg-zinc-600'
+                )}
+              />
+
+              {/* Header */}
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="font-display text-base font-semibold">{inst.hostname}</h3>
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 mt-1">
+                    {inst.service}
+                  </Badge>
+                </div>
+                <span
+                  className={cn(
+                    'text-xs font-medium capitalize',
+                    isRunning ? 'text-emerald-400' : 'text-zinc-500'
+                  )}
+                >
+                  {inst.power_status || 'Unknown'}
+                </span>
+              </div>
+
+              {/* Data cells */}
+              <div className="flex gap-2 mb-3">
+                {inst.ip_address && (
+                  <div className="bg-background/50 rounded-lg px-2.5 py-2 flex-1 min-w-0">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">IP</div>
+                    <div className="text-xs font-mono text-foreground truncate mt-0.5">{inst.ip_address}</div>
+                  </div>
+                )}
+                {inst.region && (
+                  <div className="bg-background/50 rounded-lg px-2.5 py-2 flex-1 min-w-0">
+                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-medium">Region</div>
+                    <div className="text-xs text-foreground truncate mt-0.5">{inst.region}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* TTL */}
+              {inst.ttl_hours != null && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+                  <Clock className="h-3 w-3" />
+                  <span>{formatTTLRemaining(inst.ttl_hours, inst.created_at)}</span>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 border-t border-border/50 pt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7"
+                  aria-label={`Extend TTL for ${inst.hostname}`}
+                  onClick={() => {
+                    extendMutation.mutate(inst.hostname, {
+                      onSuccess: () => toast.success(`TTL extended for ${inst.hostname}`),
+                      onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to extend TTL'),
+                    })
+                  }}
+                  disabled={extendMutation.isPending}
+                >
+                  <RefreshCw className="mr-1 h-3 w-3" /> Extend
+                </Button>
+                {canDestroy && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-7 border-destructive/40 text-destructive hover:bg-destructive/10"
+                    aria-label={`Destroy ${inst.hostname}`}
+                    onClick={() => setDestroyTarget(inst.hostname)}
+                  >
+                    <Trash2 className="mr-1 h-3 w-3" /> Destroy
+                  </Button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <ConfirmDialog
+        open={!!destroyTarget}
+        onOpenChange={(open) => { if (!open) setDestroyTarget(null) }}
+        title="Destroy Personal Instance"
+        description={`This will permanently destroy ${destroyTarget}. Are you sure?`}
+        confirmLabel="Destroy"
+        variant="destructive"
+        onConfirm={() => {
+          if (destroyTarget) {
+            destroyMutation.mutate(destroyTarget, {
+              onSuccess: () => {
+                toast.success(`Destroying ${destroyTarget}`)
+                setDestroyTarget(null)
+              },
+              onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to destroy instance'),
+            })
+          }
+        }}
+      />
     </div>
   )
 }

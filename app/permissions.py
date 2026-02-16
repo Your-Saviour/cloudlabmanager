@@ -76,11 +76,11 @@ STATIC_PERMISSION_DEFS = [
     # portal
     ("portal.view", "portal", "View Portal", "View the service access portal"),
     ("portal.bookmarks.edit", "portal", "Edit Bookmarks", "Create, edit, and delete personal portal bookmarks"),
-    # personal jump hosts
-    ("personal_jumphosts.create", "personal_jumphosts", "Create Personal Jump Hosts", "Create personal jump hosts (self-service)"),
-    ("personal_jumphosts.destroy", "personal_jumphosts", "Destroy Personal Jump Hosts", "Destroy own personal jump hosts"),
-    ("personal_jumphosts.view_all", "personal_jumphosts", "View All Personal Jump Hosts", "View all users' personal jump hosts (admin)"),
-    ("personal_jumphosts.manage_all", "personal_jumphosts", "Manage All Personal Jump Hosts", "Create and destroy personal jump hosts for any user (admin)"),
+    # personal instances
+    ("personal_instances.create", "personal_instances", "Create Personal Instances", "Create personal instances (self-service)"),
+    ("personal_instances.destroy", "personal_instances", "Destroy Personal Instances", "Destroy own personal instances"),
+    ("personal_instances.view_all", "personal_instances", "View All Personal Instances", "View all users' personal instances (admin)"),
+    ("personal_instances.manage_all", "personal_instances", "Manage All Personal Instances", "Create and destroy personal instances for any user (admin)"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

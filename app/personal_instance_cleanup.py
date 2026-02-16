@@ -1,8 +1,8 @@
 """
-Personal Jump Host TTL cleanup.
+Personal Instance TTL cleanup.
 
-Scans inventory objects tagged with 'personal-jump-host' and checks if
-their TTL has expired based on creation time + pjh-ttl tag value.
+Scans inventory objects tagged with 'personal-instance' and checks if
+their TTL has expired based on creation time + pi-ttl tag value.
 Triggers destroy jobs for expired hosts.
 """
 
@@ -11,21 +11,22 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 from database import SessionLocal, InventoryType, InventoryObject, JobRecord
+import yaml
 
-logger = logging.getLogger("jumphost_cleanup")
+logger = logging.getLogger("personal_instance_cleanup")
 
 _cleanup_in_progress = False
 
 
 async def check_and_cleanup_expired(runner) -> list[str]:
     """
-    Check all personal jump hosts for TTL expiration.
+    Check all personal instances for TTL expiration.
     Returns list of hostnames that were queued for destruction.
     """
     global _cleanup_in_progress
 
     if _cleanup_in_progress:
-        logger.debug("Jumphost cleanup already in progress, skipping")
+        logger.debug("Personal instance cleanup already in progress, skipping")
         return []
 
     _cleanup_in_progress = True
@@ -34,28 +35,35 @@ async def check_and_cleanup_expired(runner) -> list[str]:
         try:
             expired = _find_expired_hosts(session, runner)
             if not expired:
-                logger.debug("No expired personal jump hosts found")
+                logger.debug("No expired personal instances found")
                 return []
 
-            logger.info("Found %d expired personal jump host(s) to clean up", len(expired))
+            logger.info("Found %d expired personal instance(s) to clean up", len(expired))
             destroyed = []
             for host in expired:
                 hostname = host["hostname"]
+                service_name = host["service"]
                 try:
+                    # Load the service's personal.yaml to get the destroy script
+                    destroy_script = "destroy"
+                    config = _load_personal_config(service_name)
+                    if config:
+                        destroy_script = config.get("destroy_script", "destroy.sh").replace(".sh", "")
+
                     logger.info(
-                        "Destroying expired jump host: %s (owner=%s, ttl=%dh, created=%s)",
-                        hostname, host["owner"], host["ttl_hours"], host["created_at"],
+                        "Destroying expired personal instance: %s (service=%s, owner=%s, ttl=%dh, created=%s)",
+                        hostname, service_name, host["owner"], host["ttl_hours"], host["created_at"],
                     )
                     await runner.run_script(
-                        "personal-jump-hosts",
-                        "destroy",
+                        service_name,
+                        destroy_script,
                         {"hostname": hostname},
                         user_id=None,
                         username="system:ttl-cleanup",
                     )
                     destroyed.append(hostname)
                 except Exception:
-                    logger.exception("Failed to trigger destroy for expired jump host: %s", hostname)
+                    logger.exception("Failed to trigger destroy for expired personal instance: %s", hostname)
 
             return destroyed
         finally:
@@ -64,8 +72,32 @@ async def check_and_cleanup_expired(runner) -> list[str]:
         _cleanup_in_progress = False
 
 
+def _load_personal_config(service_name: str) -> dict | None:
+    """Load personal.yaml for a given service."""
+    import os
+    import re
+    # Validate service name to prevent path traversal from tag-sourced values
+    if not re.match(r"^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$", service_name):
+        logger.warning("Invalid service name in tag: %s", service_name)
+        return None
+    services_dir = "/app/cloudlab/services"
+    config_path = os.path.join(services_dir, service_name, "personal.yaml")
+    real_path = os.path.realpath(config_path)
+    if not real_path.startswith(os.path.realpath(services_dir) + "/"):
+        logger.warning("Path traversal blocked for service: %s", service_name)
+        return None
+    try:
+        with open(real_path) as f:
+            config = yaml.safe_load(f)
+        if not config or not config.get("enabled"):
+            return None
+        return config
+    except FileNotFoundError:
+        return None
+
+
 def _find_expired_hosts(session, runner) -> list[dict]:
-    """Find all personal jump hosts whose TTL has expired."""
+    """Find all personal instances whose TTL has expired."""
     inv_type = session.query(InventoryType).filter_by(slug="server").first()
     if not inv_type:
         return []
@@ -77,20 +109,23 @@ def _find_expired_hosts(session, runner) -> list[dict]:
         data = json.loads(obj.data)
         vultr_tags = data.get("vultr_tags", [])
 
-        if "personal-jump-host" not in vultr_tags:
+        if "personal-instance" not in vultr_tags:
             continue
 
-        # Extract TTL from tags
+        # Extract TTL, owner, and service from tags
         ttl_hours = None
         owner = None
+        service = None
         for tag in vultr_tags:
-            if tag.startswith("pjh-ttl:"):
+            if tag.startswith("pi-ttl:"):
                 try:
                     ttl_hours = int(tag.split(":", 1)[1])
                 except ValueError:
                     pass
-            elif tag.startswith("pjh-user:"):
+            elif tag.startswith("pi-user:"):
                 owner = tag.split(":", 1)[1]
+            elif tag.startswith("pi-service:"):
+                service = tag.split(":", 1)[1]
 
         # Skip hosts with no TTL or TTL=0 (never expire)
         if not ttl_hours or ttl_hours == 0:
@@ -108,7 +143,7 @@ def _find_expired_hosts(session, runner) -> list[dict]:
         expires_at = created_at + timedelta(hours=ttl_hours)
         if now >= expires_at:
             hostname = data.get("hostname", "")
-            if not hostname:
+            if not hostname or not service:
                 continue
 
             # Skip if there's already a running destroy job for this host
@@ -119,6 +154,7 @@ def _find_expired_hosts(session, runner) -> list[dict]:
             expired.append({
                 "hostname": hostname,
                 "owner": owner,
+                "service": service,
                 "ttl_hours": ttl_hours,
                 "created_at": created_at.isoformat(),
                 "expired_at": expires_at.isoformat(),
@@ -132,7 +168,6 @@ def _has_running_destroy_job(runner, hostname: str) -> bool:
     for job in runner.jobs.values():
         if (
             job.status == "running"
-            and job.service == "personal-jump-hosts"
             and job.script == "destroy"
             and job.inputs.get("hostname") == hostname
         ):

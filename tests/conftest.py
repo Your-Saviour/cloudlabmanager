@@ -73,8 +73,8 @@ _SESSION_LOCAL_MODULES = [
     "routes.webhook_routes",
     "routes.snapshot_routes",
     "snapshot_poller",
-    "routes.personal_jumphost_routes",
-    "jumphost_cleanup",
+    "routes.personal_instance_routes",
+    "personal_instance_cleanup",
 ]
 
 
@@ -293,8 +293,8 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     from routes.snapshot_routes import router as snapshot_router
     app.include_router(snapshot_router)
 
-    from routes.personal_jumphost_routes import router as personal_jumphost_router
-    app.include_router(personal_jumphost_router)
+    from routes.personal_instance_routes import router as personal_instance_router
+    app.include_router(personal_instance_router)
 
     return app
 

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Link2, Clock, DollarSign, Shield } from 'lucide-react'
+import { Link2, Clock, DollarSign, Shield, User } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useHasPermission } from '@/lib/permissions'
 import {
@@ -14,6 +14,7 @@ export interface ServiceSummary {
   schedule_count?: number
   monthly_cost?: number
   acl_count?: number
+  personal_enabled?: boolean
 }
 
 interface ServiceCrossLinksProps {
@@ -34,8 +35,8 @@ export function ServiceCrossLinks({ serviceName, summary }: ServiceCrossLinksPro
 
   if (!summary) return null
 
-  const { health_status, webhook_count, schedule_count, monthly_cost, acl_count } = summary
-  const hasAny = health_status || webhook_count || schedule_count || (canViewCosts && monthly_cost != null) || (acl_count != null && acl_count > 0)
+  const { health_status, webhook_count, schedule_count, monthly_cost, acl_count, personal_enabled } = summary
+  const hasAny = health_status || webhook_count || schedule_count || (canViewCosts && monthly_cost != null) || (acl_count != null && acl_count > 0) || personal_enabled
   if (!hasAny) return null
 
   const health = health_status ? healthConfig[health_status] || healthConfig.unknown : null
@@ -153,6 +154,29 @@ export function ServiceCrossLinks({ serviceName, summary }: ServiceCrossLinksPro
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
             Custom access controls configured — click to view
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* Personal instances chip */}
+      {personal_enabled && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="outline"
+              className="text-[11px] px-2 py-0.5 cursor-pointer hover:bg-accent/50 transition-colors gap-1.5"
+              onClick={(e) => {
+                e.stopPropagation()
+                navigate(`/personal-instances?service=${encodeURIComponent(serviceName)}`)
+              }}
+              aria-label={`Personal instances enabled for ${serviceName}`}
+            >
+              <User className="h-3 w-3 text-cyan-400" aria-hidden="true" />
+              <span>Personal</span>
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Personal instances enabled — click to manage
           </TooltipContent>
         </Tooltip>
       )}

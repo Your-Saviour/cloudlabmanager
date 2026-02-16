@@ -150,17 +150,28 @@ def seed_default_notification_rules():
         session.close()
 
 
-def seed_jumphost_cleanup_schedule():
-    """Create the personal jump host TTL cleanup scheduled job if it doesn't exist."""
+def seed_personal_instance_cleanup_schedule():
+    """Create the personal instance TTL cleanup scheduled job if it doesn't exist.
+    Migrates old 'personal_jumphost_cleanup' schedule if found."""
     from database import SessionLocal, ScheduledJob
     from croniter import croniter
     from datetime import datetime, timezone
 
     session = SessionLocal()
     try:
+        # Migrate old schedule if it exists
+        old = session.query(ScheduledJob).filter_by(system_task="personal_jumphost_cleanup").first()
+        if old:
+            old.system_task = "personal_instance_cleanup"
+            old.name = "Personal Instance Cleanup"
+            old.description = "Destroy personal instances whose TTL has expired"
+            session.commit()
+            print("  Migrated personal jump host cleanup schedule -> personal instance cleanup")
+            return
+
         existing = (
             session.query(ScheduledJob)
-            .filter_by(system_task="personal_jumphost_cleanup")
+            .filter_by(system_task="personal_instance_cleanup")
             .first()
         )
         if existing:
@@ -172,10 +183,10 @@ def seed_jumphost_cleanup_schedule():
         next_run = cron.get_next(datetime).replace(tzinfo=timezone.utc)
 
         schedule = ScheduledJob(
-            name="Personal Jump Host Cleanup",
-            description="Destroy personal jump hosts whose TTL has expired",
+            name="Personal Instance Cleanup",
+            description="Destroy personal instances whose TTL has expired",
             job_type="system_task",
-            system_task="personal_jumphost_cleanup",
+            system_task="personal_instance_cleanup",
             cron_expression=cron_expr,
             is_enabled=True,
             skip_if_running=True,
@@ -183,10 +194,10 @@ def seed_jumphost_cleanup_schedule():
         )
         session.add(schedule)
         session.commit()
-        print("  Seeded personal jump host cleanup schedule (every 15 min)")
+        print("  Seeded personal instance cleanup schedule (every 15 min)")
     except Exception as e:
         session.rollback()
-        print(f"Warning: Could not seed jumphost cleanup schedule: {e}")
+        print(f"Warning: Could not seed personal instance cleanup schedule: {e}")
     finally:
         session.close()
 
@@ -274,8 +285,8 @@ def init_database():
     # Seed default notification rules (idempotent — only if no rules exist)
     seed_default_notification_rules()
 
-    # Seed personal jump host cleanup schedule (idempotent)
-    seed_jumphost_cleanup_schedule()
+    # Seed personal instance cleanup schedule (idempotent)
+    seed_personal_instance_cleanup_schedule()
 
     return type_configs
 
