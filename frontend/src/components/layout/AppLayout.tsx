@@ -7,7 +7,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { CommandPalette } from './CommandPalette'
-import { ReportBugModal } from '@/components/feedback/ReportBugModal'
+import { SubmitFeedbackModal } from '@/components/feedback/SubmitFeedbackModal'
 
 export function AppLayout() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed)
@@ -31,7 +31,7 @@ export function AppLayout() {
         </main>
       </div>
       <CommandPalette />
-      <ReportBugModal open={reportBugOpen} onOpenChange={setReportBugOpen} />
+      <SubmitFeedbackModal open={reportBugOpen} onClose={() => setReportBugOpen(false)} type="bug_report" />
     </div>
   )
 }

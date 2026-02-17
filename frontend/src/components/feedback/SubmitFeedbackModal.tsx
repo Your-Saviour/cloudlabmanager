@@ -31,9 +31,9 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 const schema = z.object({
   title: z
     .string()
-    .min(1, 'Title is required')
+    .min(3, 'Title must be at least 3 characters')
     .max(200, 'Title must be at most 200 characters'),
-  description: z.string().min(1, 'Description is required'),
+  description: z.string().min(10, 'Description must be at least 10 characters'),
   priority: z.enum(['low', 'medium', 'high']),
   screenshot: z
     .instanceof(FileList)
@@ -109,8 +109,14 @@ export function SubmitFeedbackModal({ open, onClose, type }: Props) {
       )
       onClose()
     },
-    onError: () => {
-      toast.error('Failed to submit feedback. Please try again.')
+    onError: (error: any) => {
+      const detail = error?.response?.data?.detail
+      const message = Array.isArray(detail)
+        ? detail.map((d: any) => d.msg).join(', ')
+        : typeof detail === 'string'
+          ? detail
+          : 'Failed to submit feedback. Please try again.'
+      toast.error(message)
     },
   })
 

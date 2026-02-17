@@ -45,7 +45,7 @@ const STATIC_ACTIONS: CommandAction[] = [
   { id: 'create-schedule', label: 'Create Schedule', icon: 'Clock', href: '/schedules', permission: 'schedules.create', keywords: ['cron', 'timer', 'new'], category: 'admin' },
   { id: 'invite-user', label: 'Invite User', icon: 'UserPlus', href: '/users', permission: 'users.create', keywords: ['new user', 'add user'], category: 'admin' },
   // Feedback
-  { id: 'report-bug', label: 'Report Bug', icon: 'Bug', keywords: ['bug', 'report', 'issue', 'feedback'], permission: 'bug_reports.submit', action: () => useUIStore.getState().setReportBugOpen(true), category: 'system' },
+  { id: 'report-bug', label: 'Report Bug', icon: 'Bug', keywords: ['bug', 'report', 'issue', 'feedback'], permission: 'feedback.submit', action: () => useUIStore.getState().setReportBugOpen(true), category: 'system' },
 ]
 
 export function useCommandActions() {

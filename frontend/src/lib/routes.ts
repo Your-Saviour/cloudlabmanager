@@ -75,7 +75,6 @@ export const mainRoutes: RouteDefinition[] = [
   { label: 'Health', href: '/health', icon: 'HeartPulse', section: 'main', permission: 'health.view', keywords: ['status', 'monitoring', 'uptime'] },
   { label: 'Drift Detection', href: '/drift', icon: 'GitCompare', section: 'main', permission: 'drift.view', keywords: ['drift', 'changes', 'compare', 'diff'] },
   { label: 'Webhooks', href: '/webhooks', icon: 'Webhook', section: 'main', permission: 'webhooks.view', keywords: ['hooks', 'triggers', 'api'] },
-  { label: 'My Bug Reports', href: '/bug-reports', icon: 'Bug', section: 'main', permission: 'bug_reports.view_own', keywords: ['bugs', 'feedback', 'issues', 'my reports'] },
 ]
 
 export const adminRoutes: RouteDefinition[] = [
@@ -83,7 +82,6 @@ export const adminRoutes: RouteDefinition[] = [
   { label: 'Roles', href: '/roles', icon: 'Shield', section: 'admin', permission: 'roles.view', keywords: ['permissions', 'rbac', 'access'] },
   { label: 'Audit Log', href: '/audit', icon: 'ScrollText', section: 'admin', permission: 'system.audit_log', keywords: ['log', 'activity', 'history', 'events'] },
   { label: 'Notifications', href: '/notifications/rules', icon: 'Bell', section: 'admin', permission: 'notifications.rules.view', keywords: ['alerts', 'rules', 'channels'] },
-  { label: 'Bug Reports', href: '/bug-reports', icon: 'Bug', section: 'admin', permission: 'bug_reports.view_all', keywords: ['bugs', 'feedback', 'issues', 'reports'] },
   { label: 'Feedback', href: '/feedback', icon: 'MessageSquareMore', section: 'admin', permission: 'feedback.view_all', keywords: ['feature', 'bug', 'request', 'feedback'] },
 ]
 

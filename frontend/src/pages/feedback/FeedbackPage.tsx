@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MessageSquare, Bug, Plus, AlertTriangle } from 'lucide-react'
 import api from '@/lib/api'
@@ -70,6 +70,30 @@ function formatRelativeTime(dateStr: string): string {
   if (diffHr < 24) return `${diffHr}h ago`
   if (diffDay < 30) return `${diffDay}d ago`
   return date.toLocaleDateString()
+}
+
+function AuthenticatedScreenshot({ feedbackId }: { feedbackId: number }) {
+  const [src, setSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    let url: string | null = null
+    api.get(`/api/feedback/${feedbackId}/screenshot`, { responseType: 'blob' })
+      .then((res) => {
+        url = URL.createObjectURL(res.data)
+        setSrc(url)
+      })
+      .catch(() => setSrc(null))
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [feedbackId])
+
+  if (!src) return null
+
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground">Screenshot</Label>
+      <img src={src} alt="Feedback screenshot" className="mt-1 rounded border max-w-full" />
+    </div>
+  )
 }
 
 export default function FeedbackPage() {
@@ -335,15 +359,7 @@ export default function FeedbackPage() {
               </div>
 
               {selectedRequest.has_screenshot && (
-                <div>
-                  <Label className="text-xs text-muted-foreground">Screenshot</Label>
-                  <img
-                    src={`/api/feedback/${selectedRequest.id}/screenshot`}
-                    alt="Feedback screenshot"
-                    loading="lazy"
-                    className="mt-1 rounded border max-w-full"
-                  />
-                </div>
+                <AuthenticatedScreenshot feedbackId={selectedRequest.id} />
               )}
 
               {/* Admin controls */}
