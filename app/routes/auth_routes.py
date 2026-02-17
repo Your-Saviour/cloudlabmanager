@@ -7,6 +7,8 @@ from models import (
     LoginRequest, TokenResponse, SetupRequest, AcceptInviteRequest,
     PasswordResetRequest, PasswordResetConfirm, ChangePasswordRequest,
     UpdateProfileRequest,
+    MFAConfirmRequest, MFAVerifyRequest, MFADisableRequest,
+    VerifyIdentityRequest,
 )
 from auth import (
     hash_password, verify_password, create_access_token,
@@ -92,7 +94,18 @@ async def login(req: LoginRequest, request: Request, session: Session = Depends(
     user.last_login_at = datetime.now(timezone.utc)
     session.flush()
 
-    # Audit log
+    # Check if MFA is enabled
+    from database import UserMFA
+    mfa = session.query(UserMFA).filter_by(user_id=user.id, is_enabled=True).first()
+    if mfa:
+        from auth import create_mfa_token
+        mfa_token = create_mfa_token(user)
+        return {
+            "mfa_required": True,
+            "mfa_token": mfa_token,
+        }
+
+    # No MFA — issue full token
     from audit import log_action
     log_action(session, user.id, user.username, "login", "auth",
                ip_address=request.client.host if request.client else None)
@@ -278,3 +291,264 @@ async def reset_password(req: PasswordResetConfirm, request: Request, session: S
 
     session.flush()
     return {"status": "ok"}
+
+
+# --- MFA endpoints ---
+
+
+@router.get("/mfa/status")
+async def mfa_status(user: User = Depends(get_current_user),
+                     session: Session = Depends(get_db_session)):
+    from database import UserMFA, MFABackupCode
+    mfa = session.query(UserMFA).filter_by(user_id=user.id).first()
+    if not mfa or not mfa.is_enabled:
+        return {"mfa_enabled": False, "enrolled_at": None, "backup_codes_remaining": 0}
+    remaining = session.query(MFABackupCode).filter_by(
+        user_id=user.id, is_used=False
+    ).count()
+    return {
+        "mfa_enabled": True,
+        "enrolled_at": mfa.enrolled_at.isoformat() if mfa.enrolled_at else None,
+        "backup_codes_remaining": remaining,
+    }
+
+
+@router.post("/verify-identity")
+async def verify_identity(req: VerifyIdentityRequest,
+                          user: User = Depends(get_current_user),
+                          session: Session = Depends(get_db_session)):
+    """Verify current user's identity via password or MFA code.
+    Used as a re-authentication gate before sensitive operations."""
+    from database import UserMFA
+    from auth import verify_password
+
+    verified = False
+
+    # Try MFA code first
+    if req.mfa_code and req.mfa_code.strip().isdigit() and len(req.mfa_code.strip()) == 6:
+        mfa = session.query(UserMFA).filter_by(user_id=user.id, is_enabled=True).first()
+        if mfa:
+            from mfa import decrypt_totp_secret, verify_totp
+            secret = decrypt_totp_secret(mfa.totp_secret_encrypted)
+            verified = verify_totp(secret, req.mfa_code.strip())
+
+    # Fall back to password
+    if not verified and req.password:
+        db_user = session.query(User).filter_by(id=user.id).first()
+        if db_user:
+            verified = verify_password(req.password, db_user.password_hash)
+
+    if not verified:
+        raise HTTPException(status_code=400, detail="Invalid password or code")
+
+    return {"verified": True}
+
+
+@router.post("/mfa/enroll")
+async def mfa_enroll(user: User = Depends(get_current_user),
+                     session: Session = Depends(get_db_session)):
+    from database import UserMFA
+    from mfa import generate_totp_secret, encrypt_totp_secret, get_totp_uri, generate_qr_code_base64
+
+    existing = session.query(UserMFA).filter_by(user_id=user.id, is_enabled=True).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="MFA is already enabled")
+
+    secret = generate_totp_secret()
+    uri = get_totp_uri(secret, user.username)
+    qr_base64 = generate_qr_code_base64(uri)
+
+    # Store encrypted secret in a pending (not yet enabled) MFA record
+    mfa = session.query(UserMFA).filter_by(user_id=user.id).first()
+    if mfa:
+        mfa.totp_secret_encrypted = encrypt_totp_secret(secret)
+        mfa.is_enabled = False
+    else:
+        mfa = UserMFA(
+            user_id=user.id,
+            totp_secret_encrypted=encrypt_totp_secret(secret),
+            is_enabled=False,
+        )
+        session.add(mfa)
+    session.flush()
+
+    return {
+        "totp_secret": secret,
+        "qr_code": qr_base64,
+        "otpauth_uri": uri,
+    }
+
+
+@router.post("/mfa/confirm")
+async def mfa_confirm(req: MFAConfirmRequest,
+                      user: User = Depends(get_current_user),
+                      session: Session = Depends(get_db_session)):
+    from database import UserMFA, MFABackupCode
+    from mfa import decrypt_totp_secret, verify_totp, generate_backup_codes, hash_backup_code
+
+    mfa = session.query(UserMFA).filter_by(user_id=user.id).first()
+    if not mfa or not mfa.totp_secret_encrypted:
+        raise HTTPException(status_code=400, detail="No MFA enrollment in progress")
+    if mfa.is_enabled:
+        raise HTTPException(status_code=400, detail="MFA is already enabled")
+
+    secret = decrypt_totp_secret(mfa.totp_secret_encrypted)
+    if not verify_totp(secret, req.code):
+        raise HTTPException(status_code=400, detail="Invalid code. Please try again.")
+
+    # Enable MFA
+    mfa.is_enabled = True
+    mfa.enrolled_at = datetime.now(timezone.utc)
+
+    # Generate backup codes
+    codes = generate_backup_codes()
+    for code in codes:
+        session.add(MFABackupCode(
+            user_id=user.id,
+            code_hash=hash_backup_code(code),
+        ))
+    session.flush()
+
+    # Audit log
+    from audit import log_action
+    log_action(session, user.id, user.username, "mfa_enrolled", "auth")
+
+    # Notify
+    from notification_service import EVENT_MFA_ENROLLED, notify
+    import asyncio
+    asyncio.ensure_future(notify(EVENT_MFA_ENROLLED, {
+        "title": f"MFA enabled for {user.username}",
+        "body": f"User {user.username} has enabled two-factor authentication.",
+        "severity": "info",
+    }))
+
+    return {"backup_codes": codes}
+
+
+@router.post("/mfa/verify")
+@limiter.limit("10/minute")
+async def mfa_verify(req: MFAVerifyRequest, request: Request,
+                     session: Session = Depends(get_db_session)):
+    from auth import validate_mfa_token, create_access_token
+    from database import UserMFA, MFABackupCode
+    from mfa import decrypt_totp_secret, verify_totp, verify_backup_code
+
+    payload = validate_mfa_token(req.mfa_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired MFA token")
+
+    user_id = payload.get("uid")
+    user = session.query(User).filter_by(id=user_id, is_active=True).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    mfa = session.query(UserMFA).filter_by(user_id=user.id, is_enabled=True).first()
+    if not mfa:
+        raise HTTPException(status_code=400, detail="MFA is not enabled")
+
+    secret = decrypt_totp_secret(mfa.totp_secret_encrypted)
+    code = req.code.strip()
+
+    verified = False
+
+    # Try TOTP first (6 digits)
+    if code.isdigit() and len(code) == 6:
+        verified = verify_totp(secret, code)
+
+    # If TOTP didn't match, try backup codes
+    if not verified:
+        backup_codes = session.query(MFABackupCode).filter_by(
+            user_id=user.id, is_used=False
+        ).all()
+        for bc in backup_codes:
+            if verify_backup_code(code, bc.code_hash):
+                bc.is_used = True
+                bc.used_at = datetime.now(timezone.utc)
+                verified = True
+                break
+
+    if not verified:
+        raise HTTPException(status_code=401, detail="Invalid verification code")
+
+    session.flush()
+
+    # Audit log
+    from audit import log_action
+    log_action(session, user.id, user.username, "login", "auth",
+               details={"mfa_verified": True},
+               ip_address=request.client.host if request.client else None)
+
+    token = create_access_token(user)
+    perms = get_user_permissions(session, user.id)
+    return TokenResponse(
+        access_token=token,
+        user=_user_dict(user),
+        permissions=sorted(perms),
+    )
+
+
+@router.post("/mfa/disable")
+async def mfa_disable(req: MFADisableRequest,
+                      user: User = Depends(get_current_user),
+                      session: Session = Depends(get_db_session)):
+    from database import UserMFA, MFABackupCode
+    from mfa import decrypt_totp_secret, verify_totp
+    from auth import verify_password
+
+    mfa = session.query(UserMFA).filter_by(user_id=user.id, is_enabled=True).first()
+    if not mfa:
+        raise HTTPException(status_code=400, detail="MFA is not enabled")
+
+    # Verify identity via TOTP code or password
+    verified = False
+    if req.code and req.code.strip().isdigit() and len(req.code.strip()) == 6:
+        secret = decrypt_totp_secret(mfa.totp_secret_encrypted)
+        verified = verify_totp(secret, req.code.strip())
+    if not verified and req.password:
+        db_user = session.query(User).filter_by(id=user.id).first()
+        verified = verify_password(req.password, db_user.password_hash)
+    if not verified:
+        raise HTTPException(status_code=400, detail="Invalid code or password")
+
+    # Delete MFA record and backup codes
+    session.query(MFABackupCode).filter_by(user_id=user.id).delete()
+    session.delete(mfa)
+    session.flush()
+
+    from audit import log_action
+    log_action(session, user.id, user.username, "mfa_disabled", "auth")
+
+    from notification_service import EVENT_MFA_DISABLED, notify
+    import asyncio
+    asyncio.ensure_future(notify(EVENT_MFA_DISABLED, {
+        "title": f"MFA disabled for {user.username}",
+        "body": f"User {user.username} has disabled two-factor authentication.",
+        "severity": "warning",
+    }))
+
+    return {"status": "ok"}
+
+
+@router.post("/mfa/backup-codes/regenerate")
+async def mfa_regenerate_backup_codes(user: User = Depends(get_current_user),
+                                       session: Session = Depends(get_db_session)):
+    from database import UserMFA, MFABackupCode
+    from mfa import generate_backup_codes, hash_backup_code
+
+    mfa = session.query(UserMFA).filter_by(user_id=user.id, is_enabled=True).first()
+    if not mfa:
+        raise HTTPException(status_code=400, detail="MFA is not enabled")
+
+    # Delete old backup codes
+    session.query(MFABackupCode).filter_by(user_id=user.id).delete()
+
+    # Generate new ones
+    codes = generate_backup_codes()
+    for code in codes:
+        session.add(MFABackupCode(
+            user_id=user.id,
+            code_hash=hash_backup_code(code),
+        ))
+    session.flush()
+
+    return {"backup_codes": codes}

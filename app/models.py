@@ -147,6 +147,65 @@ class UpdateProfileRequest(BaseModel):
         return v.lower() if v else v
 
 
+class MFAEnrollResponse(BaseModel):
+    """Response from POST /api/auth/mfa/enroll"""
+    totp_secret: str       # Raw secret for manual entry
+    qr_code: str           # Base64-encoded PNG of QR code
+    otpauth_uri: str       # otpauth:// URI
+
+
+class MFAConfirmRequest(BaseModel):
+    """Request to POST /api/auth/mfa/confirm"""
+    code: str
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v):
+        if not v.strip().isdigit() or len(v.strip()) != 6:
+            raise ValueError("Code must be a 6-digit number")
+        return v.strip()
+
+
+class MFAConfirmResponse(BaseModel):
+    """Response from POST /api/auth/mfa/confirm"""
+    backup_codes: list[str]
+
+
+class MFAVerifyRequest(BaseModel):
+    """Request to POST /api/auth/mfa/verify (login step 2)"""
+    mfa_token: str         # Short-lived token from login step 1
+    code: str              # 6-digit TOTP code OR backup code
+
+
+class MFADisableRequest(BaseModel):
+    """Request to POST /api/auth/mfa/disable"""
+    code: str              # Current TOTP code to confirm identity
+    password: Optional[str] = None  # Alternative: password confirmation
+
+
+class VerifyIdentityRequest(BaseModel):
+    """Request to POST /api/auth/verify-identity"""
+    password: Optional[str] = None
+    mfa_code: Optional[str] = None
+
+
+class MFAStatusResponse(BaseModel):
+    """Response from GET /api/auth/mfa/status"""
+    mfa_enabled: bool
+    enrolled_at: Optional[str] = None
+    backup_codes_remaining: int = 0
+
+
+class LoginResponse(BaseModel):
+    """Extended login response that may indicate MFA is required"""
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
+    user: Optional[dict] = None
+    permissions: list[str] = []
+    mfa_required: bool = False
+    mfa_token: Optional[str] = None  # Short-lived token for MFA step
+
+
 class RoleCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
@@ -449,6 +508,7 @@ class NotificationRuleOut(BaseModel):
     role_name: Optional[str] = None
     filters: Optional[dict]
     is_enabled: bool
+    is_default: bool = False
     created_at: str
 
 
