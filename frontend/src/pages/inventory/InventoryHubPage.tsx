@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, Monitor, RefreshCw, Square } from 'lucide-react'
+import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, Monitor, RefreshCw, Square, Eye } from 'lucide-react'
 import api from '@/lib/api'
+import { useAuthStore } from '@/stores/authStore'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useHasPermission } from '@/lib/permissions'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -26,6 +27,8 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
+import { CredentialViewModal } from '@/components/inventory/CredentialViewModal'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import type { InventoryObject, Tag } from '@/types'
 
@@ -154,6 +157,12 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
   // Bulk action (destroy, stop, etc.)
   const [bulkActionOpen, setBulkActionOpen] = useState<string | null>(null)
 
+  // Super admin credential reveal
+  const isSuperAdmin = useAuthStore((s) => s.user?.permissions?.includes('*') ?? false)
+  const [credModalOpen, setCredModalOpen] = useState(false)
+  const [credModalName, setCredModalName] = useState('')
+  const [credModalValue, setCredModalValue] = useState('')
+
   const bulkActionMutation = useMutation({
     mutationFn: async ({ objectIds, actionName }: { objectIds: number[], actionName: string }) => {
       const { data } = await api.post(`/api/inventory/${typeSlug}/bulk/action/${actionName}`, {
@@ -263,8 +272,47 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
     ]
 
     if (typeConfig) {
-      for (const field of typeConfig.fields.slice(0, 3)) {
-        if (field.name === 'name' || field.type === 'secret' || field.type === 'json') continue
+      const LONG_CRED_TYPES = ['ssh_key', 'certificate']
+
+      for (const field of typeConfig.fields.slice(0, 5)) {
+        if (field.name === 'name' || field.type === 'json') continue
+
+        // Secret fields: only show for super admin
+        if (field.type === 'secret') {
+          if (!isSuperAdmin) continue
+          cols.push({
+            id: field.name,
+            header: field.label || field.name,
+            cell: ({ row }) => {
+              const val = row.original.data[field.name]
+              if (val == null || val === '') return <span className="text-muted-foreground text-xs">—</span>
+              const credType = row.original.data.credential_type as string | undefined
+              const isLong = credType && LONG_CRED_TYPES.includes(credType)
+
+              if (isLong) {
+                return (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setCredModalName(row.original.name)
+                      setCredModalValue(String(val))
+                      setCredModalOpen(true)
+                    }}
+                  >
+                    <Eye className="h-3 w-3 mr-1" /> View
+                  </Button>
+                )
+              }
+
+              return <CredentialDisplay value={String(val)} />
+            },
+          })
+          continue
+        }
+
         cols.push({
           id: field.name,
           header: field.label || field.name,
@@ -373,7 +421,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
     }
 
     return cols
-  }, [typeSlug, typeConfig])
+  }, [typeSlug, typeConfig, isSuperAdmin])
 
   // Build bulk actions array
   const bulkActions = useMemo(() => {
@@ -539,6 +587,14 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
         confirmLabel="Destroy"
         variant="destructive"
         onConfirm={() => destroyTarget && destroyMutation.mutate(destroyTarget)}
+      />
+
+      {/* Credential view modal (super admin) */}
+      <CredentialViewModal
+        open={credModalOpen}
+        onOpenChange={setCredModalOpen}
+        name={credModalName}
+        value={credModalValue}
       />
     </div>
   )
