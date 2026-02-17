@@ -14,9 +14,10 @@ interface CredentialViewModalProps {
   onOpenChange: (open: boolean) => void
   name: string
   value: string
+  loading?: boolean
 }
 
-export function CredentialViewModal({ open, onOpenChange, name, value }: CredentialViewModalProps) {
+export function CredentialViewModal({ open, onOpenChange, name, value, loading }: CredentialViewModalProps) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -37,19 +38,27 @@ export function CredentialViewModal({ open, onOpenChange, name, value }: Credent
           <DialogTitle>{name}</DialogTitle>
         </DialogHeader>
         <div className="relative">
-          <pre className="bg-muted rounded-md p-4 text-xs font-mono whitespace-pre-wrap break-all max-h-96 overflow-auto">
-            {value}
-          </pre>
-          <Button
-            variant="outline"
-            size="sm"
-            className="absolute top-2 right-2"
-            onClick={handleCopy}
-            aria-label={copied ? 'Copied to clipboard' : 'Copy to clipboard'}
-          >
-            {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
-            {copied ? 'Copied' : 'Copy'}
-          </Button>
+          {loading ? (
+            <div className="bg-muted rounded-md p-4 h-32 flex items-center justify-center">
+              <span className="text-sm text-muted-foreground animate-pulse">Loading...</span>
+            </div>
+          ) : (
+            <pre className="bg-muted rounded-md p-4 text-xs font-mono whitespace-pre-wrap break-all max-h-96 overflow-auto">
+              {value}
+            </pre>
+          )}
+          {!loading && value && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="absolute top-2 right-2"
+              onClick={handleCopy}
+              aria-label={copied ? 'Copied to clipboard' : 'Copy to clipboard'}
+            >
+              {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+              {copied ? 'Copied' : 'Copy'}
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>

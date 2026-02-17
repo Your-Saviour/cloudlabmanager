@@ -1,9 +1,8 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, Monitor, RefreshCw, Square, Eye } from 'lucide-react'
 import api from '@/lib/api'
-import { useAuthStore } from '@/stores/authStore'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useHasPermission } from '@/lib/permissions'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -27,8 +26,8 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
 import { CredentialViewModal } from '@/components/inventory/CredentialViewModal'
+import { ReauthDialog } from '@/components/inventory/ReauthDialog'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
 import type { InventoryObject, Tag } from '@/types'
 
@@ -157,11 +156,60 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
   // Bulk action (destroy, stop, etc.)
   const [bulkActionOpen, setBulkActionOpen] = useState<string | null>(null)
 
-  // Super admin credential reveal
-  const isSuperAdmin = useAuthStore((s) => s.user?.permissions?.includes('*') ?? false)
+  // Credential reveal with re-auth gate
+  const canRevealSecrets = useHasPermission(`inventory.${typeSlug}.view`)
   const [credModalOpen, setCredModalOpen] = useState(false)
   const [credModalName, setCredModalName] = useState('')
   const [credModalValue, setCredModalValue] = useState('')
+  const [credModalLoading, setCredModalLoading] = useState(false)
+  const [reauthOpen, setReauthOpen] = useState(false)
+  const [reauthGrantedUntil, setReauthGrantedUntil] = useState(0)
+  const pendingActionRef = useRef<(() => void) | null>(null)
+
+  const isReauthValid = () => Date.now() < reauthGrantedUntil
+
+  const requireReauth = (action: () => void) => {
+    if (isReauthValid()) {
+      action()
+    } else {
+      pendingActionRef.current = action
+      setReauthOpen(true)
+    }
+  }
+
+  const handleReauthVerified = () => {
+    setReauthGrantedUntil(Date.now() + 10 * 60 * 1000) // 10 minutes
+    if (pendingActionRef.current) {
+      pendingActionRef.current()
+      pendingActionRef.current = null
+    }
+  }
+
+  const fetchAndShowPrivateKey = async (name: string, keyPath: string) => {
+    // keyPath is like "/services/jump-hosts/outputs/sshkey"
+    const match = keyPath.match(/^\/services\/([^/]+)\/([^/]+)\/(.+)$/)
+    if (!match) {
+      toast.error('Invalid key path')
+      return
+    }
+    const [, serviceName, subdir, filename] = match
+    setCredModalName(name)
+    setCredModalValue('')
+    setCredModalLoading(true)
+    setCredModalOpen(true)
+    try {
+      const { data } = await api.get(`/api/services/${serviceName}/files/${subdir}/${filename}`, {
+        responseType: 'text',
+        transformResponse: [(d: string) => d],
+      })
+      setCredModalValue(data)
+    } catch {
+      toast.error('Failed to fetch private key')
+      setCredModalOpen(false)
+    } finally {
+      setCredModalLoading(false)
+    }
+  }
 
   const bulkActionMutation = useMutation({
     mutationFn: async ({ objectIds, actionName }: { objectIds: number[], actionName: string }) => {
@@ -272,24 +320,23 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
     ]
 
     if (typeConfig) {
-      const LONG_CRED_TYPES = ['ssh_key', 'certificate']
-
       for (const field of typeConfig.fields.slice(0, 5)) {
         if (field.name === 'name' || field.type === 'json') continue
 
-        // Secret fields: only show for super admin
+        // Secret fields: only show for users with view permission
         if (field.type === 'secret') {
-          if (!isSuperAdmin) continue
+          if (!canRevealSecrets) continue
           cols.push({
             id: field.name,
             header: field.label || field.name,
             cell: ({ row }) => {
               const val = row.original.data[field.name]
-              if (val == null || val === '') return <span className="text-muted-foreground text-xs">—</span>
               const credType = row.original.data.credential_type as string | undefined
-              const isLong = credType && LONG_CRED_TYPES.includes(credType)
+              const keyPath = row.original.data.key_path as string | undefined
+              const isSSH = credType === 'ssh_key' || credType === 'certificate'
 
-              if (isLong) {
+              if (isSSH) {
+                if (!keyPath) return <span className="text-muted-foreground text-xs">—</span>
                 return (
                   <Button
                     variant="outline"
@@ -297,17 +344,33 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
                     className="h-7 text-xs"
                     onClick={(e) => {
                       e.stopPropagation()
-                      setCredModalName(row.original.name)
-                      setCredModalValue(String(val))
-                      setCredModalOpen(true)
+                      requireReauth(() => fetchAndShowPrivateKey(row.original.name, keyPath))
                     }}
                   >
-                    <Eye className="h-3 w-3 mr-1" /> View
+                    <Eye className="h-3 w-3 mr-1" /> View Key
                   </Button>
                 )
               }
 
-              return <CredentialDisplay value={String(val)} />
+              // Short types (password, api_key, token)
+              if (val == null || val === '') return <span className="text-muted-foreground text-xs">—</span>
+              return (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    requireReauth(() => {
+                      setCredModalName(row.original.name)
+                      setCredModalValue(String(val))
+                      setCredModalOpen(true)
+                    })
+                  }}
+                >
+                  <Eye className="h-3 w-3 mr-1" /> Reveal
+                </Button>
+              )
             },
           })
           continue
@@ -421,7 +484,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
     }
 
     return cols
-  }, [typeSlug, typeConfig, isSuperAdmin])
+  }, [typeSlug, typeConfig, canRevealSecrets])
 
   // Build bulk actions array
   const bulkActions = useMemo(() => {
@@ -595,6 +658,14 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
         onOpenChange={setCredModalOpen}
         name={credModalName}
         value={credModalValue}
+        loading={credModalLoading}
+      />
+
+      {/* Re-authentication dialog */}
+      <ReauthDialog
+        open={reauthOpen}
+        onOpenChange={setReauthOpen}
+        onVerified={handleReauthVerified}
       />
     </div>
   )
