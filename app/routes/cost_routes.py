@@ -4,8 +4,14 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from database import SessionLocal, User, AppMetadata, CostSnapshot, Snapshot
-from permissions import require_permission
+from database import SessionLocal, User, AppMetadata, CostSnapshot, Snapshot, InventoryObject, InventoryType
+from permissions import require_permission, has_permission
+from routes.personal_instance_routes import (
+    _get_all_instances,
+    _get_user_instances,
+    PI_TAG,
+    PI_USER_TAG_PREFIX,
+)
 from db_session import get_db_session
 from audit import log_action
 
@@ -363,3 +369,173 @@ async def refresh_costs(request: Request,
                ip_address=request.client.host if request.client else None)
 
     return {"job_id": job.id, "status": job.status}
+
+
+@router.get("/personal-instances")
+async def get_personal_instance_costs(
+    user: User = Depends(require_permission("costs.view")),
+):
+    PI_SERVICE_TAG_PREFIX = "pi-service:"
+    session = SessionLocal()
+    try:
+        # Permission scoping
+        view_all = has_permission(session, user.id, "personal_instances.view_all")
+
+        # Plan pricing lookup
+        plans_cache = AppMetadata.get(session, "plans_cache") or []
+        plan_costs = {}
+        for plan in plans_cache:
+            plan_costs[plan.get("id", "")] = {
+                "monthly_cost": float(plan.get("monthly_cost", 0)),
+                "hourly_cost": float(plan.get("hourly_cost", 0)),
+                "pricing_available": True,
+            }
+        default_plan_cost = {"monthly_cost": 0.0, "hourly_cost": 0.0, "pricing_available": False}
+
+        # Active instances
+        now = datetime.now(timezone.utc)
+        if view_all:
+            instances = _get_all_instances(session)
+        else:
+            instances = _get_user_instances(session, user.username)
+
+        active = []
+        active_hostnames = set()
+        total_monthly_rate = 0.0
+        total_remaining_cost = 0.0
+
+        for inst in instances:
+            pricing = plan_costs.get(inst["plan"], default_plan_cost)
+            hourly_cost = pricing["hourly_cost"]
+            monthly_cost = pricing["monthly_cost"]
+
+            created_at = datetime.fromisoformat(inst["created_at"]) if inst.get("created_at") else now
+            ttl_hours = inst.get("ttl_hours")
+
+            hours_running = (now - created_at).total_seconds() / 3600
+            cost_accrued = round(hours_running * hourly_cost, 4)
+
+            if ttl_hours is not None:
+                expires_at = created_at + timedelta(hours=ttl_hours)
+                ttl_remaining_hours = (expires_at - now).total_seconds() / 3600
+                expected_remaining_cost = round(max(0, ttl_remaining_hours) * hourly_cost, 4)
+            else:
+                ttl_remaining_hours = None
+                expected_remaining_cost = 0
+
+            active_hostnames.add(inst["hostname"])
+            total_monthly_rate += monthly_cost
+            total_remaining_cost += expected_remaining_cost
+
+            active.append({
+                "hostname": inst["hostname"],
+                "ip_address": inst.get("ip_address", ""),
+                "region": inst.get("region", ""),
+                "plan": inst["plan"],
+                "owner": inst.get("owner", ""),
+                "service": inst.get("service"),
+                "ttl_hours": ttl_hours,
+                "ttl_remaining_hours": round(ttl_remaining_hours, 2) if ttl_remaining_hours is not None else None,
+                "hours_running": round(hours_running, 2),
+                "cost_accrued": cost_accrued,
+                "expected_remaining_cost": expected_remaining_cost,
+                "monthly_cost": monthly_cost,
+                "hourly_cost": hourly_cost,
+                "pricing_available": pricing["pricing_available"],
+                "created_at": inst.get("created_at"),
+            })
+
+        # Historical instances from cost snapshots
+        cutoff = now - timedelta(days=90)
+        snapshots = (
+            session.query(CostSnapshot)
+            .filter(CostSnapshot.captured_at >= cutoff)
+            .order_by(CostSnapshot.captured_at.asc())
+            .all()
+        )
+
+        historical_map = {}  # hostname -> tracking dict
+        for snap in snapshots:
+            snap_data = json.loads(snap.snapshot_data)
+            snap_time = snap.captured_at
+            if snap_time.tzinfo is None:
+                snap_time = snap_time.replace(tzinfo=timezone.utc)
+
+            for inst in snap_data.get("instances", []):
+                tags = inst.get("tags", [])
+                if PI_TAG not in tags:
+                    continue
+
+                # Permission filtering
+                if not view_all:
+                    user_tag = f"{PI_USER_TAG_PREFIX}{user.username}"
+                    if user_tag not in tags:
+                        continue
+
+                # Use label as identifier (matching cost_report.json structure)
+                label = inst.get("label", "")
+                hostname = inst.get("hostname", label)
+                identifier = hostname or label
+
+                if not identifier or identifier in active_hostnames:
+                    continue
+
+                # Parse owner and service from tags
+                owner = None
+                service = None
+                for tag in tags:
+                    if tag.startswith(PI_USER_TAG_PREFIX):
+                        owner = tag[len(PI_USER_TAG_PREFIX):]
+                    elif tag.startswith(PI_SERVICE_TAG_PREFIX):
+                        service = tag[len(PI_SERVICE_TAG_PREFIX):]
+
+                plan_id = inst.get("plan", "")
+                monthly_at_snap = float(inst.get("monthly_cost", 0))
+
+                if identifier not in historical_map:
+                    historical_map[identifier] = {
+                        "hostname": identifier,
+                        "owner": owner,
+                        "service": service,
+                        "plan": plan_id,
+                        "first_seen": snap_time,
+                        "last_seen": snap_time,
+                        "monthly_cost_at_last_seen": monthly_at_snap,
+                    }
+                else:
+                    historical_map[identifier]["last_seen"] = snap_time
+                    historical_map[identifier]["monthly_cost_at_last_seen"] = monthly_at_snap
+
+        historical = []
+        for info in historical_map.values():
+            duration_hours = (info["last_seen"] - info["first_seen"]).total_seconds() / 3600
+            pricing = plan_costs.get(info["plan"], default_plan_cost)
+            estimated_total_cost = round(duration_hours * pricing["hourly_cost"], 4)
+
+            historical.append({
+                "hostname": info["hostname"],
+                "owner": info["owner"],
+                "service": info["service"],
+                "plan": info["plan"],
+                "first_seen": info["first_seen"].isoformat(),
+                "last_seen": info["last_seen"].isoformat(),
+                "duration_hours": round(duration_hours, 2),
+                "estimated_total_cost": estimated_total_cost,
+                "monthly_cost_at_last_seen": info["monthly_cost_at_last_seen"],
+                "pricing_available": pricing["pricing_available"],
+            })
+
+        historical.sort(key=lambda h: h["last_seen"], reverse=True)
+
+        return {
+            "active": active,
+            "historical": historical,
+            "summary": {
+                "active_count": len(active),
+                "total_monthly_rate": round(total_monthly_rate, 2),
+                "total_remaining_cost": round(total_remaining_cost, 4),
+            },
+            "view_all": view_all,
+        }
+    finally:
+        session.close()

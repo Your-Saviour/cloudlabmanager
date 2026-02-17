@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, DollarSign, Server, CreditCard, TrendingUp, TrendingDown, Minus, Save, AlertTriangle, Camera } from 'lucide-react'
+import { RefreshCw, DollarSign, Server, CreditCard, TrendingUp, TrendingDown, Minus, Save, AlertTriangle, Camera, Clock, User } from 'lucide-react'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts'
@@ -10,12 +10,15 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import type { CostData, CostHistoryResponse, CostSummary, CostServicePoint } from '@/types'
+import { usePersonalInstanceCosts } from '@/hooks/usePersonalInstanceCosts'
+import type { PersonalInstanceCostResponse } from '@/hooks/usePersonalInstanceCosts'
 
 interface BudgetSettings {
   enabled: boolean
@@ -103,6 +106,8 @@ export default function CostsPage() {
   })
 
   const canManageBudget = useHasPermission('costs.budget')
+  const canViewAllPI = useHasPermission('personal_instances.view_all')
+  const { data: piCosts, isLoading: piLoading, isError: piError } = usePersonalInstanceCosts()
 
   const { data: budgetSettings } = useQuery({
     queryKey: ['costs', 'budget'],
@@ -179,6 +184,13 @@ export default function CostsPage() {
         </Button>
       </PageHeader>
 
+      <Tabs defaultValue="overview">
+        <TabsList className="mb-6">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="personal">Personal Instances</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card>
@@ -488,6 +500,235 @@ export default function CostsPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="personal">
+          <PersonalInstancesTab
+            data={piCosts}
+            isLoading={piLoading}
+            isError={piError}
+            viewAll={canViewAllPI}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+function TtlBadge({ ttlRemainingHours }: { ttlRemainingHours: number | null }) {
+  if (ttlRemainingHours === null) {
+    return <span className="text-xs text-muted-foreground">no TTL</span>
+  }
+  if (ttlRemainingHours <= 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-400 motion-safe:animate-pulse">
+        <Clock className="h-3 w-3" /> Expired
+      </span>
+    )
+  }
+  const color =
+    ttlRemainingHours < 1
+      ? 'text-red-400'
+      : ttlRemainingHours < 4
+        ? 'text-amber-400'
+        : 'text-green-400'
+  const hrs = Math.floor(ttlRemainingHours)
+  const mins = Math.floor((ttlRemainingHours % 1) * 60)
+  const label = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${color}`}>
+      <Clock className="h-3 w-3" /> {label}
+    </span>
+  )
+}
+
+function PersonalInstancesTab({
+  data,
+  isLoading,
+  isError,
+  viewAll,
+}: {
+  data: PersonalInstanceCostResponse | undefined
+  isLoading: boolean
+  isError: boolean
+  viewAll: boolean
+}) {
+  if (isLoading) {
+    return <Skeleton className="h-64 w-full" />
+  }
+
+  if (isError) {
+    return (
+      <p className="text-sm text-destructive text-center py-8">
+        Failed to load personal instance costs.
+      </p>
+    )
+  }
+
+  const active = data?.active ?? []
+  const historical = data?.historical ?? []
+  const summary = data?.summary
+
+  const sortedActive = [...active].sort((a, b) => {
+    const aVal = a.ttl_remaining_hours === null ? Infinity : a.ttl_remaining_hours
+    const bVal = b.ttl_remaining_hours === null ? Infinity : b.ttl_remaining_hours
+    return aVal - bVal
+  })
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <Server className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Active Instances</p>
+                <p className="text-3xl font-bold">{summary?.active_count ?? 0}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <DollarSign className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Current Monthly Rate</p>
+                <p className="text-3xl font-bold font-mono">${(summary?.total_monthly_rate ?? 0).toFixed(2)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <Clock className="h-8 w-8 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Remaining TTL Cost</p>
+                <p className="text-3xl font-bold font-mono">${(summary?.total_remaining_cost ?? 0).toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">expected until expiry</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Active Instances Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            Active Personal Instances
+            {viewAll && <Badge variant="outline" className="text-[10px]">all users</Badge>}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {sortedActive.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No active personal instances</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th scope="col" className="pb-2 pr-4">Hostname</th>
+                    {viewAll && <th scope="col" className="pb-2 pr-4">Owner</th>}
+                    <th scope="col" className="pb-2 pr-4">Service</th>
+                    <th scope="col" className="pb-2 pr-4">Region</th>
+                    <th scope="col" className="pb-2 pr-4">Plan</th>
+                    <th scope="col" className="pb-2 pr-4">TTL Remaining</th>
+                    <th scope="col" className="pb-2 pr-4 text-right">Hourly</th>
+                    <th scope="col" className="pb-2 pr-4 text-right">Accrued</th>
+                    <th scope="col" className="pb-2 text-right">Remaining</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedActive.map((inst) => (
+                    <tr key={inst.hostname} className="border-b border-border/50 hover:bg-muted/20">
+                      <td className="py-2 pr-4 font-mono">{inst.hostname}</td>
+                      {viewAll && (
+                        <td className="py-2 pr-4">
+                          <span className="inline-flex items-center gap-1">
+                            <User className="h-3 w-3 text-muted-foreground" />
+                            {inst.owner ?? '—'}
+                          </span>
+                        </td>
+                      )}
+                      <td className="py-2 pr-4">{inst.service ?? '—'}</td>
+                      <td className="py-2 pr-4">{inst.region}</td>
+                      <td className="py-2 pr-4">{inst.plan}</td>
+                      <td className="py-2 pr-4">
+                        <TtlBadge ttlRemainingHours={inst.ttl_remaining_hours} />
+                      </td>
+                      {inst.pricing_available ? (
+                        <>
+                          <td className="py-2 pr-4 text-right font-mono">${inst.hourly_cost.toFixed(4)}</td>
+                          <td className="py-2 pr-4 text-right font-mono">${inst.cost_accrued.toFixed(4)}</td>
+                          <td className="py-2 text-right font-mono">${inst.expected_remaining_cost.toFixed(4)}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-2 pr-4 text-right text-[10px] text-muted-foreground">unavailable</td>
+                          <td className="py-2 pr-4 text-right text-muted-foreground">—</td>
+                          <td className="py-2 text-right text-muted-foreground">—</td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Historical Instances Table */}
+      {historical.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">Historical (last 90 days)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                    <th scope="col" className="pb-2 pr-4">Hostname</th>
+                    {viewAll && <th scope="col" className="pb-2 pr-4">Owner</th>}
+                    <th scope="col" className="pb-2 pr-4">Service</th>
+                    <th scope="col" className="pb-2 pr-4">Region</th>
+                    <th scope="col" className="pb-2 pr-4">Last Seen</th>
+                    <th scope="col" className="pb-2 pr-4 text-right">Duration</th>
+                    <th scope="col" className="pb-2 text-right">Est. Total Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historical.map((inst) => (
+                    <tr key={`${inst.hostname}-${inst.last_seen}`} className="border-b border-border/50 hover:bg-muted/20">
+                      <td className="py-2 pr-4 font-mono">{inst.hostname}</td>
+                      {viewAll && (
+                        <td className="py-2 pr-4">
+                          <span className="inline-flex items-center gap-1">
+                            <User className="h-3 w-3 text-muted-foreground" />
+                            {inst.owner ?? '—'}
+                          </span>
+                        </td>
+                      )}
+                      <td className="py-2 pr-4">{inst.service ?? '—'}</td>
+                      <td className="py-2 pr-4">{inst.region}</td>
+                      <td className="py-2 pr-4">{new Date(inst.last_seen).toLocaleDateString()}</td>
+                      <td className="py-2 pr-4 text-right font-mono">{inst.duration_hours.toFixed(1)}h</td>
+                      <td className="py-2 text-right font-mono">
+                        {inst.pricing_available ? `$${inst.estimated_total_cost.toFixed(2)}` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
