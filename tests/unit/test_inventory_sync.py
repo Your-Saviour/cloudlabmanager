@@ -10,7 +10,7 @@ from database import (
 from inventory_sync import (
     _build_search_text, _find_or_create_object,
     VultrInventorySync, ServiceDiscoverySync, UserSync, DeploymentSync,
-    run_sync, SYNC_ADAPTERS,
+    run_sync, run_sync_for_source, SYNC_ADAPTERS,
 )
 
 
@@ -430,6 +430,159 @@ class TestVultrInventorySync:
         objs = db_session.query(InventoryObject).filter_by(type_id=server_type.id).all()
         assert len(objs) == 1
 
+    def test_credential_gets_svc_tag_from_vultr_tags(self, db_session, inventory_types_in_db, tmp_path, monkeypatch):
+        """Root password credentials get a svc: tag when Vultr tags match a service directory."""
+        import inventory_sync
+
+        svc_dir = tmp_path / "services"
+        svc_dir.mkdir()
+        (svc_dir / "n8n-server").mkdir()
+        monkeypatch.setattr(inventory_sync, "SERVICES_DIR", str(svc_dir))
+
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "rootpw",
+                        "vultr_tags": ["n8n-server"],
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        cred_objs = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["credential"].id
+        ).all()
+        assert len(cred_objs) == 1
+
+        tag_names = {t.name for t in cred_objs[0].tags}
+        assert "instance:web1" in tag_names
+        assert "svc:n8n-server" in tag_names
+
+    def test_svc_tag_uses_purple_color(self, db_session, inventory_types_in_db, tmp_path, monkeypatch):
+        """svc: tags on credentials use purple (#8b5cf6) color."""
+        import inventory_sync
+
+        svc_dir = tmp_path / "services"
+        svc_dir.mkdir()
+        (svc_dir / "my-svc").mkdir()
+        monkeypatch.setattr(inventory_sync, "SERVICES_DIR", str(svc_dir))
+
+        cache = {
+            "all": {
+                "hosts": {
+                    "host1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "pw",
+                        "vultr_tags": ["my-svc"],
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        svc_tag = db_session.query(InventoryTag).filter_by(name="svc:my-svc").first()
+        assert svc_tag is not None
+        assert svc_tag.color == "#8b5cf6"
+
+    def test_svc_tag_skips_pi_prefixed_vultr_tags(self, db_session, inventory_types_in_db, tmp_path, monkeypatch):
+        """Vultr tags prefixed with pi- (personal instance markers) are not used for svc: tags."""
+        import inventory_sync
+
+        svc_dir = tmp_path / "services"
+        svc_dir.mkdir()
+        (svc_dir / "pi-alice").mkdir()  # Even if a directory exists
+        monkeypatch.setattr(inventory_sync, "SERVICES_DIR", str(svc_dir))
+
+        cache = {
+            "all": {
+                "hosts": {
+                    "host1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "pw",
+                        "vultr_tags": ["pi-alice"],
+                    }
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        cred_objs = db_session.query(InventoryObject).filter_by(
+            type_id=inventory_types_in_db["credential"].id
+        ).all()
+        assert len(cred_objs) == 1
+        tag_names = {t.name for t in cred_objs[0].tags}
+        # Should only have instance: tag, no svc: tag
+        assert "instance:host1" in tag_names
+        assert not any(t.startswith("svc:") for t in tag_names)
+
+    def test_orphan_cleanup_skips_ssh_key_credentials(self, db_session, inventory_types_in_db):
+        """VultrInventorySync orphan cleanup only deletes password credentials, not SSH keys."""
+        # First sync with web1 (has password) and web2 (no password, keeps sync alive)
+        cache = {
+            "all": {
+                "hosts": {
+                    "web1": {
+                        "ansible_host": "10.0.0.1",
+                        "vultr_default_password": "rootpw",
+                    },
+                    "web2": {
+                        "ansible_host": "10.0.0.2",
+                    },
+                }
+            }
+        }
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        # Manually create an SSH key credential for web1 (as SSHCredentialSync would)
+        cred_type = inventory_types_in_db["credential"]
+        inst_tag = db_session.query(InventoryTag).filter_by(name="instance:web1").first()
+        ssh_cred = InventoryObject(
+            type_id=cred_type.id,
+            data=json.dumps({
+                "name": "web1 — SSH Key",
+                "credential_type": "ssh_key",
+                "username": "root",
+                "value": "ssh-rsa AAAA...",
+                "key_path": "/keys/web1",
+            }),
+            search_text="web1 ssh key",
+        )
+        db_session.add(ssh_cred)
+        db_session.flush()
+        ssh_cred.tags.append(inst_tag)
+        db_session.flush()
+
+        # Now remove web1 from cache (web2 remains to keep sync running)
+        cache["all"]["hosts"] = {"web2": {"ansible_host": "10.0.0.2"}}
+        AppMetadata.set(db_session, "instances_cache", cache)
+        db_session.flush()
+        VultrInventorySync().sync(db_session, self._make_type_config())
+        db_session.flush()
+
+        # Password credential should be cleaned up, SSH key should survive
+        cred_objs = db_session.query(InventoryObject).filter_by(type_id=cred_type.id).all()
+        assert len(cred_objs) == 1
+        remaining = json.loads(cred_objs[0].data)
+        assert remaining["credential_type"] == "ssh_key"
+
     def test_credential_tag_has_indigo_color(self, db_session, inventory_types_in_db):
         """Instance tags for credentials use indigo (#6366f1) color."""
         cache = {
@@ -737,3 +890,50 @@ class TestRunSync:
 
         # Second adapter still called despite first one failing
         mock_svc_adapter.sync.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TestRunSyncForSource
+# ---------------------------------------------------------------------------
+
+class TestRunSyncForSource:
+    def test_runs_ssh_credential_sync_adapter(self, db_session, inventory_types_in_db, monkeypatch):
+        """run_sync_for_source('ssh_credential_sync') invokes the SSHCredentialSync adapter."""
+        mock_adapter = MagicMock()
+        monkeypatch.setitem(SYNC_ADAPTERS, "ssh_credential_sync", mock_adapter)
+
+        # Provide a type config that maps to ssh_credential_sync
+        mock_configs = [
+            {"slug": "credential", "sync": {"source": "ssh_credential_sync"}, "fields": []},
+        ]
+        monkeypatch.setattr("type_loader.load_type_configs", lambda: mock_configs)
+
+        run_sync_for_source("ssh_credential_sync")
+
+        mock_adapter.sync.assert_called_once()
+        call_args = mock_adapter.sync.call_args
+        assert call_args[0][1] == mock_configs[0]
+
+    def test_skips_unknown_source(self, db_session, inventory_types_in_db, monkeypatch):
+        """run_sync_for_source with unknown source name is a no-op."""
+        mock_configs = [
+            {"slug": "credential", "sync": {"source": "ssh_credential_sync"}, "fields": []},
+        ]
+        monkeypatch.setattr("type_loader.load_type_configs", lambda: mock_configs)
+
+        # Should not raise
+        run_sync_for_source("nonexistent_adapter")
+
+    def test_handles_adapter_error_gracefully(self, db_session, inventory_types_in_db, monkeypatch):
+        """run_sync_for_source catches adapter errors instead of propagating."""
+        mock_adapter = MagicMock()
+        mock_adapter.sync.side_effect = RuntimeError("sync boom")
+        monkeypatch.setitem(SYNC_ADAPTERS, "ssh_credential_sync", mock_adapter)
+
+        mock_configs = [
+            {"slug": "credential", "sync": {"source": "ssh_credential_sync"}, "fields": []},
+        ]
+        monkeypatch.setattr("type_loader.load_type_configs", lambda: mock_configs)
+
+        # Should not raise
+        run_sync_for_source("ssh_credential_sync")

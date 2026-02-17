@@ -553,6 +553,8 @@ class AnsibleRunner:
                 from inventory_sync import run_sync_for_source
                 run_sync_for_source("vultr_inventory")
                 job.output.append("[Inventory objects synced]")
+                run_sync_for_source("ssh_credential_sync")
+                job.output.append("[SSH credentials synced]")
         finally:
             session.close()
 
@@ -616,6 +618,12 @@ class AnsibleRunner:
 
         if ok:
             self._sync_service_outputs(job, job.service)
+            try:
+                from inventory_sync import run_sync_for_source
+                run_sync_for_source("ssh_credential_sync")
+                job.output.append("[SSH credentials synced]")
+            except Exception as e:
+                job.output.append(f"[Warning: SSH credential sync failed: {e}]")
 
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
@@ -843,6 +851,12 @@ class AnsibleRunner:
 
         if ok:
             self._sync_service_outputs(job, name)
+            try:
+                from inventory_sync import run_sync_for_source
+                run_sync_for_source("ssh_credential_sync")
+                job.output.append("[SSH credentials synced]")
+            except Exception as e:
+                job.output.append(f"[Warning: SSH credential sync failed: {e}]")
 
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
@@ -939,6 +953,8 @@ class AnsibleRunner:
                     from inventory_sync import run_sync_for_source
                     run_sync_for_source("vultr_inventory")
                     job.output.append("[Inventory objects synced]")
+                    run_sync_for_source("ssh_credential_sync")
+                    job.output.append("[SSH credentials synced]")
                 except Exception as e:
                     job.output.append(f"[Warning: Could not cache inventory: {e}]")
 
@@ -1072,6 +1088,8 @@ class AnsibleRunner:
                 from inventory_sync import run_sync_for_source
                 run_sync_for_source("vultr_inventory")
                 job.output.append("[Inventory objects synced]")
+                run_sync_for_source("ssh_credential_sync")
+                job.output.append("[SSH credentials synced]")
             except Exception as e:
                 job.output.append(f"[Warning: Could not update cache: {e}]")
 

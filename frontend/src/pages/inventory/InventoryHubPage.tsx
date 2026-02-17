@@ -208,7 +208,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
     return objects.filter((_, i) => rowSelection[String(i)])
   }, [objects, rowSelection])
 
-  const syncSource = typeof typeConfig?.sync === 'object' ? typeConfig.sync.source : typeConfig?.sync
+  const syncSource = typeConfig?.sync && typeof typeConfig.sync === 'object' ? typeConfig.sync.source : typeConfig?.sync
   const needsInstanceRefresh = syncSource === 'vultr_inventory'
 
   const syncMutation = useMutation({

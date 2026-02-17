@@ -74,6 +74,7 @@ The `type_loader.py` module:
 | Services | `service` | `services` | Deployable services discovered from CloudLab repo |
 | Users | `user` | `users` | CloudLab Manager user accounts |
 | Deployments | `deployment` | `deployments` | Completed deployment jobs with server/IP info |
+| Credentials | `credential` | `ssh_credential_sync` | SSH keys, root passwords, and other credentials |
 
 ## Sync Adapters
 
@@ -84,8 +85,8 @@ Sync adapters populate inventory objects from external sources. They run on star
 - Reads instances from the cached inventory (populated by `refresh_instances`)
 - Creates/updates `server` objects with hostname, IP, region, plan, status, tags, root password, and VNC console URL
 - **Credential preservation**: If `default_password` or `kvm_url` is empty in incoming data (e.g., from `generate-inventory.yaml` which may not return these fields), the sync preserves existing non-empty values from the database rather than overwriting them with blanks
-- **Auto-creates credential objects**: When a server has a non-empty `default_password`, a `credential` inventory object is created (or updated) with the root password, tagged `instance:{hostname}`. These credentials appear in the [[Service Access Portal]] alongside service-level credentials
-- **Orphan cleanup**: When a server is removed from Vultr, its associated `instance:{hostname}` credential object is also deleted
+- **Auto-creates credential objects**: When a server has a non-empty `default_password`, a `credential` inventory object is created (or updated) with the root password, tagged `instance:{hostname}`. If the instance's Vultr tags match a service directory, a `svc:{service_name}` tag is also added. These credentials appear in the [[Service Access Portal]] alongside service-level credentials
+- **Orphan cleanup**: When a server is removed from Vultr, its associated `instance:{hostname}` **password** credential is deleted. SSH key credentials (managed by `SSHCredentialSync`) are skipped to avoid cross-adapter conflicts
 
 ### ServiceDiscoverySync (`services`)
 
@@ -101,6 +102,16 @@ Sync adapters populate inventory objects from external sources. They run on star
 
 - Reads completed deployment jobs from `JobRecord` table
 - Creates `deployment` objects with service name, server, IP, deployment ID, timestamps
+
+### SSHCredentialSync (`ssh_credential_sync`)
+
+- Scans all service directories for `outputs/temp_inventory.yaml` files, including per-instance subdirectories (personal instances)
+- For each host entry with an `ansible_ssh_private_key_file`, reads the corresponding `.pub` file and creates a `credential` object of type `ssh_key`
+- Stores the public key content in the `value` field and the private key file path in the `key_path` field (readonly)
+- Tags each credential with `svc:{service_name}` (purple) and `instance:{hostname}` (indigo)
+- **Root password backfill**: If a host has a `vultr_default_password` that hasn't been captured by `VultrInventorySync`, creates a `password` credential for it
+- **Orphan cleanup**: Removes SSH credentials whose source `temp_inventory.yaml` no longer exists. Only cleans up credentials with `key_path` set, so manually-created credentials are never affected
+- **Triggered automatically** after deploys, script runs, instance stops, and inventory refreshes
 
 Each adapter updates the `search_text` denormalized field for fast searching.
 
