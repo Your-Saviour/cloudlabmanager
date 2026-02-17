@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Hexagon } from 'lucide-react'
+import { Hexagon, ShieldCheck } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -16,12 +16,27 @@ export default function LoginPage() {
   const setAuth = useAuthStore((s) => s.setAuth)
   const navigate = useNavigate()
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // MFA state
+  const [mfaRequired, setMfaRequired] = useState(false)
+  const [mfaToken, setMfaToken] = useState('')
+  const [mfaCode, setMfaCode] = useState('')
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
       const { data } = await api.post('/api/auth/login', { username, password })
+
+      if (data.mfa_required) {
+        // MFA is enabled — show TOTP input
+        setMfaRequired(true)
+        setMfaToken(data.mfa_token)
+        setLoading(false)
+        return
+      }
+
+      // No MFA — proceed directly
       const u = data.user || data
       setAuth(data.access_token, {
         id: u.id,
@@ -38,6 +53,89 @@ export default function LoginPage() {
     }
   }
 
+  const handleMfaVerify = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const { data } = await api.post('/api/auth/mfa/verify', {
+        mfa_token: mfaToken,
+        code: mfaCode,
+      })
+      const u = data.user || data
+      setAuth(data.access_token, {
+        id: u.id,
+        username: u.username,
+        display_name: u.display_name,
+        email: u.email,
+        permissions: u.permissions || data.permissions || [],
+      })
+      navigate('/dashboard')
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Verification failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleBackToLogin = () => {
+    setMfaRequired(false)
+    setMfaToken('')
+    setMfaCode('')
+    setError('')
+    setPassword('')
+  }
+
+  // MFA Verification Step
+  if (mfaRequired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <ShieldCheck className="h-10 w-10 text-primary" />
+            </div>
+            <CardTitle className="text-xl">Two-Factor Authentication</CardTitle>
+            <CardDescription>
+              Enter the 6-digit code from your authenticator app, or use a backup code
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleMfaVerify} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="mfa-code">Verification Code</Label>
+                <Input
+                  id="mfa-code"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  placeholder="000000"
+                  required
+                  autoFocus
+                  autoComplete="one-time-code"
+                  className="text-center text-lg tracking-widest"
+                />
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Verifying...' : 'Verify'}
+              </Button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={handleBackToLogin}
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Back to login
+                </button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Login Step
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
@@ -49,7 +147,7 @@ export default function LoginPage() {
           <CardDescription>Sign in to CloudLab Manager</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
               <Input

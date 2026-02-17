@@ -27,6 +27,9 @@ EVENT_BUG_REPORT_SUBMITTED = "bug_report.submitted"
 EVENT_BUG_REPORT_STATUS_CHANGED = "bug_report.status_changed"
 EVENT_FEEDBACK_SUBMITTED = "feedback.submitted"
 EVENT_FEEDBACK_STATUS_CHANGED = "feedback.status_changed"
+EVENT_MFA_ENROLLED = "mfa.enrolled"
+EVENT_MFA_DISABLED = "mfa.disabled"
+EVENT_MFA_ADMIN_RESET = "mfa.admin_reset"
 
 
 async def notify(event_type: str, context: dict):

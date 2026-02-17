@@ -16,9 +16,46 @@ After setup, the `/api/auth/setup` endpoint is permanently disabled.
 
 1. User submits username + password to `POST /api/auth/login`
 2. Server verifies password against bcrypt hash stored in the `users` table
-3. Server returns a JWT signed with a secret key (auto-generated on first boot, stored in `app_metadata`)
-4. Frontend stores the token in `localStorage`
-5. All subsequent API requests include `Authorization: Bearer <token>`
+3. If MFA is **not** enabled: server returns a JWT signed with a secret key (auto-generated on first boot, stored in `app_metadata`)
+4. If MFA **is** enabled: server returns `{ "mfa_required": true, "mfa_token": "..." }` — a 5-minute partial JWT with `purpose: "mfa"`
+5. Frontend shows a TOTP verification screen; user submits the 6-digit code (or a backup code) to `POST /api/auth/mfa/verify`
+6. Server validates the MFA token + TOTP code and returns the full JWT
+7. Frontend stores the token in `localStorage`
+8. All subsequent API requests include `Authorization: Bearer <token>`
+
+## Multi-Factor Authentication (MFA)
+
+CloudLabManager supports TOTP-based two-factor authentication. When enabled, users must provide a 6-digit code from their authenticator app (Google Authenticator, Authy, etc.) after password verification.
+
+See [[MFA Authentication]] in the CloudLab docs for the full user and admin guide.
+
+### Enrollment Flow
+
+1. User navigates to Profile → Two-Factor Authentication section
+2. `POST /api/auth/mfa/enroll` generates a TOTP secret and returns a QR code (base64 PNG)
+3. User scans the QR code with their authenticator app
+4. User enters a valid 6-digit code to `POST /api/auth/mfa/confirm`
+5. Backend verifies the code, enables MFA, and returns 8 single-use backup codes
+
+### MFA Verification
+
+- TOTP codes allow 1 window of time drift (30 seconds)
+- Backup codes can be used instead of TOTP if the authenticator device is unavailable
+- Each backup code is single-use (consumed after verification)
+- MFA tokens expire after 5 minutes
+
+### Admin MFA Reset
+
+Admins with `users.mfa_reset` permission can force-disable MFA for locked-out users via `DELETE /api/users/{user_id}/mfa`. This is audit-logged as `mfa_admin_reset`.
+
+### Implementation Details
+
+- **TOTP library**: pyotp
+- **QR codes**: qrcode[pil] (base64-encoded PNG)
+- **Secret encryption**: Fernet symmetric encryption, key derived from the app's existing `secret_key`
+- **Backup codes**: 8 uppercase hex codes (8 chars each), stored as bcrypt hashes
+- **MFA tokens**: 5-minute JWT with `purpose: "mfa"` to differentiate from access tokens
+- **Database tables**: `user_mfa` (per-user MFA state + encrypted TOTP secret), `mfa_backup_codes` (hashed backup codes)
 
 ## User Invitation Flow
 

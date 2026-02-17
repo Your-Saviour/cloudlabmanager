@@ -108,41 +108,79 @@ def seed_initial_config_versions():
         session.close()
 
 
+DEFAULT_RULE_TEMPLATES = [
+    # In-app (8)
+    {"name": "Job failures (in-app)", "event_type": "job.failed", "channel": "in_app"},
+    {"name": "Job completions (in-app)", "event_type": "job.completed", "channel": "in_app"},
+    {"name": "Health state changes (in-app)", "event_type": "health.state_change", "channel": "in_app"},
+    {"name": "Schedule failures (in-app)", "event_type": "schedule.failed", "channel": "in_app"},
+    {"name": "Drift state changes (in-app)", "event_type": "drift.state_change", "channel": "in_app"},
+    {"name": "Budget threshold exceeded (in-app)", "event_type": "budget.threshold_exceeded", "channel": "in_app"},
+    {"name": "Bulk operations completed (in-app)", "event_type": "bulk.completed", "channel": "in_app"},
+    {"name": "Snapshot failures (in-app)", "event_type": "snapshot.failed", "channel": "in_app"},
+    # Email for critical events (3)
+    {"name": "Job failures (email)", "event_type": "job.failed", "channel": "email"},
+    {"name": "Health state changes (email)", "event_type": "health.state_change", "channel": "email"},
+    {"name": "Budget threshold exceeded (email)", "event_type": "budget.threshold_exceeded", "channel": "email"},
+]
+
+
+def create_default_rules_for_role(session, role_id):
+    """Create default notification rules for a single role. Skips existing defaults."""
+    from database import NotificationRule
+
+    existing = set()
+    for r in session.query(NotificationRule).filter_by(role_id=role_id, is_default=True).all():
+        existing.add((r.event_type, r.channel))
+
+    created = 0
+    for tmpl in DEFAULT_RULE_TEMPLATES:
+        key = (tmpl["event_type"], tmpl["channel"])
+        if key in existing:
+            continue
+        session.add(NotificationRule(
+            name=tmpl["name"],
+            event_type=tmpl["event_type"],
+            channel=tmpl["channel"],
+            role_id=role_id,
+            is_enabled=True,
+            is_default=True,
+        ))
+        created += 1
+    return created
+
+
 def seed_default_notification_rules():
-    """Create default notification rules for the super-admin role if none exist."""
+    """Create default notification rules for all roles. Idempotent."""
     from database import SessionLocal, NotificationRule, Role
 
     session = SessionLocal()
     try:
-        # Only seed if no rules exist yet
-        existing = session.query(NotificationRule).first()
-        if existing:
-            return
+        # Backfill: mark old system-created rules (created_by=None) matching templates as is_default
+        template_keys = {(t["event_type"], t["channel"]) for t in DEFAULT_RULE_TEMPLATES}
+        old_rules = session.query(NotificationRule).filter(
+            NotificationRule.created_by.is_(None),
+            NotificationRule.is_default == False,
+        ).all()
+        backfilled = 0
+        for rule in old_rules:
+            if (rule.event_type, rule.channel) in template_keys:
+                rule.is_default = True
+                backfilled += 1
+        if backfilled:
+            session.flush()
 
-        super_admin = session.query(Role).filter_by(name="super-admin").first()
-        if not super_admin:
-            return
+        # Create missing defaults for all roles
+        roles = session.query(Role).all()
+        total_created = 0
+        for role in roles:
+            total_created += create_default_rules_for_role(session, role.id)
 
-        defaults = [
-            NotificationRule(
-                name="Job failures (in-app)",
-                event_type="job.failed",
-                channel="in_app",
-                role_id=super_admin.id,
-                is_enabled=True,
-            ),
-            NotificationRule(
-                name="Health state changes (in-app)",
-                event_type="health.state_change",
-                channel="in_app",
-                role_id=super_admin.id,
-                is_enabled=True,
-            ),
-        ]
-        for rule in defaults:
-            session.add(rule)
         session.commit()
-        print(f"  Seeded {len(defaults)} default notification rule(s)")
+        if backfilled:
+            print(f"  Backfilled {backfilled} existing rule(s) as default")
+        if total_created:
+            print(f"  Seeded {total_created} default notification rule(s) across {len(roles)} role(s)")
     except Exception as e:
         session.rollback()
         print(f"Warning: Could not seed default notification rules: {e}")

@@ -17,7 +17,12 @@ Served as static files from `/static/` by FastAPI. The root URL `/` returns `ind
 ## Views
 
 ### Login
-Username/password form. Shown when no valid token exists.
+Username/password form. Shown when no valid token exists. When MFA is enabled for the user, a second step appears after password verification:
+
+- **MFA verification screen**: ShieldCheck icon, description text, centered 6-digit input (`autoComplete="one-time-code"`), and "Back to login" link
+- Accepts both 6-digit TOTP codes and alphanumeric backup codes (no input mask restriction)
+- On success, completes authentication and navigates to the dashboard
+- The MFA token is ephemeral — does not survive page refresh (no separate route, conditional rendering within the same component)
 
 ### Setup
 First-boot only. Creates admin account and sets the Ansible vault password. Automatically redirects here if no users exist.
@@ -109,11 +114,22 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
   - **Manual**: "Triggered manually" as fallback when no automation source is set
 - **Child Jobs panel** — for bulk parent jobs, displays a "Child Jobs" card below the output showing each child job's status badge, service/action name, and a "View" link. Auto-refreshes every 3 seconds while the parent job is running.
 
+### Profile — MFA Management
+- **Two-Factor Authentication card** below the SSH Key card with three states:
+  - **Not enabled**: description text + "Enable Two-Factor Authentication" button
+  - **Enrolling**: QR code image (base64 PNG), manual TOTP secret display, 6-digit confirmation input, Cancel button
+  - **Enabled**: green status indicator with enrollment date, backup codes remaining count, "Regenerate Backup Codes" and "Disable MFA" buttons
+- **Backup Codes dialog**: shown after enrollment or regeneration; 2-column grid with Copy and Download buttons; warning that codes won't be shown again
+- **Disable MFA dialog**: confirmation modal requiring a 6-digit TOTP code
+- Uses `useQuery(['mfa-status'])` for status and mutations for enroll/confirm/disable/regenerate
+
 ### User Management
 - List of all users with status (active, invited, inactive)
 - Invite new users (sends email)
 - Edit user profiles and role assignments
 - Resend invitations, deactivate accounts
+- **MFA column** in the user table showing "Enabled" badge or "Off" text
+- **Reset MFA** action in the user dropdown (visible when: target has MFA enabled, current user has `users.mfa_reset` permission, target is not self) with destructive confirmation dialog
 
 ### Role Management
 - List of all roles with assigned permission counts

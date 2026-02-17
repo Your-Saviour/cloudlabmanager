@@ -193,7 +193,14 @@ function RulesTab() {
       {
         accessorKey: 'name',
         header: 'Name',
-        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+        cell: ({ row }) => (
+          <span className="font-medium">
+            {row.original.name}
+            {row.original.is_default && (
+              <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">Default</Badge>
+            )}
+          </span>
+        ),
       },
       {
         accessorKey: 'event_type',
@@ -244,9 +251,11 @@ function RulesTab() {
                 <DropdownMenuItem onClick={() => openEdit(row.original)}>
                   <Pencil className="mr-2 h-3 w-3" /> Edit
                 </DropdownMenuItem>
-                <DropdownMenuItem className="text-destructive" onClick={() => setDeleteRule(row.original)}>
-                  Delete
-                </DropdownMenuItem>
+                {!row.original.is_default && (
+                  <DropdownMenuItem className="text-destructive" onClick={() => setDeleteRule(row.original)}>
+                    Delete
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null,
@@ -385,7 +394,7 @@ function RulesTab() {
                 setDeleteRule(null)
                 toast.success('Rule deleted')
               },
-              onError: () => toast.error('Delete failed'),
+              onError: (err: any) => toast.error(err.response?.data?.detail || 'Delete failed'),
             })
           }
         }}

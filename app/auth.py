@@ -48,10 +48,34 @@ def create_access_token(user: User) -> str:
     return jwt.encode(payload, get_secret_key(), algorithm=ALGORITHM)
 
 
+MFA_TOKEN_EXPIRE_MINUTES = 5
+
+
+def create_mfa_token(user: User) -> str:
+    """Create a short-lived token for MFA verification step."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=MFA_TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": user.username, "uid": user.id, "exp": expire, "purpose": "mfa"}
+    return jwt.encode(payload, get_secret_key(), algorithm=ALGORITHM)
+
+
+def validate_mfa_token(token: str) -> dict | None:
+    """Validate an MFA token and return the payload, or None if invalid."""
+    try:
+        payload = jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
+        if payload.get("purpose") != "mfa":
+            return None
+        return payload
+    except JWTError:
+        return None
+
+
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     token = credentials.credentials
     try:
         payload = jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
+        # Reject MFA intermediate tokens — they must not be used as access tokens
+        if payload.get("purpose") == "mfa":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         username: str = payload.get("sub")
         user_id: int = payload.get("uid")
         if username is None:

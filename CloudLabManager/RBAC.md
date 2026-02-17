@@ -44,6 +44,7 @@ These are always present:
 | Users | `users.edit` | Edit user profiles |
 | Users | `users.delete` | Deactivate users |
 | Users | `users.assign_roles` | Assign roles to users |
+| Users | `users.mfa_reset` | Force-disable MFA for other users |
 | Roles | `roles.view` | View roles and permissions |
 | Roles | `roles.create` | Create custom roles |
 | Roles | `roles.edit` | Edit custom roles |

@@ -13,6 +13,13 @@ All API endpoints are prefixed with `/api/`. Protected endpoints require a Beare
 | POST | `/api/auth/invite/{token}` | No | Accept invite, set password |
 | POST | `/api/auth/forgot-password` | No | Request password reset email |
 | POST | `/api/auth/password-reset/{token}` | No | Reset password with token |
+| GET | `/api/auth/mfa/status` | Yes | Get current user's MFA status |
+| POST | `/api/auth/mfa/enroll` | Yes | Generate TOTP secret and QR code |
+| POST | `/api/auth/mfa/confirm` | Yes | Verify first TOTP code and activate MFA |
+| POST | `/api/auth/mfa/verify` | No | Login step 2: validate MFA token + TOTP/backup code |
+| POST | `/api/auth/mfa/disable` | Yes | Disable MFA (requires TOTP code or password) |
+| POST | `/api/auth/mfa/backup-codes/regenerate` | Yes | Generate new backup codes (invalidates old) |
+| DELETE | `/api/users/{id}/mfa` | `users.mfa_reset` | Admin force-disable MFA for a user |
 
 ### POST `/api/auth/setup`
 
@@ -62,6 +69,100 @@ Returns: `{ "access_token": "...", "token_type": "bearer" }`
   "password": "new-password"
 }
 ```
+
+### POST `/api/auth/login` (with MFA)
+
+When the user has MFA enabled, the login endpoint returns a partial response instead of a full JWT:
+
+```json
+{
+  "mfa_required": true,
+  "mfa_token": "<5-minute-jwt>"
+}
+```
+
+The frontend then submits the MFA token and TOTP code to `/api/auth/mfa/verify` to complete authentication.
+
+### GET `/api/auth/mfa/status`
+
+Returns:
+
+```json
+{
+  "enabled": true,
+  "enrolled_at": "2026-02-17T10:00:00+00:00",
+  "backup_codes_remaining": 6
+}
+```
+
+### POST `/api/auth/mfa/enroll`
+
+Generates a TOTP secret and QR code. Stores the secret in pending (not enabled) state. Returns:
+
+```json
+{
+  "totp_secret": "JBSWY3DPEHPK3PXP",
+  "qr_code": "<base64-encoded-png>",
+  "otpauth_uri": "otpauth://totp/CloudLab:username?secret=..."
+}
+```
+
+### POST `/api/auth/mfa/confirm`
+
+Verifies the first TOTP code to activate MFA. Generates backup codes.
+
+```json
+{
+  "code": "123456"
+}
+```
+
+Returns:
+
+```json
+{
+  "backup_codes": ["A1B2C3D4", "E5F6G7H8", ...]
+}
+```
+
+### POST `/api/auth/mfa/verify`
+
+Login step 2. Validates the MFA token and TOTP code (or backup code), then issues a full JWT. Rate limited to 10/minute.
+
+```json
+{
+  "mfa_token": "<token-from-login>",
+  "code": "123456"
+}
+```
+
+Returns: `{ "access_token": "...", "token_type": "bearer" }`
+
+### POST `/api/auth/mfa/disable`
+
+Disables MFA. Requires either a valid TOTP code or the user's password.
+
+```json
+{
+  "code": "123456"
+}
+```
+
+### POST `/api/auth/mfa/backup-codes/regenerate`
+
+Deletes all existing backup codes and generates a new set. Returns:
+
+```json
+{
+  "backup_codes": ["A1B2C3D4", "E5F6G7H8", ...]
+}
+```
+
+### DELETE `/api/users/{id}/mfa`
+
+Admin endpoint to force-disable MFA for a locked-out user. Requires `users.mfa_reset` permission. Cannot be used on your own account (returns 400). Audit-logged as `mfa_admin_reset`.
+
+Returns: `{ "status": "ok", "message": "MFA disabled for user {username}" }`
 
 ## Instances
 

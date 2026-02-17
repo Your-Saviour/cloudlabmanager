@@ -10,6 +10,7 @@ export interface NotificationRule {
   role_id: number | null
   filters: Record<string, unknown> | null
   is_enabled: boolean
+  is_default: boolean
   created_at: string
   updated_at: string
 }

@@ -10,7 +10,7 @@ def _utc_iso(dt: datetime | None) -> str | None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.isoformat()
 from sqlalchemy.orm import Session
-from database import User, Role, SessionLocal, InviteToken, ServiceACL
+from database import User, Role, SessionLocal, InviteToken, ServiceACL, UserMFA, MFABackupCode
 from auth import get_current_user, hash_password, create_invite_token
 from permissions import require_permission, get_user_permissions, invalidate_cache
 from db_session import get_db_session
@@ -31,17 +31,33 @@ def _user_response(user: User, session: Session | None = None) -> dict:
         "last_login_at": _utc_iso(user.last_login_at),
         "invite_accepted_at": _utc_iso(user.invite_accepted_at),
         "roles": [{"id": r.id, "name": r.name} for r in user.roles],
+        "mfa_enabled": False,
     }
     if session:
         resp["permissions"] = sorted(get_user_permissions(session, user.id))
     return resp
 
 
+def _enrich_mfa_status(users_resp: list[dict], session: Session) -> list[dict]:
+    """Add mfa_enabled field to a list of user response dicts."""
+    user_ids = [u["id"] for u in users_resp]
+    enabled_ids = set(
+        row[0] for row in session.query(UserMFA.user_id).filter(
+            UserMFA.user_id.in_(user_ids), UserMFA.is_enabled == True
+        ).all()
+    )
+    for u in users_resp:
+        u["mfa_enabled"] = u["id"] in enabled_ids
+    return users_resp
+
+
 @router.get("")
 async def list_users(user: User = Depends(require_permission("users.view")),
                      session: Session = Depends(get_db_session)):
     users = session.query(User).order_by(User.id).all()
-    return {"users": [_user_response(u) for u in users]}
+    users_resp = [_user_response(u) for u in users]
+    _enrich_mfa_status(users_resp, session)
+    return {"users": users_resp}
 
 
 @router.get("/{user_id}")
@@ -50,7 +66,10 @@ async def get_user(user_id: int, user: User = Depends(require_permission("users.
     target = session.query(User).filter_by(id=user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    return _user_response(target, session)
+    resp = _user_response(target, session)
+    mfa = session.query(UserMFA).filter_by(user_id=user_id, is_enabled=True).first()
+    resp["mfa_enabled"] = mfa is not None
+    return resp
 
 
 @router.post("/invite")
@@ -250,3 +269,42 @@ async def resend_invite(user_id: int, request: Request,
     await send_invite(target.email, token, inviter_name, base_url)
 
     return {"status": "invite_resent"}
+
+
+@router.delete("/{user_id}/mfa")
+async def admin_reset_mfa(user_id: int, request: Request,
+                          user: User = Depends(require_permission("users.mfa_reset")),
+                          session: Session = Depends(get_db_session)):
+    """Admin force-disable MFA for a locked-out user."""
+    target = session.query(User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Prevent self-reset via admin endpoint (use /api/auth/mfa/disable instead)
+    if target.id == user.id:
+        raise HTTPException(status_code=400, detail="Use the MFA disable endpoint for your own account")
+
+    mfa = session.query(UserMFA).filter_by(user_id=user_id).first()
+    if not mfa or not mfa.is_enabled:
+        raise HTTPException(status_code=400, detail="MFA is not enabled for this user")
+
+    # Delete MFA record and backup codes
+    session.query(MFABackupCode).filter_by(user_id=user_id).delete()
+    session.delete(mfa)
+    session.flush()
+
+    # Audit log with admin context
+    log_action(session, user.id, user.username, "mfa_admin_reset", "users",
+               details={"target_user_id": user_id, "target_username": target.username},
+               ip_address=request.client.host if request.client else None)
+
+    # Notify
+    from notification_service import EVENT_MFA_ADMIN_RESET, notify
+    import asyncio
+    asyncio.ensure_future(notify(EVENT_MFA_ADMIN_RESET, {
+        "title": f"MFA reset for {target.username}",
+        "body": f"Admin {user.username} has force-disabled MFA for {target.username}.",
+        "severity": "warning",
+    }))
+
+    return {"status": "ok", "message": f"MFA disabled for user {target.username}"}

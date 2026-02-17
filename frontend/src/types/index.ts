@@ -4,6 +4,7 @@ export interface User {
   display_name: string
   email: string
   is_active: boolean
+  mfa_enabled?: boolean
   roles: Role[]
   permissions: string[]
   created_at: string

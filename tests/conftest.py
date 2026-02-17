@@ -77,6 +77,7 @@ _SESSION_LOCAL_MODULES = [
     "personal_instance_cleanup",
     "routes.bug_report_routes",
     "routes.feedback_routes",
+    "mfa",
 ]
 
 

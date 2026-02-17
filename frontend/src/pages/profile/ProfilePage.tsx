@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Key, User, Download, Copy } from 'lucide-react'
+import { Save, Key, User, Download, Copy, ShieldCheck, ShieldOff, RefreshCw } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -32,6 +32,14 @@ export default function ProfilePage() {
 
   const [privateKeyDialog, setPrivateKeyDialog] = useState<string | null>(null)
   const [regenConfirmOpen, setRegenConfirmOpen] = useState(false)
+
+  // MFA state
+  const [mfaStep, setMfaStep] = useState<'idle' | 'enrolling' | 'confirming'>('idle')
+  const [enrollData, setEnrollData] = useState<{ qr_code: string; totp_secret: string } | null>(null)
+  const [confirmCode, setConfirmCode] = useState('')
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
+  const [disableCode, setDisableCode] = useState('')
+  const [disableDialogOpen, setDisableDialogOpen] = useState(false)
 
   const { data: existingKey } = useQuery({
     queryKey: ['ssh-key'],
@@ -86,6 +94,57 @@ export default function ProfilePage() {
       toast.success('SSH key removed')
     },
     onError: () => toast.error('Remove failed'),
+  })
+
+  const { data: mfaStatus, refetch: refetchMfaStatus } = useQuery({
+    queryKey: ['mfa-status'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/auth/mfa/status')
+      return data as { mfa_enabled: boolean; enrolled_at: string | null; backup_codes_remaining: number }
+    },
+  })
+
+  const enrollMutation = useMutation({
+    mutationFn: () => api.post('/api/auth/mfa/enroll'),
+    onSuccess: (res) => {
+      setEnrollData({ qr_code: res.data.qr_code, totp_secret: res.data.totp_secret })
+      setMfaStep('enrolling')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to start enrollment'),
+  })
+
+  const confirmMutation = useMutation({
+    mutationFn: () => api.post('/api/auth/mfa/confirm', { code: confirmCode }),
+    onSuccess: (res) => {
+      setBackupCodes(res.data.backup_codes)
+      setMfaStep('idle')
+      setEnrollData(null)
+      setConfirmCode('')
+      refetchMfaStatus()
+      toast.success('Two-factor authentication enabled')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Invalid code'),
+  })
+
+  const disableMutation = useMutation({
+    mutationFn: () => api.post('/api/auth/mfa/disable', { code: disableCode }),
+    onSuccess: () => {
+      setDisableDialogOpen(false)
+      setDisableCode('')
+      refetchMfaStatus()
+      toast.success('Two-factor authentication disabled')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to disable MFA'),
+  })
+
+  const regenBackupMutation = useMutation({
+    mutationFn: () => api.post('/api/auth/mfa/backup-codes/regenerate'),
+    onSuccess: (res) => {
+      setBackupCodes(res.data.backup_codes)
+      refetchMfaStatus()
+      toast.success('Backup codes regenerated')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to regenerate codes'),
   })
 
   const copyToClipboard = (text: string) => {
@@ -210,6 +269,111 @@ export default function ProfilePage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Two-Factor Authentication */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4" /> Two-Factor Authentication
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {mfaStep === 'enrolling' && enrollData ? (
+              /* Enrollment: QR code + confirm */
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)
+                </p>
+                <div className="flex justify-center">
+                  <img
+                    src={`data:image/png;base64,${enrollData.qr_code}`}
+                    alt="MFA QR Code"
+                    className="rounded-lg border"
+                    width={200}
+                    height={200}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Or enter this code manually:</p>
+                  <div className="bg-muted/30 rounded-md p-2 font-mono text-xs text-center tracking-widest select-all">
+                    {enrollData.totp_secret}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="mfa-confirm-code">Enter the 6-digit code from your app to confirm</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="mfa-confirm-code"
+                      value={confirmCode}
+                      onChange={(e) => setConfirmCode(e.target.value)}
+                      placeholder="000000"
+                      className="text-center tracking-widest max-w-[160px]"
+                      maxLength={6}
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => confirmMutation.mutate()}
+                      disabled={confirmCode.length !== 6 || confirmMutation.isPending}
+                    >
+                      Confirm
+                    </Button>
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => { setMfaStep('idle'); setEnrollData(null); setConfirmCode('') }}>
+                  Cancel
+                </Button>
+              </div>
+            ) : mfaStatus?.mfa_enabled ? (
+              /* MFA Enabled: status + management */
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <ShieldCheck className="h-4 w-4 text-green-500" />
+                  <span className="text-green-600 dark:text-green-400 font-medium">Enabled</span>
+                  {mfaStatus.enrolled_at && (
+                    <span className="text-muted-foreground">
+                      since {new Date(mfaStatus.enrolled_at).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Backup codes remaining: <span className="font-medium">{mfaStatus.backup_codes_remaining}</span>
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => regenBackupMutation.mutate()}
+                    disabled={regenBackupMutation.isPending}
+                  >
+                    <RefreshCw className="mr-2 h-3 w-3" /> Regenerate Backup Codes
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setDisableDialogOpen(true)}
+                  >
+                    <ShieldOff className="mr-2 h-3 w-3" /> Disable MFA
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* MFA Not Enabled */
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Add an extra layer of security to your account by enabling two-factor authentication.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => enrollMutation.mutate()}
+                  disabled={enrollMutation.isPending}
+                >
+                  <ShieldCheck className="mr-2 h-3 w-3" /> Enable Two-Factor Authentication
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Private Key Dialog */}
@@ -264,6 +428,91 @@ export default function ProfilePage() {
           generateKeyMutation.mutate()
         }}
       />
+
+      {/* Backup Codes Dialog */}
+      <Dialog open={!!backupCodes} onOpenChange={() => setBackupCodes(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Backup Codes</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-destructive font-medium">
+              Save these backup codes in a secure location. Each code can only be used once.
+              They will not be shown again.
+            </p>
+            <div className="bg-muted/30 rounded-md p-4 grid grid-cols-2 gap-2 font-mono text-sm">
+              {backupCodes?.map((code, i) => (
+                <div key={i} className="text-center">{code}</div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => backupCodes && copyToClipboard(backupCodes.join('\n'))}
+              >
+                <Copy className="mr-2 h-3 w-3" /> Copy
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (!backupCodes) return
+                  const blob = new Blob([backupCodes.join('\n')], { type: 'text/plain' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'cloudlab-backup-codes.txt'
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(url)
+                }}
+              >
+                <Download className="mr-2 h-3 w-3" /> Download
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setBackupCodes(null)}>I've saved these codes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Disable MFA Dialog */}
+      <Dialog open={disableDialogOpen} onOpenChange={(open) => { setDisableDialogOpen(open); if (!open) setDisableCode('') }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Disable Two-Factor Authentication</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor="mfa-disable-code" className="text-sm text-muted-foreground font-normal">
+              Enter your current 6-digit authenticator code to confirm.
+            </Label>
+            <Input
+              id="mfa-disable-code"
+              value={disableCode}
+              onChange={(e) => setDisableCode(e.target.value)}
+              placeholder="000000"
+              className="text-center tracking-widest"
+              maxLength={6}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDisableDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => disableMutation.mutate()}
+              disabled={disableCode.length !== 6 || disableMutation.isPending}
+            >
+              Disable MFA
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

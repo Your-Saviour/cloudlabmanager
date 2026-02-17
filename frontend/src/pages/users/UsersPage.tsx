@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, MoreHorizontal, Mail, Pencil, UserCheck, UserX, Copy, Shield } from 'lucide-react'
+import { Plus, MoreHorizontal, Mail, Pencil, UserCheck, UserX, Copy, Shield, ShieldOff } from 'lucide-react'
 import api from '@/lib/api'
 import { useHasPermission } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/authStore'
@@ -38,12 +38,14 @@ export default function UsersPage() {
   const canCreate = useHasPermission('users.create')
   const canEdit = useHasPermission('users.edit')
   const canDelete = useHasPermission('users.delete')
+  const canMfaReset = useHasPermission('users.mfa_reset')
   const [inviteOpen, setInviteOpen] = useState(false)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
   const [editUser, setEditUser] = useState<User | null>(null)
   const [toggleUser, setToggleUser] = useState<User | null>(null)
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const [accessUser, setAccessUser] = useState<User | null>(null)
+  const [mfaResetUser, setMfaResetUser] = useState<User | null>(null)
 
   const [inviteForm, setInviteForm] = useState({ username: '', email: '', display_name: '', role_id: '' })
   const [editForm, setEditForm] = useState({ display_name: '', email: '', role_id: '' })
@@ -124,6 +126,16 @@ export default function UsersPage() {
     onError: () => toast.error('Update failed'),
   })
 
+  const resetMfaMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/users/${id}/mfa`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      setMfaResetUser(null)
+      toast.success('MFA has been reset for this user')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to reset MFA'),
+  })
+
   const openEditDialog = (user: User) => {
     setEditForm({
       display_name: user.display_name,
@@ -170,6 +182,17 @@ export default function UsersPage() {
         ),
       },
       {
+        id: 'mfa',
+        header: 'MFA',
+        cell: ({ row }) => (
+          row.original.mfa_enabled ? (
+            <Badge variant="outline" className="text-xs">Enabled</Badge>
+          ) : (
+            <span className="text-muted-foreground text-xs">Off</span>
+          )
+        ),
+      },
+      {
         accessorKey: 'last_login_at',
         header: 'Last Login',
         cell: ({ row }) => (
@@ -209,6 +232,11 @@ export default function UsersPage() {
                     )}
                   </DropdownMenuItem>
                 )}
+                {canMfaReset && !isSelf && row.original.mfa_enabled && (
+                  <DropdownMenuItem onClick={() => setMfaResetUser(row.original)}>
+                    <ShieldOff className="mr-2 h-3 w-3" /> Reset MFA
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => resendMutation.mutate(row.original.id)}>
                   <Mail className="mr-2 h-3 w-3" /> Resend Invite
                 </DropdownMenuItem>
@@ -223,7 +251,7 @@ export default function UsersPage() {
         },
       },
     ],
-    [canDelete, canEdit, currentUser]
+    [canDelete, canEdit, canMfaReset, currentUser]
   )
 
   return (
@@ -367,6 +395,17 @@ export default function UsersPage() {
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => deleteUser && deleteMutation.mutate(deleteUser.id)}
+      />
+
+      {/* Reset MFA Confirm */}
+      <ConfirmDialog
+        open={!!mfaResetUser}
+        onOpenChange={() => setMfaResetUser(null)}
+        title="Reset Two-Factor Authentication"
+        description={`This will force-disable MFA for "${mfaResetUser?.username}". They will need to re-enroll if they want to use MFA again.`}
+        confirmLabel="Reset MFA"
+        variant="destructive"
+        onConfirm={() => mfaResetUser && resetMfaMutation.mutate(mfaResetUser.id)}
       />
 
       {/* Service Access Dialog */}

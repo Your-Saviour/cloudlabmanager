@@ -891,6 +891,9 @@ class AnsibleRunner:
             "-e", f"service_filter={name}",
         ])
 
+        if ok:
+            self._refresh_cache_after_stop(job)
+
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
@@ -912,10 +915,61 @@ class AnsibleRunner:
             "-i", "/inventory/vultr.yml",
         ])
 
+        if ok:
+            self._refresh_cache_after_stop(job)
+
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
         await self._notify_job(job)
+
+    def _refresh_cache_after_stop(self, job: Job):
+        """Re-generate inventory from Vultr API and sync DB cache/objects.
+
+        Called after stop operations so destroyed instances are removed from
+        the dashboard, health checks, and inventory.  Only touches DB records
+        — does NOT delete certificate or key files on disk.
+        """
+        try:
+            from database import SessionLocal, AppMetadata
+            import subprocess
+
+            # Re-generate the inventory file from live Vultr state
+            job.output.append("[Refreshing inventory after stop]")
+            result = subprocess.run(
+                [
+                    "ansible-playbook",
+                    "/init_playbook/generate-inventory.yaml",
+                    "--vault-password-file", VAULT_PASS_FILE,
+                ],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode != 0:
+                job.output.append(f"[Warning: inventory refresh failed: {result.stderr[-300:] if result.stderr else 'unknown'}]")
+                return
+
+            # Read the freshly generated inventory into the DB cache
+            if os.path.isfile(INVENTORY_FILE):
+                with open(INVENTORY_FILE, "r") as f:
+                    inv_data = yaml.safe_load(f)
+                session = SessionLocal()
+                try:
+                    AppMetadata.set(session, "instances_cache", inv_data)
+                    AppMetadata.set(session, "instances_cache_time",
+                                    datetime.now(timezone.utc).isoformat())
+                    session.commit()
+                    job.output.append("[Inventory cache updated]")
+                finally:
+                    session.close()
+
+            # Sync inventory objects (removes stale servers + orphaned passwords)
+            from inventory_sync import run_sync_for_source
+            run_sync_for_source("vultr_inventory")
+            job.output.append("[Inventory objects synced]")
+            run_sync_for_source("ssh_credential_sync")
+            job.output.append("[SSH credentials synced]")
+        except Exception as e:
+            job.output.append(f"[Warning: post-stop cleanup failed: {e}]")
 
     async def _run_refresh(self, job: Job):
         job.output.append("--- Generating inventory ---")

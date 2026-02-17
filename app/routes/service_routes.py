@@ -369,9 +369,20 @@ async def active_deployments(request: Request,
         for dirname in sorted(os.listdir(SERVICES_DIR)):
             inv_path = os.path.join(SERVICES_DIR, dirname, "outputs", "temp_inventory.yaml")
             if os.path.isfile(inv_path):
-                deployments.append({"name": dirname})
-    allowed = set(filter_services_for_user(session, user, [d["name"] for d in deployments]))
-    return {"deployments": [d for d in deployments if d["name"] in allowed]}
+                deployments.append({"name": dirname, "service": dirname})
+            # Check subdirectories for personal instances
+            outputs_dir = os.path.join(SERVICES_DIR, dirname, "outputs")
+            if os.path.isdir(outputs_dir):
+                for subdir in sorted(os.listdir(outputs_dir)):
+                    subdir_path = os.path.join(outputs_dir, subdir)
+                    if os.path.isdir(subdir_path) and os.path.isfile(os.path.join(subdir_path, "temp_inventory.yaml")):
+                        deployments.append({"name": f"{dirname}/{subdir}", "service": dirname})
+    # Permission check uses the parent service name
+    parent_services = list({d["service"] for d in deployments})
+    allowed = set(filter_services_for_user(session, user, parent_services))
+    return {"deployments": [
+        {"name": d["name"]} for d in deployments if d["service"] in allowed
+    ]}
 
 
 @router.get("/{name}")

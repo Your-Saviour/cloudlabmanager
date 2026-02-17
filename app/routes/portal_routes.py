@@ -259,17 +259,25 @@ async def get_portal_services(
         server = servers.get(hostname, {})
         ip = server.get("ip", "")
 
-        outputs = all_outputs.get(name, [])
+        # Only show outputs/credentials when the service has a live server
+        is_deployed = bool(server)
+        outputs = all_outputs.get(name, []) if is_deployed else []
         health = health_data.get(name)
-        connection_guide = _build_connection_guide(ip, fqdn, outputs)
+        connection_guide = _build_connection_guide(ip, fqdn, outputs) if is_deployed else {}
+
+        # Skip services that have no live server, no health config, and no bookmarks
+        has_bookmarks = name in bookmarks_by_service
+        has_health = name in health_data
+        if not is_deployed and not has_health and not has_bookmarks:
+            continue
 
         svc = {
             "name": name,
             "display_name": ic.get("name", name),
             "power_status": server.get("power_status", "unknown"),
             "hostname": hostname,
-            "ip": ip,
-            "fqdn": fqdn,
+            "ip": ip if is_deployed else "",
+            "fqdn": fqdn if is_deployed else "",
             "region": first_instance.get("region", server.get("region", "")),
             "plan": first_instance.get("plan", ""),
             "tags": first_instance.get("tags", server.get("tags", [])),

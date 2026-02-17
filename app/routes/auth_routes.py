@@ -91,13 +91,11 @@ async def login(req: LoginRequest, request: Request, session: Session = Depends(
     if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    user.last_login_at = datetime.now(timezone.utc)
-    session.flush()
-
     # Check if MFA is enabled
     from database import UserMFA
     mfa = session.query(UserMFA).filter_by(user_id=user.id, is_enabled=True).first()
     if mfa:
+        # Defer last_login_at and audit log until MFA verification completes
         from auth import create_mfa_token
         mfa_token = create_mfa_token(user)
         return {
@@ -105,7 +103,10 @@ async def login(req: LoginRequest, request: Request, session: Session = Depends(
             "mfa_token": mfa_token,
         }
 
-    # No MFA — issue full token
+    # No MFA — update last login and issue full token
+    user.last_login_at = datetime.now(timezone.utc)
+    session.flush()
+
     from audit import log_action
     log_action(session, user.id, user.username, "login", "auth",
                ip_address=request.client.host if request.client else None)
@@ -470,6 +471,8 @@ async def mfa_verify(req: MFAVerifyRequest, request: Request,
     if not verified:
         raise HTTPException(status_code=401, detail="Invalid verification code")
 
+    # Update last login (deferred from login step 1)
+    user.last_login_at = datetime.now(timezone.utc)
     session.flush()
 
     # Audit log

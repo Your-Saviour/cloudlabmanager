@@ -179,3 +179,49 @@ class TestWriteVaultPassword:
     def test_no_crash_when_no_password(self, db_session):
         # Should do nothing when no vault_password is stored
         write_vault_password_file()
+
+
+class TestMFAToken:
+    def test_create_mfa_token_produces_string(self, admin_user):
+        from auth import create_mfa_token
+        token = create_mfa_token(admin_user)
+        assert isinstance(token, str)
+        assert len(token) > 20
+
+    def test_mfa_token_has_purpose_claim(self, admin_user):
+        from jose import jwt
+        from auth import create_mfa_token, get_secret_key, ALGORITHM
+
+        token = create_mfa_token(admin_user)
+        payload = jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
+        assert payload["purpose"] == "mfa"
+        assert payload["sub"] == admin_user.username
+        assert payload["uid"] == admin_user.id
+
+    def test_validate_mfa_token_valid(self, admin_user):
+        from auth import create_mfa_token, validate_mfa_token
+        token = create_mfa_token(admin_user)
+        payload = validate_mfa_token(token)
+        assert payload is not None
+        assert payload["sub"] == admin_user.username
+        assert payload["purpose"] == "mfa"
+
+    def test_validate_mfa_token_invalid_string(self):
+        from auth import validate_mfa_token
+        assert validate_mfa_token("invalid.token.here") is None
+
+    def test_validate_mfa_token_expired(self, admin_user):
+        from jose import jwt
+        from auth import get_secret_key, ALGORITHM, validate_mfa_token
+
+        expire = datetime.now(timezone.utc) - timedelta(minutes=1)
+        payload = {"sub": admin_user.username, "uid": admin_user.id,
+                   "exp": expire, "purpose": "mfa"}
+        token = jwt.encode(payload, get_secret_key(), algorithm=ALGORITHM)
+        assert validate_mfa_token(token) is None
+
+    def test_validate_rejects_non_mfa_token(self, admin_user):
+        """A regular access token should not validate as an MFA token."""
+        from auth import validate_mfa_token
+        regular_token = create_access_token(admin_user)
+        assert validate_mfa_token(regular_token) is None

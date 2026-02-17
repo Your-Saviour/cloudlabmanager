@@ -30,6 +30,7 @@ STATIC_PERMISSION_DEFS = [
     ("users.edit", "users", "Edit Users", "Edit user profiles"),
     ("users.delete", "users", "Delete Users", "Deactivate user accounts"),
     ("users.assign_roles", "users", "Assign Roles", "Assign roles to users"),
+    ("users.mfa_reset", "users", "Reset User MFA", "Force-disable MFA for other users"),
     # roles
     ("roles.view", "roles", "View Roles", "View roles and permissions"),
     ("roles.create", "roles", "Create Roles", "Create custom roles"),

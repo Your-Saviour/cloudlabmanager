@@ -124,6 +124,30 @@ class PasswordResetToken(Base):
     user = relationship("User")
 
 
+class UserMFA(Base):
+    __tablename__ = "user_mfa"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    is_enabled = Column(Boolean, default=False, nullable=False)
+    totp_secret_encrypted = Column(Text, nullable=True)  # Fernet-encrypted TOTP secret
+    enrolled_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user = relationship("User")
+
+
+class MFABackupCode(Base):
+    __tablename__ = "mfa_backup_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash = Column(String(255), nullable=False)  # bcrypt hash of the backup code
+    is_used = Column(Boolean, default=False, nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
 class UserPreference(Base):
     __tablename__ = "user_preferences"
 
@@ -492,6 +516,7 @@ class NotificationRule(Base):
     role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
     filters = Column(Text, nullable=True)                  # JSON: {"service_name": "n8n-server", "status": "failed"} — optional filters
     is_enabled = Column(Boolean, default=True, nullable=False)
+    is_default = Column(Boolean, default=False, nullable=False, server_default="0")
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -568,6 +593,7 @@ def create_tables():
         "ALTER TABLE jobs ADD COLUMN parent_job_id VARCHAR(20) REFERENCES jobs(id) ON DELETE SET NULL",
         "ALTER TABLE jobs ADD COLUMN webhook_id INTEGER REFERENCES webhook_endpoints(id) ON DELETE SET NULL",
         "ALTER TABLE users ADD COLUMN email VARCHAR(255)",
+        "ALTER TABLE notification_rules ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0",
     ]
     with engine.connect() as conn:
         for sql in migrations:

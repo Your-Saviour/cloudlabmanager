@@ -87,6 +87,9 @@ async def create_role(req: RoleCreateRequest, request: Request,
     session.add(role)
     session.flush()
 
+    from startup import create_default_rules_for_role
+    create_default_rules_for_role(session, role.id)
+
     log_action(session, user.id, user.username, "role.create", f"roles/{role.id}",
                details={"name": req.name},
                ip_address=request.client.host if request.client else None)

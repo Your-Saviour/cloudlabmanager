@@ -268,6 +268,8 @@ async def delete_rule(
     rule = session.query(NotificationRule).filter_by(id=rule_id).first()
     if not rule:
         raise HTTPException(404, "Notification rule not found")
+    if rule.is_default:
+        raise HTTPException(403, "Default notification rules cannot be deleted. You can disable them instead.")
 
     name = rule.name
     session.delete(rule)
@@ -536,6 +538,7 @@ def _rule_to_dict(r: NotificationRule) -> dict:
         role_name=r.role.name if r.role else None,
         filters=filters,
         is_enabled=r.is_enabled,
+        is_default=r.is_default,
         created_at=_utc_iso(r.created_at),
     ).model_dump()
 
