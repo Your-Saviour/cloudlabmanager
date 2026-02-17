@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, Monitor, RefreshCw, Square, Eye } from 'lucide-react'
 import api from '@/lib/api'
 import { useInventoryStore } from '@/stores/inventoryStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useHasPermission } from '@/lib/permissions'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -198,11 +199,13 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
     setCredModalLoading(true)
     setCredModalOpen(true)
     try {
-      const { data } = await api.get(`/api/services/${serviceName}/files/${subdir}/${filename}`, {
-        responseType: 'text',
-        transformResponse: [(d: string) => d],
+      const token = useAuthStore.getState().token
+      const resp = await fetch(`/api/services/${serviceName}/files/${subdir}/${filename}`, {
+        headers: { Authorization: `Bearer ${token}` },
       })
-      setCredModalValue(data)
+      if (!resp.ok) throw new Error('Failed to fetch')
+      const text = await resp.text()
+      setCredModalValue(text)
     } catch {
       toast.error('Failed to fetch private key')
       setCredModalOpen(false)
