@@ -394,12 +394,18 @@ async def main():
 
     if "git_url" in config.settings["startup"]:
         if "git_key" in config.settings["startup"]:
-            actions.run(
-                ["git", "clone", config.settings["startup"]["git_url"]],
-                env={
-                    "GIT_SSH_COMMAND": f"ssh -i {config.settings['startup']['git_key']} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-                },
-            )
+            clone_dest = os.path.join("/app", config.settings["startup"]["git_url"].rstrip("/").rsplit("/", 1)[-1].removesuffix(".git"))
+            git_env = {
+                "GIT_SSH_COMMAND": f"ssh -i {config.settings['startup']['git_key']} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+            }
+            if os.path.isdir(os.path.join(clone_dest, ".git")):
+                print(f"Repo already cloned at {clone_dest}, pulling latest...")
+                actions.run(["git", "-C", clone_dest, "pull"], env=git_env)
+            else:
+                actions.run(
+                    ["git", "clone", config.settings["startup"]["git_url"]],
+                    env=git_env,
+                )
         else:
             raise Exception("I DIDNT PROGRAM THIS")
 
