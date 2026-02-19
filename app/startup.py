@@ -437,6 +437,12 @@ async def main():
     # Write vault password file if previously configured
     write_vault_password()
 
+    # Pre-generate JWT secret key so it exists before any route needs it.
+    # This avoids a SQLite deadlock when get_secret_key() tries to INSERT
+    # inside a route that already holds a write lock.
+    from auth import get_secret_key
+    get_secret_key()
+
     print("Startup complete.")
     return type_configs
 
