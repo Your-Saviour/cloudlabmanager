@@ -68,10 +68,11 @@ async def setup(req: SetupRequest, session: Session = Depends(get_db_session)):
     session.add(user)
     session.flush()
 
-    # Store vault password
-    AppMetadata.set(session, "vault_password", req.vault_password)
-    session.flush()
-    write_vault_password_file()
+    # Store vault password (skip if empty — may already be set from VAULT_PASSWORD env var)
+    if req.vault_password:
+        AppMetadata.set(session, "vault_password", req.vault_password)
+        session.flush()
+        write_vault_password_file()
 
     token = create_access_token(user)
     perms = get_user_permissions(session, user.id)

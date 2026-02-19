@@ -21,7 +21,7 @@ class TokenResponse(BaseModel):
 class SetupRequest(BaseModel):
     username: str
     password: str
-    vault_password: str
+    vault_password: str = ""
 
     @field_validator("username")
     @classmethod
