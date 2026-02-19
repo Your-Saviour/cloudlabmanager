@@ -57,22 +57,23 @@ def restore_persistent_data():
         os.symlink(persistent, clone_dir)
         print(f"Persistent: {clone_dir} -> {persistent}")
 
-    # Per-service outputs dirs
+    # Per-service outputs and inputs dirs
     services_path = os.path.join(CLOUDLAB_PATH, "services")
     if os.path.isdir(services_path):
         for name in os.listdir(services_path):
             svc_dir = os.path.join(services_path, name)
             if not os.path.isdir(svc_dir):
                 continue
-            persistent = os.path.join(PERSISTENT_BASE, "services", name, "outputs")
-            clone_outputs = os.path.join(svc_dir, "outputs")
-            os.makedirs(persistent, exist_ok=True)
-            if os.path.islink(clone_outputs):
-                os.unlink(clone_outputs)
-            elif os.path.isdir(clone_outputs):
-                shutil.rmtree(clone_outputs)
-            os.symlink(persistent, clone_outputs)
-            print(f"Persistent: {clone_outputs} -> {persistent}")
+            for subdir in ("outputs", "inputs"):
+                persistent = os.path.join(PERSISTENT_BASE, "services", name, subdir)
+                clone_dir_path = os.path.join(svc_dir, subdir)
+                os.makedirs(persistent, exist_ok=True)
+                if os.path.islink(clone_dir_path):
+                    os.unlink(clone_dir_path)
+                elif os.path.isdir(clone_dir_path):
+                    shutil.rmtree(clone_dir_path)
+                os.symlink(persistent, clone_dir_path)
+                print(f"Persistent: {clone_dir_path} -> {persistent}")
 
 
 def seed_initial_config_versions():
