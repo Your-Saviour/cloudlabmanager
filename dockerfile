@@ -11,7 +11,7 @@ ENV DOCKER_BUILD=1
 RUN npm run build
 
 # --- Stage 2: Python dependencies ---
-FROM dhi.io/python:3-debian13-dev AS build-stage
+FROM python:3-slim-bookworm AS build-stage
 
 ENV LANG=C.UTF-8
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -r ./requirements.txt
 RUN pip install --no-cache-dir ansible
 
 # --- Stage 3: Runtime ---
-FROM dhi.io/python:3-debian13-sfw-dev AS runtime-stage
+FROM python:3-slim-bookworm AS runtime-stage
 
 EXPOSE 8000
 
