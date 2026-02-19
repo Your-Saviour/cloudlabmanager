@@ -424,6 +424,9 @@ export default function InventoryDetailPage() {
           {typeSlug === 'server' && (
             <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
           )}
+          {typeSlug === 'credential' && (
+            <TabsTrigger value="credential-access">Credential Access</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
@@ -462,7 +465,12 @@ export default function InventoryDetailPage() {
                             <p className="text-xs text-muted-foreground uppercase tracking-wider">{field.label || field.name}</p>
                             <div className="mt-1">
                               {secretVal ? (
-                                <CredentialDisplay value={secretVal} />
+                                <CredentialDisplay
+                                  value={secretVal}
+                                  credentialId={typeSlug === 'credential' ? obj.id : undefined}
+                                  credentialName={typeSlug === 'credential' ? obj.data?.name || obj.name : undefined}
+                                  source="inventory"
+                                />
                               ) : (
                                 <p className="text-sm font-mono text-muted-foreground">-</p>
                               )}
@@ -647,6 +655,12 @@ export default function InventoryDetailPage() {
             </Card>
           </TabsContent>
         )}
+
+        {typeSlug === 'credential' && obj && (
+          <TabsContent value="credential-access" className="mt-4">
+            <CredentialAccessTab credential={obj} />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Delete confirm */}
@@ -794,6 +808,127 @@ export default function InventoryDetailPage() {
         onConfirm={() => deleteSnapshotTarget && deleteSnapshotMutation.mutate(deleteSnapshotTarget.id)}
       />
     </div>
+  )
+}
+
+// ─── Credential Access Tab ──────────────────────────────────────────────────
+
+const CREDENTIAL_TYPE_LABELS: Record<string, string> = {
+  '*': 'All Types',
+  ssh_key: 'SSH Key',
+  password: 'Password',
+  token: 'Token',
+  certificate: 'Certificate',
+  api_key: 'API Key',
+}
+
+const SCOPE_TYPE_LABELS: Record<string, string> = {
+  all: 'All',
+  instance: 'Instance',
+  service: 'Service',
+  tag: 'Tag',
+}
+
+function CredentialAccessTab({ credential }: { credential: InventoryObject }) {
+  const { data: rulesData, isLoading } = useQuery({
+    queryKey: ['credential-access-rules'],
+    queryFn: () => api.get('/api/credential-access/rules').then((r) => r.data),
+  })
+
+  const allRules = rulesData?.rules || []
+  const credType = credential.data?.credential_type as string | undefined
+  const credTags = credential.tags || []
+
+  // Filter rules that would match this credential
+  const matchingRules = allRules
+    .map((rule: any) => {
+      // Check credential type match
+      if (rule.credential_type !== '*' && rule.credential_type !== credType) return null
+
+      let matchReason = ''
+      if (rule.scope_type === 'all') {
+        matchReason = 'Scope: all credentials'
+      } else if (rule.scope_type === 'tag') {
+        const hasTag = credTags.some((t: Tag) => t.name === rule.scope_value)
+        if (!hasTag) return null
+        matchReason = `Matches tag: ${rule.scope_value}`
+      } else if (rule.scope_type === 'instance' || rule.scope_type === 'service') {
+        // Instance/service scope matches based on tags on the credential
+        const hasMatchingTag = credTags.some(
+          (t: Tag) => t.name === `${rule.scope_type}:${rule.scope_value}` || t.name === rule.scope_value
+        )
+        if (!hasMatchingTag) {
+          matchReason = `Scope: ${rule.scope_type}=${rule.scope_value} (no matching tag)`
+        } else {
+          matchReason = `Matches ${rule.scope_type}: ${rule.scope_value}`
+        }
+      }
+
+      return { ...rule, matchReason }
+    })
+    .filter(Boolean)
+
+  const columns = useMemo<ColumnDef<any>[]>(
+    () => [
+      {
+        id: 'role',
+        header: 'Role',
+        cell: ({ row }) => <span className="font-medium">{row.original.role_name || `Role #${row.original.role_id}`}</span>,
+      },
+      {
+        id: 'credential_type',
+        header: 'Credential Type Rule',
+        cell: ({ row }) => (
+          <Badge variant="outline" className="text-xs border-amber-500/50 text-amber-400">
+            {CREDENTIAL_TYPE_LABELS[row.original.credential_type] || row.original.credential_type}
+          </Badge>
+        ),
+      },
+      {
+        id: 'scope',
+        header: 'Scope',
+        cell: ({ row }) => (
+          <Badge variant="secondary" className="text-xs">
+            {SCOPE_TYPE_LABELS[row.original.scope_type] || row.original.scope_type}
+            {row.original.scope_value ? `: ${row.original.scope_value}` : ''}
+          </Badge>
+        ),
+      },
+      {
+        id: 'matchReason',
+        header: 'Match Reason',
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">{row.original.matchReason}</span>
+        ),
+      },
+    ],
+    [],
+  )
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        {matchingRules.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No credential access rules match this credential. All roles with inventory permission can view it.
+          </p>
+        ) : (
+          <DataTable columns={columns} data={matchingRules} searchKey="role_name" searchPlaceholder="Search by role..." />
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

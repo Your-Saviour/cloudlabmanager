@@ -178,6 +178,16 @@ Shown when opening a reset link (`#reset-password-{token}`). Sets a new password
 - Grid layout expanded to 4 columns at `lg` breakpoint to accommodate the new card
 - Only renders when `snapshot_storage` data is present in the API response
 
+### Cost Dashboard — Personal Instances Tab
+- Tab bar on the Costs page with **Overview** (existing content) and **Personal Instances** tabs
+- **Summary cards**: Active instance count, current monthly rate, remaining TTL cost
+- **Active instances table**: Sorted by TTL remaining ascending (expired first). Columns: hostname (mono), owner (admin only), service, region, plan, TTL remaining (color-coded badge), hourly cost, cost accrued, remaining cost. Costs shown to 4 decimal places. "unavailable" shown for unknown plans.
+- **TTL badge colors**: green (>4h), amber (1–4h), red (<1h), pulsing red (expired), muted "no TTL" for null
+- **Historical instances table**: Past instances from last 90 days with hostname, owner (admin only), service, region, last seen, duration, estimated total cost
+- Owner column and "all users" badge only visible to users with `personal_instances.view_all` permission
+- Data auto-refreshes every 30 seconds
+- Hook: `usePersonalInstanceCosts()` in `hooks/usePersonalInstanceCosts.ts`
+
 ### Health
 - Dedicated `/health` page showing all monitored services
 - Summary badges: healthy, unhealthy, degraded, unknown counts

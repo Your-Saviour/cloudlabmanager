@@ -91,6 +91,9 @@ STATIC_PERMISSION_DEFS = [
     ("feedback.submit", "feedback", "Submit Feedback", "Submit feature requests and bug reports"),
     ("feedback.view_all", "feedback", "View All Feedback", "View feedback from all users"),
     ("feedback.manage", "feedback", "Manage Feedback", "Update status, add notes, delete feedback"),
+    # credential access
+    ("credential_access.view", "credential_access", "View Credential Access Rules", "View credential-type access rules"),
+    ("credential_access.manage", "credential_access", "Manage Credential Access Rules", "Create, edit, and delete credential access rules"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

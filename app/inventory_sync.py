@@ -43,6 +43,17 @@ def _find_or_create_object(session: Session, type_id: int, data: dict,
     return obj
 
 
+def _get_or_create_credtype_tag(session: Session, credential_type: str) -> InventoryTag:
+    """Get or create a credtype: tag for the given credential type."""
+    tag_name = f"credtype:{credential_type}"
+    tag = session.query(InventoryTag).filter_by(name=tag_name).first()
+    if not tag:
+        tag = InventoryTag(name=tag_name, color="#f59e0b")  # amber for credtype tags
+        session.add(tag)
+        session.flush()
+    return tag
+
+
 class VultrInventorySync:
     """Sync servers from Vultr inventory cache."""
 
@@ -173,6 +184,12 @@ class VultrInventorySync:
                     target = existing_cred or new_cred
                     if svc_tag not in target.tags:
                         target.tags.append(svc_tag)
+
+                # Add credtype: tag
+                credtype_tag = _get_or_create_credtype_tag(session, "password")
+                target = existing_cred or new_cred
+                if credtype_tag not in target.tags:
+                    target.tags.append(credtype_tag)
 
         # Remove objects for servers no longer in the cache
         removed = 0
@@ -502,6 +519,10 @@ class SSHCredentialSync:
                 # Ensure svc tag is present (may have been added later)
                 if svc_tag not in existing.tags:
                     existing.tags.append(svc_tag)
+                # Add credtype: tag
+                credtype_tag = _get_or_create_credtype_tag(session, "ssh_key")
+                if credtype_tag not in existing.tags:
+                    existing.tags.append(credtype_tag)
             else:
                 new_cred = InventoryObject(
                     type_id=cred_type.id,
@@ -512,6 +533,10 @@ class SSHCredentialSync:
                 session.flush()
                 new_cred.tags.append(svc_tag)
                 new_cred.tags.append(inst_tag)
+                # Add credtype: tag
+                credtype_tag = _get_or_create_credtype_tag(session, "ssh_key")
+                if credtype_tag not in new_cred.tags:
+                    new_cred.tags.append(credtype_tag)
 
             # Also backfill root password if present and not already tracked
             default_pw = info.get("vultr_default_password", "")
@@ -559,6 +584,10 @@ class SSHCredentialSync:
         new_pw.tags.append(inst_tag)
         if svc_tag not in new_pw.tags:
             new_pw.tags.append(svc_tag)
+        # Add credtype: tag
+        credtype_tag = _get_or_create_credtype_tag(session, "password")
+        if credtype_tag not in new_pw.tags:
+            new_pw.tags.append(credtype_tag)
 
 
 SYNC_ADAPTERS = {

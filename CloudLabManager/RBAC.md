@@ -70,6 +70,8 @@ These are always present:
 | Feedback | `feedback.submit` | Submit feature requests and bug reports |
 | Feedback | `feedback.view_all` | View feedback from all users |
 | Feedback | `feedback.manage` | Update status, add notes, delete feedback |
+| Credential Access | `credential_access.view` | View credential access rules |
+| Credential Access | `credential_access.manage` | Create, edit, and delete credential access rules |
 
 ### Dynamic Permissions
 
@@ -171,10 +173,79 @@ Unique constraint on `(service_name, role_id, permission)`.
 
 All ACL changes (add, delete, replace) are logged in the audit trail with action prefix `service.acl`.
 
+## Credential Access Control
+
+In addition to inventory-level RBAC, CloudLabManager supports **credential-type-scoped access rules** that restrict which roles can see which credential types on which instances or services. See [[Credential Access Control]] in the CloudLab docs for the full user-facing guide.
+
+### How It Works
+
+Credential access is controlled through `CredentialAccessRule` records. Each rule specifies:
+
+- **Role** — which role the rule applies to
+- **Credential Type** — `ssh_key`, `password`, `token`, `certificate`, `api_key`, or `*` (all)
+- **Scope** — `all`, `instance` (specific hostname), `service` (specific service), or `tag`
+- **Require Personal Key** — when enabled, hides shared SSH credentials and requires users to upload their own key
+
+### Evaluation Logic
+
+1. **Super-admins** (wildcard permission) always see all credentials
+2. If **no rules exist** for any of the user's roles, all credentials are visible (backwards compatible)
+3. If rules exist, at least one rule must match both the credential type AND the scope
+
+### Auto-Tagging
+
+All credentials are automatically tagged with `credtype:{type}` (amber `#f59e0b`) during inventory sync. This is handled in:
+
+- `VultrInventorySync` — tags root password credentials with `credtype:password`
+- `SSHCredentialSync` — tags SSH key credentials with `credtype:ssh_key`
+- `sync_credentials_to_inventory()` — tags service output credentials based on `credential_type`
+
+A backfill runs on startup to tag any pre-existing credentials that were created before this feature.
+
+### Personal SSH Keys
+
+Users can upload a personal SSH public key via their profile (`PUT /api/auth/me/personal-ssh-key`). When a credential access rule has `require_personal_key` enabled:
+
+- The shared credential value is hidden in both the inventory page and portal
+- The portal shows a status indicator: green checkmark if the user has a personal key, amber warning with a profile link if they don't
+
+### Audit Events
+
+| Event | When |
+|-------|------|
+| `credential.viewed` | User opens a credential detail page or reveals a masked value |
+| `credential.copied` | User copies a credential value to clipboard |
+| `credential.access_denied` | A credential is filtered out by access rules |
+
+### Database
+
+The `credential_access_rules` table:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | Integer (PK) | Auto-increment ID |
+| `role_id` | Integer (FK → roles.id) | Target role |
+| `credential_type` | String | Credential type (`ssh_key`, `password`, `token`, `certificate`, `api_key`, `*`) |
+| `scope_type` | String | Scope type (`all`, `instance`, `service`, `tag`) |
+| `scope_value` | String (nullable) | Scope value (hostname, service name, or tag) |
+| `require_personal_key` | Boolean | Whether to require personal SSH key |
+| `created_by` | Integer (FK → users.id) | Who created the rule |
+| `created_at` | DateTime | When the rule was created |
+
+Unique constraint on `(role_id, credential_type, scope_type, scope_value)`.
+
+### UI
+
+- **Credential Access Rules page** (`/credential-access`) — admin rule builder under the Admin section with KeyRound icon
+- **Credential detail tab** — "Credential Access" tab on credential inventory objects showing which roles have access
+- **Bulk "Manage Access"** — multi-select credentials in inventory → add/remove access rules for selected items
+- **Profile page** — "Personal SSH Key" card for uploading/removing a personal SSH public key
+
 ## Implementation
 
 - **Engine**: `app/permissions.py` — `require_permission()`, `has_permission()`, caching
 - **Service ACL layer**: `app/service_auth.py` — `check_service_permission()`, `require_service_permission()`, `filter_services_for_user()`, `check_service_script_permission()`
 - **Inventory layer**: `app/inventory_auth.py` — `check_inventory_permission()`, `check_type_permission()`
-- **Models**: `app/database.py` — `Role`, `Permission`, `ObjectACL`, `TagPermission`, `ServiceACL` tables
+- **Credential access layer**: `app/credential_access.py` — `user_can_view_credential()`, `filter_portal_credentials()`, `check_personal_key_required()`
+- **Models**: `app/database.py` — `Role`, `Permission`, `ObjectACL`, `TagPermission`, `ServiceACL`, `CredentialAccessRule` tables
 - **Seeding**: `permissions.py:seed_permissions()` — called on startup, creates/updates all permissions

@@ -21,6 +21,7 @@ export interface PortalService {
     type: string
     value: string
     username?: string
+    _require_personal_key?: boolean
   }[]
   connection_guide: {
     ssh: string | null
@@ -41,4 +42,5 @@ export interface PortalBookmark {
 
 export interface PortalServicesResponse {
   services: PortalService[]
+  user_has_personal_key?: boolean
 }

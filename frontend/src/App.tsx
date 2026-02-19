@@ -38,6 +38,7 @@ import WebhooksPage from '@/pages/webhooks/WebhooksPage'
 import SnapshotsPage from '@/pages/snapshots/SnapshotsPage'
 import PersonalInstancesPage from '@/pages/personal-instances/PersonalInstancesPage'
 import FeedbackPage from '@/pages/feedback/FeedbackPage'
+import CredentialAccessRulesPage from '@/pages/settings/CredentialAccessRulesPage'
 
 // Redirect /services/:name/files to /services/:name/config?tab=files
 function ServiceFilesRedirect() {
@@ -129,6 +130,7 @@ function AppRoutes() {
         <Route path="/snapshots" element={<SnapshotsPage />} />
         <Route path="/personal-instances" element={<PersonalInstancesPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />
+        <Route path="/credential-access" element={<CredentialAccessRulesPage />} />
         <Route path="/portal" element={<PortalPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>

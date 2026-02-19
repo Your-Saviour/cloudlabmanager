@@ -262,6 +262,11 @@ async def get_portal_services(
         # Only show outputs/credentials when the service has a live server
         is_deployed = bool(server)
         outputs = all_outputs.get(name, []) if is_deployed else []
+
+        # Filter credentials through credential access rules
+        if outputs:
+            from credential_access import filter_portal_credentials
+            outputs = filter_portal_credentials(session, user, outputs, name, hostname)
         health = health_data.get(name)
         connection_guide = _build_connection_guide(ip, fqdn, outputs) if is_deployed else {}
 
@@ -288,7 +293,10 @@ async def get_portal_services(
         }
         result.append(svc)
 
-    return {"services": result}
+    return {
+        "services": result,
+        "user_has_personal_key": bool(getattr(user, 'personal_ssh_public_key', None) or getattr(user, 'ssh_public_key', None)),
+    }
 
 
 @router.get("/bookmarks")

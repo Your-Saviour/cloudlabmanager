@@ -215,7 +215,7 @@ class TestEventTypes:
         resp = await client.get("/api/notifications/rules/event-types", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["event_types"]) == 11
+        assert len(data["event_types"]) == 18
         values = [e["value"] for e in data["event_types"]]
         assert "job.completed" in values
         assert "job.failed" in values

@@ -6,7 +6,7 @@ from slowapi.util import get_remote_address
 from models import (
     LoginRequest, TokenResponse, SetupRequest, AcceptInviteRequest,
     PasswordResetRequest, PasswordResetConfirm, ChangePasswordRequest,
-    UpdateProfileRequest,
+    UpdateProfileRequest, PersonalSSHKeyUpdate,
     MFAConfirmRequest, MFAVerifyRequest, MFADisableRequest,
     VerifyIdentityRequest,
 )
@@ -33,6 +33,7 @@ def _user_dict(user: User) -> dict:
         "email": user.email,
         "display_name": user.display_name,
         "ssh_public_key": user.ssh_public_key,
+        "personal_ssh_public_key": user.personal_ssh_public_key,
     }
 
 
@@ -226,6 +227,32 @@ async def list_ssh_keys(user: User = Depends(get_current_user),
             for u in users_with_keys
         ]
     }
+
+
+@router.put("/me/personal-ssh-key")
+async def update_personal_ssh_key(
+    body: PersonalSSHKeyUpdate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+):
+    if body.key and not any(body.key.strip().startswith(prefix)
+                            for prefix in ("ssh-rsa", "ssh-ed25519", "ecdsa-sha2-", "ssh-dss")):
+        raise HTTPException(400, "Invalid SSH public key format")
+    db_user = session.query(User).filter_by(id=user.id).first()
+    db_user.personal_ssh_public_key = body.key.strip() if body.key else None
+    session.flush()
+    return {"ok": True, "has_personal_key": db_user.personal_ssh_public_key is not None}
+
+
+@router.delete("/me/personal-ssh-key")
+async def remove_personal_ssh_key(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+):
+    db_user = session.query(User).filter_by(id=user.id).first()
+    db_user.personal_ssh_public_key = None
+    session.flush()
+    return {"ok": True}
 
 
 @router.post("/accept-invite")

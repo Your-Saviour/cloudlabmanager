@@ -305,6 +305,12 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     from routes.feedback_routes import router as feedback_router
     app.include_router(feedback_router)
 
+    from routes.credential_access_routes import router as credential_access_router
+    app.include_router(credential_access_router)
+
+    from routes.credential_audit_routes import router as credential_audit_router
+    app.include_router(credential_audit_router)
+
     return app
 
 

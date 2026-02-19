@@ -27,6 +27,7 @@ On first boot, create an admin account and enter the Ansible vault password. The
 - **Email Notifications** — invitation, password reset, and alert emails via SMTP or Sendamatic (auto-selects transport based on configuration)
 - **Config & File Management** — edit service configs and manage input/output files from the UI
 - **Bulk Operations** — multi-select services or inventory items for batch stop, deploy, delete, tag, and custom actions
+- **Credential Access Control** — restrict which roles see which credential types per instance, with personal SSH key support and audit logging
 - **Persistent Storage** — deployment outputs survive container rebuilds
 
 ## Environment Variables

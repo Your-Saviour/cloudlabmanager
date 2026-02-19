@@ -147,6 +147,10 @@ class UpdateProfileRequest(BaseModel):
         return v.lower() if v else v
 
 
+class PersonalSSHKeyUpdate(BaseModel):
+    key: Optional[str] = None
+
+
 class MFAEnrollResponse(BaseModel):
     """Response from POST /api/auth/mfa/enroll"""
     totp_secret: str       # Raw secret for manual entry
@@ -636,3 +640,47 @@ class FeedbackUpdateRequest(BaseModel):
         if v is not None and v not in ("new", "reviewed", "planned", "in_progress", "completed", "declined"):
             raise ValueError("Invalid status")
         return v
+
+
+# --- Credential access rule models ---
+
+VALID_CREDENTIAL_TYPES = {"*", "ssh_key", "password", "token", "certificate", "api_key"}
+
+class CredentialAccessRuleCreate(BaseModel):
+    role_id: int
+    credential_type: str = Field(..., max_length=50)  # "ssh_key", "password", "*", etc.
+    scope_type: str = Field(..., pattern="^(instance|service|tag|all)$")
+    scope_value: Optional[str] = Field(None, max_length=200)
+    require_personal_key: bool = False
+
+    @field_validator("credential_type")
+    @classmethod
+    def validate_credential_type(cls, v):
+        if v not in VALID_CREDENTIAL_TYPES:
+            raise ValueError(f"credential_type must be one of: {', '.join(sorted(VALID_CREDENTIAL_TYPES))}")
+        return v
+
+
+class CredentialAccessRuleUpdate(BaseModel):
+    credential_type: Optional[str] = Field(None, max_length=50)
+    scope_type: Optional[str] = Field(None, pattern="^(instance|service|tag|all)$")
+    scope_value: Optional[str] = Field(None, max_length=200)
+    require_personal_key: Optional[bool] = None
+
+    @field_validator("credential_type")
+    @classmethod
+    def validate_credential_type(cls, v):
+        if v is not None and v not in VALID_CREDENTIAL_TYPES:
+            raise ValueError(f"credential_type must be one of: {', '.join(sorted(VALID_CREDENTIAL_TYPES))}")
+        return v
+
+
+class CredentialAccessRuleResponse(BaseModel):
+    id: int
+    role_id: int
+    role_name: str
+    credential_type: str
+    scope_type: str
+    scope_value: Optional[str]
+    require_personal_key: bool
+    created_at: Optional[str]

@@ -69,6 +69,7 @@ class User(Base):
     invited_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     invite_accepted_at = Column(DateTime(timezone=True), nullable=True)
     ssh_public_key = Column(Text, nullable=True)
+    personal_ssh_public_key = Column(Text, nullable=True)
 
     roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
     invited_by = relationship("User", remote_side="User.id", foreign_keys=[invited_by_id])
@@ -415,6 +416,26 @@ class TagPermission(Base):
     role = relationship("Role")
 
 
+class CredentialAccessRule(Base):
+    __tablename__ = "credential_access_rules"
+    __table_args__ = (
+        UniqueConstraint("role_id", "credential_type", "scope_type", "scope_value",
+                         name="uq_cred_access_rule"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    credential_type = Column(String(50), nullable=False)  # "ssh_key", "password", "token", etc. or "*" for all
+    scope_type = Column(String(20), nullable=False)        # "instance", "service", "tag", "all"
+    scope_value = Column(String(200), nullable=True)       # hostname, service_name, tag_name, or NULL for "all"
+    require_personal_key = Column(Boolean, default=False, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    role = relationship("Role")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
 class DriftReport(Base):
     __tablename__ = "drift_reports"
 
@@ -594,6 +615,7 @@ def create_tables():
         "ALTER TABLE jobs ADD COLUMN webhook_id INTEGER REFERENCES webhook_endpoints(id) ON DELETE SET NULL",
         "ALTER TABLE users ADD COLUMN email VARCHAR(255)",
         "ALTER TABLE notification_rules ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN personal_ssh_public_key TEXT",
     ]
     with engine.connect() as conn:
         for sql in migrations:

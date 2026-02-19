@@ -240,6 +240,43 @@ def seed_personal_instance_cleanup_schedule():
         session.close()
 
 
+def backfill_credtype_tags():
+    """One-time backfill of credtype: tags on existing credential objects."""
+    import json
+    from database import SessionLocal, InventoryType, InventoryObject, InventoryTag
+
+    session = SessionLocal()
+    try:
+        cred_type = session.query(InventoryType).filter_by(slug="credential").first()
+        if not cred_type:
+            return
+        creds = session.query(InventoryObject).filter_by(type_id=cred_type.id).all()
+        backfilled = 0
+        for cred in creds:
+            data = json.loads(cred.data)
+            ct = data.get("credential_type", "password")
+            tag_name = f"credtype:{ct}"
+            # Check if already tagged
+            existing_tag_names = {t.name for t in cred.tags}
+            if tag_name in existing_tag_names:
+                continue
+            tag = session.query(InventoryTag).filter_by(name=tag_name).first()
+            if not tag:
+                tag = InventoryTag(name=tag_name, color="#f59e0b")
+                session.add(tag)
+                session.flush()
+            cred.tags.append(tag)
+            backfilled += 1
+        session.commit()
+        if backfilled:
+            print(f"  Backfilled credtype: tags on {backfilled} credential(s)")
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Could not backfill credtype tags: {e}")
+    finally:
+        session.close()
+
+
 def load_inventory_types():
     """Load inventory type definitions from YAML and sync to DB.
     Returns the list of type configs for use by app.state."""
@@ -302,6 +339,9 @@ def init_database():
 
     # Run inventory sync
     run_inventory_sync(type_configs)
+
+    # Backfill credtype: tags on existing credentials
+    backfill_credtype_tags()
 
     # Load health check configurations
     from health_checker import load_health_configs

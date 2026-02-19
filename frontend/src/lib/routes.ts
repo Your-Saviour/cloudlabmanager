@@ -23,6 +23,7 @@ import {
   Monitor,
   Bug,
   MessageSquareMore,
+  KeyRound,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -60,6 +61,7 @@ export const routeIcons: Record<string, LucideIcon> = {
   Monitor,
   Bug,
   MessageSquareMore,
+  KeyRound,
 }
 
 export const mainRoutes: RouteDefinition[] = [
@@ -82,6 +84,7 @@ export const adminRoutes: RouteDefinition[] = [
   { label: 'Roles', href: '/roles', icon: 'Shield', section: 'admin', permission: 'roles.view', keywords: ['permissions', 'rbac', 'access'] },
   { label: 'Audit Log', href: '/audit', icon: 'ScrollText', section: 'admin', permission: 'system.audit_log', keywords: ['log', 'activity', 'history', 'events'] },
   { label: 'Notifications', href: '/notifications/rules', icon: 'Bell', section: 'admin', permission: 'notifications.rules.view', keywords: ['alerts', 'rules', 'channels'] },
+  { label: 'Credential Access', href: '/credential-access', icon: 'KeyRound', section: 'admin', permission: 'credential_access.view', keywords: ['credential', 'rbac', 'access', 'rules', 'ssh', 'password'] },
   { label: 'Feedback', href: '/feedback', icon: 'MessageSquareMore', section: 'admin', permission: 'feedback.view_all', keywords: ['feature', 'bug', 'request', 'feedback'] },
 ]
 

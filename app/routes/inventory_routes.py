@@ -268,6 +268,13 @@ async def list_objects(type_slug: str, request: Request,
         if check_inventory_permission(session, user, obj.id, "view"):
             results.append(_serialize_object(obj, tc))
 
+    # For credential type, apply credential access rules
+    if type_slug == "credential":
+        from credential_access import user_can_view_credential
+        results = [r for r in results
+                   if user_can_view_credential(session, user,
+                       session.query(InventoryObject).get(r["id"]))]
+
     return {"objects": results, "total": total, "page": page, "per_page": per_page}
 
 
@@ -334,7 +341,21 @@ async def get_object(type_slug: str, obj_id: int, request: Request,
     if not check_inventory_permission(session, user, obj.id, "view"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
+    # Enforce credential access rules on individual object access
+    if type_slug == "credential":
+        from credential_access import user_can_view_credential
+        if not user_can_view_credential(session, user, obj):
+            raise HTTPException(status_code=403, detail="Permission denied")
+
     result = _serialize_object(obj, tc)
+
+    # Log credential view audit event
+    if type_slug == "credential":
+        data = json.loads(obj.data)
+        log_action(session, user.id, user.username, "credential.viewed",
+                   f"inventory/credential/{obj.id}",
+                   details={"credential_name": data.get("name", "")},
+                   ip_address=request.client.host if request.client else None)
 
     # Include ACL rules if user can manage ACLs
     if has_permission(session, user.id, "inventory.acl.manage"):

@@ -44,9 +44,10 @@ function HealthBadge({ status }: { status: string }) {
 interface ServicePortalCardProps {
   service: PortalService
   index: number
+  userHasPersonalKey?: boolean
 }
 
-export function ServicePortalCard({ service, index }: ServicePortalCardProps) {
+export function ServicePortalCard({ service, index, userHasPersonalKey }: ServicePortalCardProps) {
   const isRunning = service.power_status === 'running'
   const isSuspended = service.power_status === 'suspended'
   const canEditBookmarks = useHasPermission('portal.bookmarks.edit')
@@ -217,7 +218,12 @@ export function ServicePortalCard({ service, index }: ServicePortalCardProps) {
               <span className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 {out.label}
               </span>
-              <CredentialDisplay value={out.value} username={out.username} />
+              <CredentialDisplay
+                value={out.value}
+                username={out.username}
+                requirePersonalKey={out._require_personal_key}
+                userHasPersonalKey={userHasPersonalKey}
+              />
             </div>
           ))}
 

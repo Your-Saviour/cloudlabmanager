@@ -85,7 +85,7 @@ Sync adapters populate inventory objects from external sources. They run on star
 - Reads instances from the cached inventory (populated by `refresh_instances`)
 - Creates/updates `server` objects with hostname, IP, region, plan, status, tags, root password, and VNC console URL
 - **Credential preservation**: If `default_password` or `kvm_url` is empty in incoming data (e.g., from `generate-inventory.yaml` which may not return these fields), the sync preserves existing non-empty values from the database rather than overwriting them with blanks
-- **Auto-creates credential objects**: When a server has a non-empty `default_password`, a `credential` inventory object is created (or updated) with the root password, tagged `instance:{hostname}`. If the instance's Vultr tags match a service directory, a `svc:{service_name}` tag is also added. These credentials appear in the [[Service Access Portal]] alongside service-level credentials
+- **Auto-creates credential objects**: When a server has a non-empty `default_password`, a `credential` inventory object is created (or updated) with the root password, tagged `instance:{hostname}`, `credtype:password`, and optionally `svc:{service_name}`. These credentials appear in the [[Service Access Portal]] alongside service-level credentials
 - **Orphan cleanup**: When a server is removed from Vultr, its associated `instance:{hostname}` **password** credential is deleted. SSH key credentials (managed by `SSHCredentialSync`) are skipped to avoid cross-adapter conflicts
 
 ### ServiceDiscoverySync (`services`)
@@ -108,8 +108,8 @@ Sync adapters populate inventory objects from external sources. They run on star
 - Scans all service directories for `outputs/temp_inventory.yaml` files, including per-instance subdirectories (personal instances)
 - For each host entry with an `ansible_ssh_private_key_file`, reads the corresponding `.pub` file and creates a `credential` object of type `ssh_key`
 - Stores the public key content in the `value` field and the private key file path in the `key_path` field (readonly)
-- Tags each credential with `svc:{service_name}` (purple) and `instance:{hostname}` (indigo)
-- **Root password backfill**: If a host has a `vultr_default_password` that hasn't been captured by `VultrInventorySync`, creates a `password` credential for it
+- Tags each credential with `svc:{service_name}` (purple), `instance:{hostname}` (indigo), and `credtype:ssh_key` (amber)
+- **Root password backfill**: If a host has a `vultr_default_password` that hasn't been captured by `VultrInventorySync`, creates a `password` credential for it (tagged `credtype:password`)
 - **Orphan cleanup**: Removes SSH credentials whose source `temp_inventory.yaml` no longer exists. Only cleans up credentials with `key_path` set, so manually-created credentials are never affected
 - **Triggered automatically** after deploys, script runs, instance stops, and inventory refreshes
 
@@ -121,6 +121,14 @@ Tags are labels that can be applied to any inventory object. They serve two purp
 
 1. **Organization** — group and filter objects visually
 2. **Access control** — grant permissions via `TagPermission` rules
+
+Auto-generated tag prefixes:
+
+| Prefix | Color | Source |
+|--------|-------|--------|
+| `svc:{name}` | Purple `#8b5cf6` | Inventory sync (links object to a service) |
+| `instance:{hostname}` | Indigo `#6366f1` | Inventory sync (links object to an instance) |
+| `credtype:{type}` | Amber `#f59e0b` | Credential sync (identifies credential type: `ssh_key`, `password`, `token`, `certificate`, `api_key`) |
 
 Tags have a `name` and `color`. They are managed via:
 

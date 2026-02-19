@@ -164,6 +164,25 @@ Admin endpoint to force-disable MFA for a locked-out user. Requires `users.mfa_r
 
 Returns: `{ "status": "ok", "message": "MFA disabled for user {username}" }`
 
+### Personal SSH Key
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| PUT | `/api/auth/me/personal-ssh-key` | Yes | Upload or update personal SSH public key |
+| DELETE | `/api/auth/me/personal-ssh-key` | Yes | Remove personal SSH public key |
+
+#### PUT `/api/auth/me/personal-ssh-key`
+
+Validates the key format (must start with `ssh-rsa`, `ssh-ed25519`, `ecdsa-sha2-`, or `ssh-dss`).
+
+```json
+{
+  "key": "ssh-ed25519 AAAA... user@host"
+}
+```
+
+The personal SSH key is returned in the `GET /api/auth/me` response as `personal_ssh_public_key`.
+
 ## Instances
 
 | Method | Endpoint | Permission | Description |
@@ -783,6 +802,7 @@ Notifications are sent only on state transitions (clean → drifted or drifted �
 | GET | `/api/costs/by-tag` | `costs.view` | Costs grouped by instance tag |
 | GET | `/api/costs/by-region` | `costs.view` | Costs grouped by Vultr region |
 | GET | `/api/costs/plans` | `costs.view` | Cached Vultr plans list with pricing |
+| GET | `/api/costs/personal-instances` | `costs.view` | Personal instance cost data (active, historical, summary) |
 | POST | `/api/costs/refresh` | `costs.refresh` | Trigger cost data refresh from Vultr |
 
 ### GET `/api/costs`
@@ -814,6 +834,57 @@ Returns the cached Vultr plans list used for cost estimation (including dry-run 
   "cached_at": "2026-02-15T00:00:00+00:00"
 }
 ```
+
+### GET `/api/costs/personal-instances`
+
+Returns cost data for personal instances, including active instances with TTL-based projections and historical instances from cost snapshots (last 90 days).
+
+**Scoping**: Users with `personal_instances.view_all` permission see all users' instances. Other users see only their own (filtered by `pi-user:{username}` tag).
+
+Response:
+
+```json
+{
+  "active": [
+    {
+      "hostname": "jake-jump-mel",
+      "owner": "jake",
+      "service": "jump-hosts",
+      "region": "mel",
+      "plan": "vc2-1c-1gb",
+      "created_at": "2026-02-18T10:00:00+00:00",
+      "ttl_remaining_hours": 18.5,
+      "hourly_cost": 0.007,
+      "monthly_cost": 5.0,
+      "cost_accrued": 0.0385,
+      "expected_remaining_cost": 0.1295,
+      "pricing_available": true
+    }
+  ],
+  "historical": [
+    {
+      "hostname": "jake-jump-syd",
+      "owner": "jake",
+      "service": "jump-hosts",
+      "region": "syd",
+      "first_seen": "2026-02-10T08:00:00+00:00",
+      "last_seen": "2026-02-11T08:00:00+00:00",
+      "duration_hours": 24.0,
+      "estimated_total_cost": 0.168
+    }
+  ],
+  "summary": {
+    "active_count": 1,
+    "total_monthly_rate": 5.0,
+    "total_remaining_cost": 0.1295
+  },
+  "view_all": true
+}
+```
+
+- `pricing_available` — `false` when the instance's plan is not found in the plans cache (costs show as zero)
+- `ttl_remaining_hours` — negative for expired-but-not-yet-cleaned-up instances; `null` if no TTL tag
+- Historical instances are deduplicated by hostname and sorted by `last_seen` descending
 
 ## Snapshots
 
@@ -943,7 +1014,10 @@ Returns available event types:
   { "value": "snapshot.failed", "label": "Snapshot Failed" },
   { "value": "snapshot.restored", "label": "Snapshot Restored" },
   { "value": "feedback.submitted", "label": "Feedback Submitted" },
-  { "value": "feedback.status_changed", "label": "Feedback Status Changed" }
+  { "value": "feedback.status_changed", "label": "Feedback Status Changed" },
+  { "value": "credential.viewed", "label": "Credential Viewed" },
+  { "value": "credential.copied", "label": "Credential Copied" },
+  { "value": "credential.access_denied", "label": "Credential Access Denied" }
 ]
 ```
 
@@ -1240,6 +1314,65 @@ Each object is individually permission-checked. Objects the user lacks `edit` pe
 | WebSocket | `/api/inventory/ws/{id}/action` | Yes (token param) | Real-time action output / SSH terminal |
 
 The WebSocket endpoint accepts the JWT token as a query parameter for authentication. For SSH actions, it opens a bidirectional terminal session to the target host.
+
+## Credential Access
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/credential-access/rules` | `credential_access.view` | List all credential access rules |
+| POST | `/api/credential-access/rules` | `credential_access.manage` | Create a rule |
+| PUT | `/api/credential-access/rules/{id}` | `credential_access.manage` | Update a rule |
+| DELETE | `/api/credential-access/rules/{id}` | `credential_access.manage` | Delete a rule |
+| POST | `/api/credential-access/rules/bulk` | `credential_access.manage` | Bulk add/remove rules for selected credentials |
+| POST | `/api/credentials/audit` | Yes | Log a frontend credential reveal/copy event |
+
+See [[RBAC#Credential Access Control]] for concepts and evaluation logic.
+
+### POST `/api/credential-access/rules`
+
+```json
+{
+  "role_id": 2,
+  "credential_type": "ssh_key",
+  "scope_type": "instance",
+  "scope_value": "web-01",
+  "require_personal_key": false
+}
+```
+
+- `credential_type` — `ssh_key`, `password`, `token`, `certificate`, `api_key`, or `*`
+- `scope_type` — `all`, `instance`, `service`, or `tag`
+- `scope_value` — required when `scope_type` is not `all` (returns 400 otherwise)
+
+### POST `/api/credential-access/rules/bulk`
+
+Bulk add or remove rules for selected credentials. Maps credentials to instance scopes via `instance:` tags.
+
+```json
+{
+  "action": "add",
+  "credential_ids": [1, 2, 3],
+  "role_id": 2,
+  "credential_type": "ssh_key",
+  "require_personal_key": false
+}
+```
+
+### POST `/api/credentials/audit`
+
+Frontend-initiated audit logging for credential reveal/copy actions.
+
+```json
+{
+  "credential_id": 5,
+  "credential_name": "root@web-01",
+  "action": "viewed",
+  "source": "inventory"
+}
+```
+
+- `action` — `viewed` or `copied`
+- `source` — `portal` or `inventory`
 
 ## Feedback
 

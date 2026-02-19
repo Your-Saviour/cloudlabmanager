@@ -171,7 +171,7 @@ export default function PortalPage() {
             {viewMode === 'grid' ? (
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {services.map((service, index) => (
-                  <ServicePortalCard key={service.name} service={service} index={index} />
+                  <ServicePortalCard key={service.name} service={service} index={index} userHasPersonalKey={data?.user_has_personal_key} />
                 ))}
               </div>
             ) : (

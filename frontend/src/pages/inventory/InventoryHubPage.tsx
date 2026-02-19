@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, Monitor, RefreshCw, Square, Eye } from 'lucide-react'
+import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, Monitor, RefreshCw, Square, Eye, Shield } from 'lucide-react'
 import api from '@/lib/api'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -26,6 +26,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { CredentialViewModal } from '@/components/inventory/CredentialViewModal'
 import { ReauthDialog } from '@/components/inventory/ReauthDialog'
@@ -156,6 +157,49 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
 
   // Bulk action (destroy, stop, etc.)
   const [bulkActionOpen, setBulkActionOpen] = useState<string | null>(null)
+
+  // Bulk manage access (credential type only)
+  const [manageAccessOpen, setManageAccessOpen] = useState(false)
+  const [accessAction, setAccessAction] = useState<'add' | 'remove'>('add')
+  const [accessRoleId, setAccessRoleId] = useState<number | null>(null)
+  const [accessCredType, setAccessCredType] = useState('*')
+  const [accessRequirePersonalKey, setAccessRequirePersonalKey] = useState(false)
+  const canManageAccess = useHasPermission('credential_access.manage')
+
+  const { data: accessRoles = [] } = useQuery({
+    queryKey: ['roles-for-access'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/roles')
+      return (data.roles || []) as { id: number; name: string }[]
+    },
+    enabled: typeSlug === 'credential' && canManageAccess,
+  })
+
+  const bulkAccessMutation = useMutation({
+    mutationFn: async (params: { credentialIds: number[]; action: string; roleId: number; credentialType: string; requirePersonalKey: boolean }) => {
+      const { data } = await api.post('/api/credential-access/rules/bulk', {
+        credential_ids: params.credentialIds,
+        action: params.action,
+        rule: {
+          role_id: params.roleId,
+          credential_type: params.credentialType,
+          scope_type: 'instance',
+          scope_value: '',
+          require_personal_key: params.requirePersonalKey,
+        },
+      })
+      return data
+    },
+    onSuccess: (data) => {
+      clearSelection()
+      setManageAccessOpen(false)
+      const msg = accessAction === 'add'
+        ? `Created ${data.created} access rules`
+        : `Removed ${data.deleted} access rules`
+      toast.success(msg)
+    },
+    onError: () => toast.error('Bulk access update failed'),
+  })
 
   // Credential reveal with re-auth gate
   const canRevealSecrets = useHasPermission(`inventory.${typeSlug}.view`)
@@ -529,8 +573,24 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
       })
     }
 
+    // Manage Access (credential type only)
+    if (typeSlug === 'credential' && canManageAccess) {
+      actions.push({
+        label: 'Manage Access',
+        icon: <Shield className="h-3.5 w-3.5" />,
+        variant: 'outline' as const,
+        onClick: () => {
+          setAccessAction('add')
+          setAccessRoleId(null)
+          setAccessCredType('*')
+          setAccessRequirePersonalKey(false)
+          setManageAccessOpen(true)
+        },
+      })
+    }
+
     return actions
-  }, [typeConfig])
+  }, [typeConfig, typeSlug, canManageAccess])
 
   return (
     <div>
@@ -643,6 +703,83 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
           actionName: bulkActionOpen,
         })}
       />
+
+      {/* Bulk manage access dialog (credential type only) */}
+      <Dialog open={manageAccessOpen} onOpenChange={(open) => { if (!open) setManageAccessOpen(false) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage Credential Access</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Action</Label>
+              <Select value={accessAction} onValueChange={(v) => setAccessAction(v as 'add' | 'remove')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="add">Add access rule</SelectItem>
+                  <SelectItem value="remove">Remove access rule</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={accessRoleId?.toString() || ''} onValueChange={(v) => setAccessRoleId(Number(v))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select role..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {accessRoles.map((role) => (
+                    <SelectItem key={role.id} value={role.id.toString()}>{role.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Credential Type</Label>
+              <Select value={accessCredType} onValueChange={setAccessCredType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="*">All types</SelectItem>
+                  <SelectItem value="ssh_key">SSH Key</SelectItem>
+                  <SelectItem value="password">Password</SelectItem>
+                  <SelectItem value="token">Token</SelectItem>
+                  <SelectItem value="certificate">Certificate</SelectItem>
+                  <SelectItem value="api_key">API Key</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {accessAction === 'add' && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={accessRequirePersonalKey}
+                  onCheckedChange={(checked) => setAccessRequirePersonalKey(!!checked)}
+                  aria-label="Require personal SSH key"
+                />
+                <span>Require personal SSH key</span>
+              </label>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManageAccessOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => accessRoleId && bulkAccessMutation.mutate({
+                credentialIds: selectedObjects.map(o => o.id),
+                action: accessAction,
+                roleId: accessRoleId,
+                credentialType: accessCredType,
+                requirePersonalKey: accessRequirePersonalKey,
+              })}
+              disabled={!accessRoleId || bulkAccessMutation.isPending}
+            >
+              {accessAction === 'add' ? 'Add Rules' : 'Remove Rules'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Destroy confirm (single item) */}
       <ConfirmDialog

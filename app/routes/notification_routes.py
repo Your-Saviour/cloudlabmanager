@@ -36,6 +36,9 @@ EVENT_TYPES = [
     {"value": "snapshot.deleted", "label": "Snapshot Deleted"},
     {"value": "snapshot.failed", "label": "Snapshot Failed"},
     {"value": "snapshot.restored", "label": "Snapshot Restored"},
+    {"value": "credential.viewed", "label": "Credential Viewed"},
+    {"value": "credential.copied", "label": "Credential Copied"},
+    {"value": "credential.access_denied", "label": "Credential Access Denied"},
 ]
 
 VALID_CHANNELS = ("in_app", "email", "slack")

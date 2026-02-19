@@ -122,6 +122,16 @@ def sync_credentials_to_inventory(service_name: str, outputs: list[dict]):
             if existing:
                 existing.data = json.dumps(obj_data)
                 existing.search_text = search_text
+                # Add credtype: tag
+                credtype = cred.get("credential_type", "password")
+                credtype_tag_name = f"credtype:{credtype}"
+                credtype_tag = session.query(InventoryTag).filter_by(name=credtype_tag_name).first()
+                if not credtype_tag:
+                    credtype_tag = InventoryTag(name=credtype_tag_name, color="#f59e0b")
+                    session.add(credtype_tag)
+                    session.flush()
+                if credtype_tag not in existing.tags:
+                    existing.tags.append(credtype_tag)
             else:
                 new_obj = InventoryObject(
                     type_id=cred_type.id,
@@ -131,6 +141,16 @@ def sync_credentials_to_inventory(service_name: str, outputs: list[dict]):
                 session.add(new_obj)
                 session.flush()
                 new_obj.tags.append(tag)
+                # Add credtype: tag
+                credtype = cred.get("credential_type", "password")
+                credtype_tag_name = f"credtype:{credtype}"
+                credtype_tag = session.query(InventoryTag).filter_by(name=credtype_tag_name).first()
+                if not credtype_tag:
+                    credtype_tag = InventoryTag(name=credtype_tag_name, color="#f59e0b")
+                    session.add(credtype_tag)
+                    session.flush()
+                if credtype_tag not in new_obj.tags:
+                    new_obj.tags.append(credtype_tag)
 
         session.commit()
     except Exception as e:

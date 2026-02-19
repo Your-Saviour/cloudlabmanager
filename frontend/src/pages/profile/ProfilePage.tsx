@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, Key, User, Download, Copy, ShieldCheck, ShieldOff, RefreshCw } from 'lucide-react'
+import { Save, Key, User, Download, Copy, ShieldCheck, ShieldOff, RefreshCw, Upload, Trash2 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -40,6 +40,10 @@ export default function ProfilePage() {
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
   const [disableCode, setDisableCode] = useState('')
   const [disableDialogOpen, setDisableDialogOpen] = useState(false)
+
+  // Personal SSH key state
+  const [personalKey, setPersonalKey] = useState('')
+  const [personalKeyError, setPersonalKeyError] = useState('')
 
   const { data: existingKey } = useQuery({
     queryKey: ['ssh-key'],
@@ -95,6 +99,60 @@ export default function ProfilePage() {
     },
     onError: () => toast.error('Remove failed'),
   })
+
+  const { data: meData } = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/auth/me')
+      return data as { personal_ssh_public_key: string | null }
+    },
+  })
+
+  const existingPersonalKey = meData?.personal_ssh_public_key || null
+
+  // Sync personal key textarea with server data
+  useEffect(() => {
+    if (existingPersonalKey && !personalKey) {
+      setPersonalKey(existingPersonalKey)
+    }
+  }, [existingPersonalKey])
+
+  const VALID_KEY_PREFIXES = ['ssh-rsa', 'ssh-ed25519', 'ecdsa-sha2-', 'ssh-dss']
+
+  const savePersonalKeyMutation = useMutation({
+    mutationFn: () => api.put('/api/auth/me/personal-ssh-key', { key: personalKey }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
+      setPersonalKeyError('')
+      toast.success('Personal SSH key saved')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to save key'),
+  })
+
+  const removePersonalKeyMutation = useMutation({
+    mutationFn: () => api.delete('/api/auth/me/personal-ssh-key'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
+      setPersonalKey('')
+      setPersonalKeyInitialized(false)
+      toast.success('Personal SSH key removed')
+    },
+    onError: () => toast.error('Failed to remove key'),
+  })
+
+  const handleSavePersonalKey = () => {
+    const trimmed = personalKey.trim()
+    if (!trimmed) {
+      setPersonalKeyError('Key cannot be empty')
+      return
+    }
+    if (!VALID_KEY_PREFIXES.some(prefix => trimmed.startsWith(prefix))) {
+      setPersonalKeyError('Key must start with ssh-rsa, ssh-ed25519, ecdsa-sha2-, or ssh-dss')
+      return
+    }
+    setPersonalKeyError('')
+    savePersonalKeyMutation.mutate()
+  }
 
   const { data: mfaStatus, refetch: refetchMfaStatus } = useQuery({
     queryKey: ['mfa-status'],
@@ -267,6 +325,48 @@ export default function ProfilePage() {
                 </Button>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Personal SSH Key */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Upload className="h-4 w-4" /> Personal SSH Key
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Upload your personal SSH public key. When credential access rules require
+              a personal key, this key will be used instead of shared credentials.
+            </p>
+            <Textarea
+              placeholder="Paste your SSH public key here (ssh-rsa AAAA... or ssh-ed25519 AAAA...)"
+              value={personalKey}
+              onChange={(e) => { setPersonalKey(e.target.value); setPersonalKeyError('') }}
+              rows={4}
+              className="font-mono text-sm"
+            />
+            {personalKeyError && <p className="text-destructive text-sm">{personalKeyError}</p>}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleSavePersonalKey}
+                disabled={savePersonalKeyMutation.isPending}
+              >
+                <Save className="mr-2 h-3 w-3" /> Save Personal Key
+              </Button>
+              {existingPersonalKey && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => removePersonalKeyMutation.mutate()}
+                  disabled={removePersonalKeyMutation.isPending}
+                >
+                  <Trash2 className="mr-2 h-3 w-3" /> Remove
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
 
