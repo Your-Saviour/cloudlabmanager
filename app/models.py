@@ -123,6 +123,17 @@ class PasswordResetConfirm(BaseModel):
         return v
 
 
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, MoreHorizontal, Mail, Pencil, UserCheck, UserX, Copy, Shield, ShieldOff } from 'lucide-react'
+import { Plus, MoreHorizontal, Mail, Pencil, UserCheck, UserX, Copy, Shield, ShieldOff, KeyRound } from 'lucide-react'
 import api from '@/lib/api'
 import { useHasPermission } from '@/lib/permissions'
 import { useAuthStore } from '@/stores/authStore'
@@ -39,6 +39,7 @@ export default function UsersPage() {
   const canEdit = useHasPermission('users.edit')
   const canDelete = useHasPermission('users.delete')
   const canMfaReset = useHasPermission('users.mfa_reset')
+  const canResetPassword = useHasPermission('users.password_reset')
   const [inviteOpen, setInviteOpen] = useState(false)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
   const [editUser, setEditUser] = useState<User | null>(null)
@@ -46,6 +47,8 @@ export default function UsersPage() {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null)
   const [accessUser, setAccessUser] = useState<User | null>(null)
   const [mfaResetUser, setMfaResetUser] = useState<User | null>(null)
+  const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
+  const [resetPasswordForm, setResetPasswordForm] = useState({ new_password: '' })
 
   const [inviteForm, setInviteForm] = useState({ username: '', email: '', display_name: '', role_id: '' })
   const [editForm, setEditForm] = useState({ display_name: '', email: '', role_id: '' })
@@ -124,6 +127,18 @@ export default function UsersPage() {
       toast.success('User updated')
     },
     onError: () => toast.error('Update failed'),
+  })
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: ({ id, new_password }: { id: number; new_password: string }) =>
+      api.post(`/api/users/${id}/reset-password`, { new_password }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      setResetPasswordUser(null)
+      setResetPasswordForm({ new_password: '' })
+      toast.success('Password has been reset')
+    },
+    onError: (err: any) => toast.error(err.response?.data?.detail || 'Failed to reset password'),
   })
 
   const resetMfaMutation = useMutation({
@@ -232,6 +247,11 @@ export default function UsersPage() {
                     )}
                   </DropdownMenuItem>
                 )}
+                {canResetPassword && !isSelf && (
+                  <DropdownMenuItem onClick={() => setResetPasswordUser(row.original)}>
+                    <KeyRound className="mr-2 h-3 w-3" /> Reset Password
+                  </DropdownMenuItem>
+                )}
                 {canMfaReset && !isSelf && row.original.mfa_enabled && (
                   <DropdownMenuItem onClick={() => setMfaResetUser(row.original)}>
                     <ShieldOff className="mr-2 h-3 w-3" /> Reset MFA
@@ -251,7 +271,7 @@ export default function UsersPage() {
         },
       },
     ],
-    [canDelete, canEdit, canMfaReset, currentUser]
+    [canDelete, canEdit, canMfaReset, canResetPassword, currentUser]
   )
 
   return (
@@ -396,6 +416,33 @@ export default function UsersPage() {
         variant="destructive"
         onConfirm={() => deleteUser && deleteMutation.mutate(deleteUser.id)}
       />
+
+      {/* Reset Password Dialog */}
+      <Dialog open={!!resetPasswordUser} onOpenChange={() => { setResetPasswordUser(null); setResetPasswordForm({ new_password: '' }) }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Reset Password — {resetPasswordUser?.username}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>New Password</Label>
+              <Input
+                type="password"
+                value={resetPasswordForm.new_password}
+                onChange={(e) => setResetPasswordForm({ new_password: e.target.value })}
+                placeholder="Minimum 8 characters"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setResetPasswordUser(null); setResetPasswordForm({ new_password: '' }) }}>Cancel</Button>
+            <Button
+              onClick={() => resetPasswordUser && resetPasswordMutation.mutate({ id: resetPasswordUser.id, new_password: resetPasswordForm.new_password })}
+              disabled={resetPasswordForm.new_password.length < 8 || resetPasswordMutation.isPending}
+            >
+              Reset Password
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Reset MFA Confirm */}
       <ConfirmDialog

@@ -15,7 +15,7 @@ from auth import get_current_user, hash_password, create_invite_token
 from permissions import require_permission, get_user_permissions, invalidate_cache
 from db_session import get_db_session
 from audit import log_action
-from models import InviteUserRequest, UserUpdateRequest, UserRoleAssignment
+from models import InviteUserRequest, UserUpdateRequest, UserRoleAssignment, AdminResetPasswordRequest
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -269,6 +269,36 @@ async def resend_invite(user_id: int, request: Request,
     await send_invite(target.email, token, inviter_name, base_url)
 
     return {"status": "invite_resent"}
+
+
+@router.post("/{user_id}/reset-password")
+async def admin_reset_password(user_id: int, req: AdminResetPasswordRequest, request: Request,
+                               user: User = Depends(require_permission("users.password_reset")),
+                               session: Session = Depends(get_db_session)):
+    """Admin reset password for a user."""
+    target = session.query(User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.id == user.id:
+        raise HTTPException(status_code=400, detail="Use the change-password endpoint for your own account")
+
+    target.password_hash = hash_password(req.new_password)
+    session.flush()
+
+    log_action(session, user.id, user.username, "user.password_reset", f"users/{user_id}",
+               details={"target_user_id": user_id, "target_username": target.username},
+               ip_address=request.client.host if request.client else None)
+
+    from notification_service import EVENT_PASSWORD_ADMIN_RESET, notify
+    import asyncio
+    asyncio.ensure_future(notify(EVENT_PASSWORD_ADMIN_RESET, {
+        "title": f"Password reset for {target.username}",
+        "body": f"Admin {user.username} has reset the password for {target.username}.",
+        "severity": "warning",
+    }))
+
+    return {"status": "ok", "message": f"Password reset for user {target.username}"}
 
 
 @router.delete("/{user_id}/mfa")
