@@ -435,6 +435,12 @@ class AnsibleRunner:
                 else:
                     run_env[env_key] = str(value)
 
+        # Auto-inject authenticated user's username if not already provided
+        if job.username and (not run_env or "INPUT_USERNAME" not in run_env):
+            if run_env is None:
+                run_env = dict(os.environ)
+            run_env["INPUT_USERNAME"] = job.username
+
         ok = False
         if action_type == "script":
             script_file = action_def.get("script", "deploy.sh")
@@ -585,6 +591,10 @@ class AnsibleRunner:
                 env[env_key] = ",".join(str(v) for v in value)
             else:
                 env[env_key] = str(value)
+
+        # Auto-inject authenticated user's username if not already provided
+        if username and "INPUT_USERNAME" not in env:
+            env["INPUT_USERNAME"] = username
 
         script_file = script_def["file"]
         full_path = os.path.join(SERVICES_DIR, name, script_file)

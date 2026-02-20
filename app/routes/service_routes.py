@@ -447,10 +447,6 @@ async def run_script(name: str, body: RunScriptRequest, request: Request,
                      session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     try:
-        # Auto-inject username from authenticated user for add-user service
-        if name == "add-user" and body.script == "add-user" and "username" not in body.inputs:
-            body.inputs["username"] = user.username
-
         job = await runner.run_script(name, body.script, body.inputs,
                                       user_id=user.id, username=user.username)
 
@@ -507,10 +503,6 @@ async def run_script_with_files(
                 with open(file_path, "wb") as f:
                     f.write(content)
                 parsed_inputs[input_name] = file_path
-
-        # Auto-inject username for add-user service
-        if name == "add-user" and script == "add-user" and "username" not in parsed_inputs:
-            parsed_inputs["username"] = user.username
 
         job = await runner.run_script(name, script, parsed_inputs,
                                       user_id=user.id, username=user.username,
