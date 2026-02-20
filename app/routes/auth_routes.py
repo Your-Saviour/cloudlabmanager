@@ -51,8 +51,11 @@ async def setup(req: SetupRequest, session: Session = Depends(get_db_session)):
     if is_setup_complete():
         raise HTTPException(status_code=400, detail="Setup already completed")
 
-    # Seed permissions if not done yet
-    seed_permissions(session)
+    # Seed permissions if not done yet (include inventory type configs so
+    # dynamic inventory.*.* permissions aren't treated as stale and deleted)
+    from type_loader import load_type_configs
+    type_configs = load_type_configs()
+    seed_permissions(session, type_configs)
 
     # Get super-admin role
     super_admin = session.query(Role).filter_by(name="super-admin").first()
