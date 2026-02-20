@@ -24,6 +24,7 @@ import {
   Bug,
   MessageSquareMore,
   KeyRound,
+  FolderOpen,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -62,6 +63,7 @@ export const routeIcons: Record<string, LucideIcon> = {
   Bug,
   MessageSquareMore,
   KeyRound,
+  FolderOpen,
 }
 
 export const mainRoutes: RouteDefinition[] = [
@@ -86,6 +88,17 @@ export const adminRoutes: RouteDefinition[] = [
   { label: 'Notifications', href: '/notifications/rules', icon: 'Bell', section: 'admin', permission: 'notifications.rules.view', keywords: ['alerts', 'rules', 'channels'] },
   { label: 'Credential Access', href: '/credential-access', icon: 'KeyRound', section: 'admin', permission: 'credential_access.view', keywords: ['credential', 'rbac', 'access', 'rules', 'ssh', 'password'] },
   { label: 'Feedback', href: '/feedback', icon: 'MessageSquareMore', section: 'admin', permission: 'feedback.view_all', keywords: ['feature', 'bug', 'request', 'feedback'] },
+]
+
+export const toolRoutes: RouteDefinition[] = [
+  {
+    label: 'File Library',
+    href: '/files',
+    icon: 'FolderOpen',
+    section: 'main',
+    permission: 'files.view',
+    keywords: ['files', 'upload', 'library', 'storage'],
+  },
 ]
 
 export const quickRoutes: RouteDefinition[] = [

@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+import uuid as _uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
@@ -11,10 +12,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from database import (
     User, Role, HealthCheckResult, ScheduledJob, WebhookEndpoint,
-    AppMetadata, SessionLocal, ServiceACL,
+    AppMetadata, SessionLocal, ServiceACL, FileLibraryItem,
 )
 from auth import get_current_user
-from permissions import require_permission, invalidate_cache
+from permissions import require_permission, invalidate_cache, has_permission
 from db_session import get_db_session
 from audit import log_action
 from service_auth import require_service_permission, filter_services_for_user, check_service_permission
@@ -24,6 +25,8 @@ from models import (
     ServiceACLCreate, ServiceACLBulkSet, BulkServiceACLRequest,
     SERVICE_ACL_PERMISSIONS,
 )
+
+FILE_LIBRARY_DIR = "/data/file_library"
 
 router = APIRouter(prefix="/api/services", tags=["services"])
 
@@ -45,6 +48,45 @@ class ConfigUpdate(BaseModel):
 class RunScriptRequest(BaseModel):
     script: str
     inputs: dict[str, Any] = {}
+
+
+def _resolve_single_library_ref(val: dict, user: User, session: Session) -> tuple[str, int]:
+    """Resolve a single library_file_id dict to (file_path, file_id)."""
+    file_id = val["library_file_id"]
+    lib_file = session.query(FileLibraryItem).filter_by(id=file_id).first()
+    if not lib_file:
+        raise ValueError(f"Library file {file_id} not found")
+    tags = json.loads(lib_file.tags) if lib_file.tags else []
+    if lib_file.user_id != user.id and "shared" not in tags:
+        if not has_permission(session, user.id, "files.manage"):
+            raise HTTPException(status_code=403, detail="Access denied to library file")
+    return f"/data/file_library/{lib_file.filename}", file_id
+
+
+def resolve_library_files(parsed_inputs: dict, user: User, session: Session) -> list[int]:
+    """Replace library_file_id references with actual file paths. Returns list of library file IDs used."""
+    library_ids = []
+    for key, val in list(parsed_inputs.items()):
+        if isinstance(val, dict) and "library_file_id" in val:
+            path, file_id = _resolve_single_library_ref(val, user, session)
+            parsed_inputs[key] = path
+            library_ids.append(file_id)
+        elif isinstance(val, list):
+            # Multi-file: list of library_file_id dicts
+            resolved_paths = []
+            for item in val:
+                if isinstance(item, dict) and "library_file_id" in item:
+                    path, file_id = _resolve_single_library_ref(item, user, session)
+                    resolved_paths.append(path)
+                    library_ids.append(file_id)
+            if resolved_paths:
+                # Merge with any existing comma-separated paths (from uploaded files)
+                existing = parsed_inputs[key]
+                if isinstance(existing, str) and existing:
+                    parsed_inputs[key] = existing + "," + ",".join(resolved_paths)
+                else:
+                    parsed_inputs[key] = ",".join(resolved_paths)
+    return library_ids
 
 
 @router.get("")
@@ -447,8 +489,13 @@ async def run_script(name: str, body: RunScriptRequest, request: Request,
                      session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
     try:
-        job = await runner.run_script(name, body.script, body.inputs,
-                                      user_id=user.id, username=user.username)
+        # Resolve library file references before running
+        parsed_inputs = dict(body.inputs)
+        library_file_ids = resolve_library_files(parsed_inputs, user, session)
+
+        job = await runner.run_script(name, body.script, parsed_inputs,
+                                      user_id=user.id, username=user.username,
+                                      library_file_ids=library_file_ids or None)
 
         log_action(session, user.id, user.username, "service.run_script", f"services/{name}",
                    details={"script": body.script, "job_id": job.id},
@@ -470,6 +517,7 @@ async def run_script_with_files(
     request: Request,
     script: str = Form(...),
     inputs: str = Form("{}"),
+    save_to_library: str = Form("true"),
     user: User = Depends(require_service_permission("deploy")),
     session: Session = Depends(get_db_session),
 ):
@@ -484,11 +532,25 @@ async def run_script_with_files(
     form = await request.form()
     temp_dir = tempfile.mkdtemp(prefix="clm_upload_")
     job_started = False
+    should_save_to_library = save_to_library.lower() in ("true", "1", "yes")
 
     try:
+        # Track multi-file inputs: input_name -> [path1, path2, ...]
+        multi_file_paths: dict[str, list[str]] = {}
+
         for field_name, field_value in form.multi_items():
             if field_name.startswith("file__") and hasattr(field_value, "read"):
-                input_name = field_name[6:]  # strip "file__" prefix
+                # Parse field name: "file__name" (single) or "file__name__0" (multi-file indexed)
+                parts = field_name.split("__")
+                if len(parts) == 3:
+                    # Indexed multi-file: file__inputName__index
+                    input_name = parts[1]
+                    is_multi = True
+                else:
+                    # Single file: file__inputName
+                    input_name = field_name[6:]
+                    is_multi = False
+
                 content = await field_value.read()
                 if len(content) > MAX_UPLOAD_SIZE:
                     raise HTTPException(
@@ -502,11 +564,46 @@ async def run_script_with_files(
                 file_path = os.path.join(temp_dir, safe_name)
                 with open(file_path, "wb") as f:
                     f.write(content)
-                parsed_inputs[input_name] = file_path
+
+                if is_multi:
+                    multi_file_paths.setdefault(input_name, []).append(file_path)
+                else:
+                    parsed_inputs[input_name] = file_path
+
+                # Auto-save to file library (respects storage quota)
+                if should_save_to_library:
+                    try:
+                        total_used = session.query(func.sum(FileLibraryItem.size_bytes)).filter_by(user_id=user.id).scalar() or 0
+                        quota_bytes = user.storage_quota_mb * 1024 * 1024
+                        if total_used + len(content) <= quota_bytes:
+                            stored_filename = f"{_uuid.uuid4().hex}_{safe_name}"
+                            library_path = os.path.join(FILE_LIBRARY_DIR, stored_filename)
+                            os.makedirs(FILE_LIBRARY_DIR, exist_ok=True)
+                            with open(library_path, "wb") as lf:
+                                lf.write(content)
+                            lib_item = FileLibraryItem(
+                                user_id=user.id,
+                                filename=stored_filename,
+                                original_name=safe_name,
+                                size_bytes=len(content),
+                                mime_type=getattr(field_value, "content_type", None),
+                            )
+                            session.add(lib_item)
+                            session.flush()
+                    except Exception:
+                        pass  # Auto-save is best-effort
+
+        # Merge multi-file paths into parsed_inputs as comma-separated strings
+        for input_name, paths in multi_file_paths.items():
+            parsed_inputs[input_name] = ",".join(paths)
+
+        # Resolve library file references in inputs
+        library_file_ids = resolve_library_files(parsed_inputs, user, session)
 
         job = await runner.run_script(name, script, parsed_inputs,
                                       user_id=user.id, username=user.username,
-                                      temp_dir=temp_dir)
+                                      temp_dir=temp_dir,
+                                      library_file_ids=library_file_ids or None)
         job_started = True
 
         log_action(session, user.id, user.username, "service.run_script", f"services/{name}",

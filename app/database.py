@@ -71,6 +71,7 @@ class User(Base):
     invite_accepted_at = Column(DateTime(timezone=True), nullable=True)
     ssh_public_key = Column(Text, nullable=True)
     personal_ssh_public_key = Column(Text, nullable=True)
+    storage_quota_mb = Column(Integer, default=500, nullable=False)  # Default 500 MB
 
     roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
     invited_by = relationship("User", remote_side="User.id", foreign_keys=[invited_by_id])
@@ -601,6 +602,23 @@ class FeedbackRequest(Base):
     user = relationship("User", lazy="selectin")
 
 
+class FileLibraryItem(Base):
+    __tablename__ = "file_library"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)          # stored filename (uuid prefix for uniqueness)
+    original_name = Column(String(255), nullable=False)     # user-facing original filename
+    size_bytes = Column(Integer, nullable=False)
+    mime_type = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+    tags = Column(Text, nullable=True)                      # JSON array of string tags
+    uploaded_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)  # updated when referenced in a script
+
+    user = relationship("User", lazy="selectin")
+
+
 def create_tables():
     Base.metadata.create_all(bind=engine)
     # Migration: add new columns if missing (idempotent)
@@ -617,6 +635,7 @@ def create_tables():
         "ALTER TABLE users ADD COLUMN email VARCHAR(255)",
         "ALTER TABLE notification_rules ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN personal_ssh_public_key TEXT",
+        "ALTER TABLE users ADD COLUMN storage_quota_mb INTEGER NOT NULL DEFAULT 500",
     ]
     with engine.connect() as conn:
         for sql in migrations:

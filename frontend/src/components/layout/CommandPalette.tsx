@@ -8,11 +8,12 @@ import { hasPermission } from '@/lib/permissions'
 import { Dialog, DialogContent, DialogTitle, DialogHeader, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
-import { mainRoutes, adminRoutes, quickRoutes, routeIcons, type RouteDefinition } from '@/lib/routes'
+import { mainRoutes, toolRoutes, adminRoutes, quickRoutes, routeIcons, type RouteDefinition } from '@/lib/routes'
 import { useCommandActions, formatRelativeTime, type CommandAction } from '@/lib/commandRegistry'
 import { useServiceAction } from '@/hooks/useServiceAction'
 import { DryRunPreview } from '@/components/services/DryRunPreview'
 import { ScriptInputField } from '@/components/shared/ScriptInputField'
+import { Checkbox } from '@/components/ui/checkbox'
 
 const itemClassName = 'flex items-center gap-2 rounded-md px-2 py-2 text-sm cursor-pointer aria-selected:bg-accent'
 
@@ -53,6 +54,7 @@ export function CommandPalette() {
   }
 
   const visibleMainRoutes = filterRoutes(mainRoutes)
+  const visibleToolRoutes = filterRoutes(toolRoutes)
   const visibleAdminRoutes = filterRoutes(adminRoutes)
   const visibleQuickRoutes = filterRoutes(quickRoutes)
   const { actions, services, inventory, deployCommands, runCommands } = useCommandActions()
@@ -66,6 +68,8 @@ export function CommandPalette() {
     scriptModal,
     scriptInputs,
     setScriptInputs,
+    saveToLibrary,
+    setSaveToLibrary,
     isPending,
   } = useServiceAction()
 
@@ -141,6 +145,14 @@ export function CommandPalette() {
                   <RouteItem key={route.href} route={route} go={go} />
                 ))}
               </Command.Group>
+
+              {visibleToolRoutes.length > 0 && (
+                <Command.Group heading="Tools">
+                  {visibleToolRoutes.map((route) => (
+                    <RouteItem key={route.href} route={route} go={go} />
+                  ))}
+                </Command.Group>
+              )}
 
               {visibleDeployCommands.length > 0 && (
                 <Command.Group heading="Deploy">
@@ -287,6 +299,18 @@ export function CommandPalette() {
                   serviceName={scriptModal.serviceName}
                 />
               ))}
+              {scriptModal.script.inputs?.some((inp) => inp.type === 'file' || inp.type === 'multi_file') &&
+                Object.values(scriptInputs).some((v) =>
+                  v instanceof File || (Array.isArray(v) && v.some((item: any) => item instanceof File))
+                ) && (
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox
+                    checked={saveToLibrary}
+                    onCheckedChange={(checked) => setSaveToLibrary(!!checked)}
+                  />
+                  <span className="text-muted-foreground">Save uploaded files to library</span>
+                </label>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={dismissModals}>Cancel</Button>

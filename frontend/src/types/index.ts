@@ -291,5 +291,19 @@ export interface Snapshot {
   updated_at: string
 }
 
+export interface FileLibraryItem {
+  id: number
+  user_id: number
+  username: string
+  filename: string
+  original_name: string
+  size_bytes: number
+  mime_type: string | null
+  description: string | null
+  tags: string[]
+  uploaded_at: string
+  last_used_at: string | null
+}
+
 export type { ScheduledJob, CronPreview } from './schedule'
 export type { WebhookEndpoint } from './webhook'

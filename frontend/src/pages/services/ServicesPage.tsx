@@ -25,7 +25,7 @@ import { usePreferencesStore } from '@/stores/preferencesStore'
 import { useHasPermission } from '@/lib/permissions'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
-import { ScriptInputField } from '@/components/shared/ScriptInputField'
+import { ScriptInputField, isLibraryFileRef } from '@/components/shared/ScriptInputField'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -73,6 +73,8 @@ export default function ServicesPage() {
     scriptModal,
     scriptInputs,
     setScriptInputs,
+    saveToLibrary,
+    setSaveToLibrary,
     isPending,
   } = useServiceAction()
 
@@ -654,6 +656,18 @@ export default function ServicesPage() {
                 serviceName={scriptModal.serviceName}
               />
             ))}
+            {scriptModal?.script.inputs?.some((inp) => inp.type === 'file' || inp.type === 'multi_file') &&
+              Object.values(scriptInputs).some((v) =>
+                v instanceof File || (Array.isArray(v) && v.some((item: any) => item instanceof File))
+              ) && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={saveToLibrary}
+                  onCheckedChange={(checked) => setSaveToLibrary(!!checked)}
+                />
+                <span className="text-muted-foreground">Save uploaded files to library</span>
+              </label>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => dismissModals()}>Cancel</Button>

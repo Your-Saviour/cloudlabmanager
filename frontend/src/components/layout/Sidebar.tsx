@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { mainRoutes, adminRoutes, routeIcons } from '@/lib/routes'
+import { mainRoutes, toolRoutes, adminRoutes, routeIcons } from '@/lib/routes'
 
 interface NavItem {
   label: string
@@ -31,6 +31,13 @@ export function Sidebar() {
   const types = useInventoryStore((s) => s.types)
 
   const mainNav: NavItem[] = mainRoutes.map((r) => ({
+    label: r.label,
+    href: r.href,
+    icon: createElement(routeIcons[r.icon], { className: 'h-4 w-4' }),
+    permission: r.permission,
+  }))
+
+  const toolNav: NavItem[] = toolRoutes.map((r) => ({
     label: r.label,
     href: r.href,
     icon: createElement(routeIcons[r.icon], { className: 'h-4 w-4' }),
@@ -72,6 +79,21 @@ export function Sidebar() {
               <SidebarLink key={item.href} item={item} collapsed={collapsed} />
             ))}
           </nav>
+
+          <Separator className="my-4 mx-2" />
+
+          <div className="px-2">
+            {!collapsed && (
+              <p className="px-3 mb-2 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+                Tools
+              </p>
+            )}
+            <nav className="space-y-1">
+              {toolNav.map((item) => (
+                <SidebarLink key={item.href} item={item} collapsed={collapsed} />
+              ))}
+            </nav>
+          </div>
 
           <Separator className="my-4 mx-2" />
 

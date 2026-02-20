@@ -45,7 +45,8 @@ cloudlabmanager/
 │   │   ├── webhook_routes.py  # /api/webhooks/* (CRUD + trigger)
 │   │   ├── audit_routes.py    # /api/audit/*
 │   │   ├── personal_instance_routes.py # /api/personal-instances/*
-│   │   └── feedback_routes.py # /api/feedback/*
+│   │   ├── feedback_routes.py # /api/feedback/*
+│   │   └── file_routes.py    # /api/files/* (file library CRUD)
 │   ├── static/                # Frontend SPA
 │   ├── app.py                 # FastAPI entry point
 │   ├── startup.py             # Startup: clone, symlinks, DB init, sync
@@ -115,6 +116,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 - **Webhook permissions**: `webhooks.view`, `webhooks.create`, `webhooks.edit`, `webhooks.delete`
 - **Personal instance permissions**: `personal_instances.create`, `personal_instances.destroy`, `personal_instances.view_all`, `personal_instances.manage_all`
 - **Feedback permissions**: `feedback.submit`, `feedback.view_all`, `feedback.manage`
+- **File library permissions**: `files.view`, `files.upload`, `files.delete`, `files.manage`
 
 ## Environment Variables
 
@@ -138,6 +140,23 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 
 ## Database
 
-SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `cost_snapshots`, `notifications`, `notification_rules`, `notification_channels`, `user_preferences`, `portal_bookmarks`, `webhook_endpoints`, `bug_reports`, `feedback_requests`.
+SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `cost_snapshots`, `notifications`, `notification_rules`, `notification_channels`, `user_preferences`, `portal_bookmarks`, `webhook_endpoints`, `bug_reports`, `feedback_requests`, `file_library`.
+
+The `users` table includes a `storage_quota_mb` column (default: 500 MB) for per-user file library storage quotas.
 
 See `app/database.py` for full schema.
+
+## File Library API
+
+Persistent file storage for reuse across script executions. Files are stored at `/data/file_library/` (Docker volume-mounted).
+
+| Endpoint | Method | Permission | Description |
+|----------|--------|------------|-------------|
+| `/api/files` | GET | `files.view` | List files (own + shared, or all if `files.manage`) with `search` and `tag` query params |
+| `/api/files` | POST | `files.upload` | Upload file (multipart, max 100MB). Auto-stores as `{uuid}_{original_name}` |
+| `/api/files/stats` | GET | `files.view` | Storage usage stats (total size, file count, quota, used percent) |
+| `/api/files/{id}` | PUT | `files.view` | Update description/tags (own files or `files.manage`) |
+| `/api/files/{id}` | DELETE | `files.delete` | Delete file from disk + DB (own files or `files.manage`) |
+| `/api/files/{id}/download` | GET | `files.view` | Download/stream file |
+
+Script input fields with `type: file` or `type: multi_file` can reference library files via `{ library_file_id: N }` instead of uploading. The `run` and `run-with-files` endpoints resolve library references and update `last_used_at` timestamps.

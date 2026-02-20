@@ -255,6 +255,7 @@ class UserUpdateRequest(BaseModel):
     display_name: Optional[str] = None
     email: Optional[str] = None
     is_active: Optional[bool] = None
+    storage_quota_mb: Optional[int] = None
 
     @field_validator("email")
     @classmethod
@@ -695,3 +696,24 @@ class CredentialAccessRuleResponse(BaseModel):
     scope_value: Optional[str]
     require_personal_key: bool
     created_at: Optional[str]
+
+
+# --- File library models ---
+
+class FileLibraryUpdate(BaseModel):
+    description: Optional[str] = None
+    tags: Optional[list[str]] = None
+
+
+class FileLibraryResponse(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    filename: str
+    original_name: str
+    size_bytes: int
+    mime_type: Optional[str]
+    description: Optional[str]
+    tags: list[str]
+    uploaded_at: str
+    last_used_at: Optional[str]

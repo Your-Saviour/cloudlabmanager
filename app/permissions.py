@@ -95,6 +95,11 @@ STATIC_PERMISSION_DEFS = [
     # credential access
     ("credential_access.view", "credential_access", "View Credential Access Rules", "View credential-type access rules"),
     ("credential_access.manage", "credential_access", "Manage Credential Access Rules", "Create, edit, and delete credential access rules"),
+    # files
+    ("files.view", "files", "View File Library", "View file library"),
+    ("files.upload", "files", "Upload Files", "Upload files to library"),
+    ("files.delete", "files", "Delete Files", "Delete own files from library"),
+    ("files.manage", "files", "Manage Files", "Manage all users' files (admin)"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

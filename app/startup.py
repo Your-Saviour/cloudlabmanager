@@ -380,6 +380,7 @@ async def main():
 
     # Ensure /data directory exists
     os.makedirs("/data", exist_ok=True)
+    os.makedirs("/data/file_library", exist_ok=True)
 
     actions = actions_class("/data/startup_action.conf.yaml")
     startup_config = actions.start()

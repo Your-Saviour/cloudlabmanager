@@ -568,7 +568,8 @@ class AnsibleRunner:
 
     async def run_script(self, name: str, script_name: str, inputs: dict,
                          user_id: int | None = None, username: str | None = None,
-                         temp_dir: str | None = None) -> Job:
+                         temp_dir: str | None = None,
+                         library_file_ids: list[int] | None = None) -> Job:
         service = self.get_service(name)
         if not service:
             raise FileNotFoundError(f"Service '{name}' not found")
@@ -620,11 +621,13 @@ class AnsibleRunner:
         )
         self.jobs[job_id] = job
 
-        asyncio.create_task(self._run_script_job(job, script_path, env, temp_dir=temp_dir))
+        asyncio.create_task(self._run_script_job(job, script_path, env, temp_dir=temp_dir,
+                                                  library_file_ids=library_file_ids))
         return job
 
     async def _run_script_job(self, job: Job, script_path: str, env: dict,
-                               temp_dir: str | None = None):
+                               temp_dir: str | None = None,
+                               library_file_ids: list[int] | None = None):
         job.output.append(f"--- Running {job.script} for {job.service} ---")
         ok = await self._run_command(job, ["bash", script_path], env=env)
 
@@ -636,6 +639,18 @@ class AnsibleRunner:
                 job.output.append("[SSH credentials synced]")
             except Exception as e:
                 job.output.append(f"[Warning: SSH credential sync failed: {e}]")
+
+        # Update last_used_at for referenced library files
+        if library_file_ids:
+            try:
+                from database import SessionLocal, FileLibraryItem
+                with SessionLocal() as session:
+                    session.query(FileLibraryItem).filter(
+                        FileLibraryItem.id.in_(library_file_ids)
+                    ).update({"last_used_at": datetime.now(timezone.utc)}, synchronize_session=False)
+                    session.commit()
+            except Exception as e:
+                print(f"[library] Failed to update last_used_at: {e}")
 
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()

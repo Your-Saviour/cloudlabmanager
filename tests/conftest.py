@@ -77,6 +77,7 @@ _SESSION_LOCAL_MODULES = [
     "personal_instance_cleanup",
     "routes.bug_report_routes",
     "routes.feedback_routes",
+    "routes.file_routes",
     "mfa",
 ]
 
@@ -310,6 +311,9 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
 
     from routes.credential_audit_routes import router as credential_audit_router
     app.include_router(credential_audit_router)
+
+    from routes.file_routes import router as file_router
+    app.include_router(file_router)
 
     return app
 

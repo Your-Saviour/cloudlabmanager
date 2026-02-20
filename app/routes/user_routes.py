@@ -31,6 +31,7 @@ def _user_response(user: User, session: Session | None = None) -> dict:
         "last_login_at": _utc_iso(user.last_login_at),
         "invite_accepted_at": _utc_iso(user.invite_accepted_at),
         "roles": [{"id": r.id, "name": r.name} for r in user.roles],
+        "storage_quota_mb": user.storage_quota_mb,
         "mfa_enabled": False,
     }
     if session:
@@ -135,6 +136,10 @@ async def update_user(user_id: int, req: UserUpdateRequest,
         if user_id == user.id and not req.is_active:
             raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
         target.is_active = req.is_active
+    if req.storage_quota_mb is not None:
+        if req.storage_quota_mb < 1:
+            raise HTTPException(status_code=400, detail="Storage quota must be at least 1 MB")
+        target.storage_quota_mb = req.storage_quota_mb
 
     session.flush()
     return _user_response(target)

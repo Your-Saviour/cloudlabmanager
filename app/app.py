@@ -34,6 +34,7 @@ from routes.feedback_routes import router as feedback_router
 from routes.credential_access_routes import router as credential_access_router
 from routes.credential_audit_routes import router as credential_audit_router
 from routes.update_routes import router as update_router
+from routes.file_routes import router as file_router
 from health_checker import HealthPoller, load_health_configs
 from drift_checker import DriftPoller
 from snapshot_poller import SnapshotPoller
@@ -168,6 +169,7 @@ app.include_router(feedback_router)
 app.include_router(credential_access_router)
 app.include_router(credential_audit_router)
 app.include_router(update_router)
+app.include_router(file_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

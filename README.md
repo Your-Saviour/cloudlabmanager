@@ -28,6 +28,7 @@ On first boot, create an admin account and enter the Ansible vault password. The
 - **Config & File Management** — edit service configs and manage input/output files from the UI
 - **Bulk Operations** — multi-select services or inventory items for batch stop, deploy, delete, tag, and custom actions
 - **Credential Access Control** — restrict which roles see which credential types per instance, with personal SSH key support and audit logging
+- **File Library** — persistent file storage for reuse across script executions, with drag-and-drop upload, search, tags, per-user storage quotas, and integration with script input modals (single and multi-file)
 - **Persistent Storage** — deployment outputs survive container rebuilds
 
 ## Environment Variables
