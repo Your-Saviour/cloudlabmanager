@@ -91,6 +91,8 @@ export function HelpMenu() {
                 <DropdownMenuItem className="gap-2 cursor-default" onSelect={(e) => e.preventDefault()}>
                   {updates.cloudlabmanager.update_available ? (
                     <ArrowUpCircle className="h-4 w-4 text-amber-400" />
+                  ) : updates.cloudlabmanager.current_commit === 'unknown' ? (
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
                   ) : (
                     <CheckCircle2 className="h-4 w-4 text-green-400" />
                   )}
@@ -101,7 +103,9 @@ export function HelpMenu() {
                         ? 'Check failed'
                         : updates.cloudlabmanager.update_available
                           ? 'Update available'
-                          : 'Up to date'}
+                          : updates.cloudlabmanager.current_commit === 'unknown'
+                            ? `Latest: ${updates.cloudlabmanager.latest_commit ?? '?'}`
+                            : 'Up to date'}
                     </span>
                   </div>
                 </DropdownMenuItem>

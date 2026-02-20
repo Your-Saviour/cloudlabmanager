@@ -130,10 +130,6 @@ async def _check_clm() -> dict:
         "last_checked": datetime.now(timezone.utc).isoformat(),
     }
 
-    if current_commit == "unknown":
-        result["error"] = "No build commit info available"
-        return result
-
     git_url, git_key = _get_git_config()
 
     # CLM repo URL — derive from the cloudlab git_url by swapping the repo name
@@ -164,7 +160,8 @@ async def _check_clm() -> dict:
         if line:
             latest = line.split()[0]
             result["latest_commit"] = latest[:12]
-            result["update_available"] = not current_commit.startswith(latest[:12]) and not latest.startswith(current_commit[:12])
+            if current_commit != "unknown":
+                result["update_available"] = not current_commit.startswith(latest[:12]) and not latest.startswith(current_commit[:12])
     except Exception as e:
         result["error"] = f"Failed to check remote: {e}"
 
