@@ -35,8 +35,31 @@ export function useServiceAction() {
   })
 
   const runServiceScriptMutation = useMutation({
-    mutationFn: ({ serviceName, script, inputs }: { serviceName: string; script: string; inputs: Record<string, any> }) =>
-      api.post(`/api/services/${serviceName}/run`, { script, inputs }),
+    mutationFn: ({ serviceName, script, inputs }: { serviceName: string; script: string; inputs: Record<string, any> }) => {
+      // Check if any input values are File objects
+      const hasFiles = Object.values(inputs).some((v) => v instanceof File)
+
+      if (hasFiles) {
+        const formData = new FormData()
+        formData.append('script', script)
+
+        const nonFileInputs: Record<string, any> = {}
+        for (const [key, val] of Object.entries(inputs)) {
+          if (val instanceof File) {
+            formData.append(`file__${key}`, val)
+          } else {
+            nonFileInputs[key] = val
+          }
+        }
+        formData.append('inputs', JSON.stringify(nonFileInputs))
+
+        return api.post(`/api/services/${serviceName}/run-with-files`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      }
+
+      return api.post(`/api/services/${serviceName}/run`, { script, inputs })
+    },
     onSuccess: (res) => {
       if (res.data.job_id) {
         toast.success('Action started')
@@ -53,6 +76,7 @@ export function useServiceAction() {
       script.inputs.forEach((inp) => {
         if (inp.type === 'list') defaults[inp.name] = inp.default ? [inp.default] : ['']
         else if (inp.type === 'ssh_key_select') defaults[inp.name] = []
+        else if (inp.type === 'file') defaults[inp.name] = null
         else if (inp.default) defaults[inp.name] = inp.default
       })
       setScriptInputs(defaults)
@@ -98,7 +122,9 @@ export function useServiceAction() {
     if (!scriptModal) return
     const processed: Record<string, any> = {}
     for (const [key, val] of Object.entries(scriptInputs)) {
-      if (Array.isArray(val)) {
+      if (val instanceof File) {
+        processed[key] = val
+      } else if (Array.isArray(val)) {
         processed[key] = val.filter((v: string) => v.trim() !== '')
       } else {
         processed[key] = val

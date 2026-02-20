@@ -1,5 +1,6 @@
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Upload } from 'lucide-react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +18,9 @@ interface ScriptInputFieldProps {
 }
 
 export function ScriptInputField({ input, value, onChange, serviceName }: ScriptInputFieldProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
+
   const isDeploymentType = input.type === 'deployment_id' || input.type === 'deployment_select'
   const { data: deployments = [] } = useQuery({
     queryKey: ['active-deployments'],
@@ -35,6 +39,63 @@ export function ScriptInputField({ input, value, onChange, serviceName }: Script
     },
     enabled: input.type === 'ssh_key_select',
   })
+
+  if (input.type === 'file') {
+    const file = value as File | null
+
+    return (
+      <div className="space-y-2">
+        <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
+        {input.description && (
+          <p className="text-xs text-muted-foreground">{input.description}</p>
+        )}
+        <div
+          className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+            isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setIsDragging(false)
+            if (e.dataTransfer.files.length > 0) onChange(e.dataTransfer.files[0])
+          }}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {file ? (
+            <div className="flex items-center justify-center gap-2">
+              <Upload className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">{file.name}</span>
+              <span className="text-xs text-muted-foreground">
+                ({(file.size / 1024).toFixed(1)} KB)
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={(e) => { e.stopPropagation(); onChange(null) }}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Upload className="h-8 w-8 mx-auto text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">Drag & drop or click to select a file</p>
+            </div>
+          )}
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) onChange(e.target.files[0])
+          }}
+        />
+      </div>
+    )
+  }
 
   if (input.type === 'ssh_key_select') {
     const selectedKeys = (value as string[]) || []

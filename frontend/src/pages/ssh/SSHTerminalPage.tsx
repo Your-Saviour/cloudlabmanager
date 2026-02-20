@@ -39,12 +39,13 @@ export default function SSHTerminalPage() {
     const { Terminal } = await import('@xterm/xterm')
     const { FitAddon } = await import('@xterm/addon-fit')
     const { WebLinksAddon } = await import('@xterm/addon-web-links')
+    const { Unicode11Addon } = await import('@xterm/addon-unicode11')
     await import('@xterm/xterm/css/xterm.css')
 
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 14,
-      fontFamily: '"JetBrains Mono", monospace',
+      fontFamily: '"JetBrains Mono", "Noto Color Emoji", monospace',
       theme: {
         background: '#0a0a12',
         foreground: '#e0e4ef',
@@ -56,6 +57,9 @@ export default function SSHTerminalPage() {
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     term.loadAddon(new WebLinksAddon())
+    const unicode11Addon = new Unicode11Addon()
+    term.loadAddon(unicode11Addon)
+    term.unicode.activeVersion = '11'
 
     term.open(terminalRef.current!)
     fitAddon.fit()

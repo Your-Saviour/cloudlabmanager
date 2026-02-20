@@ -1,6 +1,9 @@
+import json
 import os
+import shutil
+import tempfile
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -460,6 +463,73 @@ async def run_script(name: str, body: RunScriptRequest, request: Request,
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100MB
+
+
+@router.post("/{name}/run-with-files")
+async def run_script_with_files(
+    name: str,
+    request: Request,
+    script: str = Form(...),
+    inputs: str = Form("{}"),
+    user: User = Depends(require_service_permission("deploy")),
+    session: Session = Depends(get_db_session),
+):
+    runner = request.app.state.ansible_runner
+
+    try:
+        parsed_inputs = json.loads(inputs)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in inputs field")
+
+    # Create a temp directory for uploaded files
+    form = await request.form()
+    temp_dir = tempfile.mkdtemp(prefix="clm_upload_")
+    job_started = False
+
+    try:
+        for field_name, field_value in form.multi_items():
+            if field_name.startswith("file__") and hasattr(field_value, "read"):
+                input_name = field_name[6:]  # strip "file__" prefix
+                content = await field_value.read()
+                if len(content) > MAX_UPLOAD_SIZE:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File '{field_value.filename}' exceeds max size of {MAX_UPLOAD_SIZE // (1024*1024)}MB",
+                    )
+                # Sanitize filename to prevent path traversal
+                safe_name = os.path.basename(field_value.filename)
+                if not safe_name:
+                    raise HTTPException(status_code=400, detail="Invalid filename")
+                file_path = os.path.join(temp_dir, safe_name)
+                with open(file_path, "wb") as f:
+                    f.write(content)
+                parsed_inputs[input_name] = file_path
+
+        # Auto-inject username for add-user service
+        if name == "add-user" and script == "add-user" and "username" not in parsed_inputs:
+            parsed_inputs["username"] = user.username
+
+        job = await runner.run_script(name, script, parsed_inputs,
+                                      user_id=user.id, username=user.username,
+                                      temp_dir=temp_dir)
+        job_started = True
+
+        log_action(session, user.id, user.username, "service.run_script", f"services/{name}",
+                   details={"script": script, "job_id": job.id, "has_files": True},
+                   ip_address=request.client.host if request.client else None)
+
+        return {"job_id": job.id, "status": job.status}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        # Clean up temp dir if job was never started (job handles its own cleanup)
+        if not job_started:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @router.post("/{name}/stop")

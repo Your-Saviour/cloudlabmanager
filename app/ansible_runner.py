@@ -561,7 +561,8 @@ class AnsibleRunner:
     # --- Deployment / job methods ---
 
     async def run_script(self, name: str, script_name: str, inputs: dict,
-                         user_id: int | None = None, username: str | None = None) -> Job:
+                         user_id: int | None = None, username: str | None = None,
+                         temp_dir: str | None = None) -> Job:
         service = self.get_service(name)
         if not service:
             raise FileNotFoundError(f"Service '{name}' not found")
@@ -609,10 +610,11 @@ class AnsibleRunner:
         )
         self.jobs[job_id] = job
 
-        asyncio.create_task(self._run_script_job(job, script_path, env))
+        asyncio.create_task(self._run_script_job(job, script_path, env, temp_dir=temp_dir))
         return job
 
-    async def _run_script_job(self, job: Job, script_path: str, env: dict):
+    async def _run_script_job(self, job: Job, script_path: str, env: dict,
+                               temp_dir: str | None = None):
         job.output.append(f"--- Running {job.script} for {job.service} ---")
         ok = await self._run_command(job, ["bash", script_path], env=env)
 
@@ -629,6 +631,13 @@ class AnsibleRunner:
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job)
         await self._notify_job(job)
+
+        # Clean up temp upload directory if present
+        if temp_dir and os.path.isdir(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                print(f"[cleanup] Failed to remove temp dir {temp_dir}: {e}")
 
     async def deploy_service(self, name: str,
                              user_id: int | None = None, username: str | None = None) -> Job:
