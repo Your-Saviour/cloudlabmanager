@@ -33,9 +33,11 @@ from routes.personal_instance_routes import router as personal_instance_router
 from routes.feedback_routes import router as feedback_router
 from routes.credential_access_routes import router as credential_access_router
 from routes.credential_audit_routes import router as credential_audit_router
+from routes.update_routes import router as update_router
 from health_checker import HealthPoller, load_health_configs
 from drift_checker import DriftPoller
 from snapshot_poller import SnapshotPoller
+from update_checker import UpdateChecker
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -93,6 +95,11 @@ async def lifespan(app: FastAPI):
     app.state.snapshot_poller = snapshot_poller
     snapshot_poller.start()
 
+    # Start update checker
+    update_checker = UpdateChecker()
+    app.state.update_checker = update_checker
+    update_checker.start()
+
     cost_refresh_task = asyncio.create_task(_periodic_cost_refresh(app.state.ansible_runner))
 
     yield
@@ -103,6 +110,9 @@ async def lifespan(app: FastAPI):
         await cost_refresh_task
     except asyncio.CancelledError:
         pass
+
+    # Stop update checker on shutdown
+    await update_checker.stop()
 
     # Stop snapshot poller on shutdown
     await snapshot_poller.stop()
@@ -157,6 +167,7 @@ app.include_router(personal_instance_router)
 app.include_router(feedback_router)
 app.include_router(credential_access_router)
 app.include_router(credential_audit_router)
+app.include_router(update_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

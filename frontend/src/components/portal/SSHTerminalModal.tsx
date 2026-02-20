@@ -42,8 +42,9 @@ export function SSHTerminalModal({ open, onOpenChange, hostname, ip, user = 'roo
 
     const term = new Terminal({
       cursorBlink: true,
+      allowProposedApi: true,
       fontSize: 13,
-      fontFamily: '"JetBrains Mono", "Noto Color Emoji", monospace',
+      fontFamily: '"JetBrains Mono NF", "JetBrains Mono", monospace',
       theme: {
         background: '#0a0a0f',
         foreground: '#e0e0e8',

@@ -131,7 +131,10 @@ export function useServiceAction() {
       }
     }
 
-    if (scriptModal.objId > 0) {
+    // If inputs contain File objects, always use the service script path (supports FormData)
+    const hasFiles = Object.values(processed).some((v) => v instanceof File)
+
+    if (scriptModal.objId > 0 && !hasFiles) {
       runActionMutation.mutate({
         objId: scriptModal.objId,
         actionName: 'run_script',

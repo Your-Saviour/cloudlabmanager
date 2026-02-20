@@ -2,6 +2,8 @@ services:
   cloudlabmanager:
     build:
       dockerfile: Dockerfile
+      args:
+        BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
     platform: linux/amd64
 
     ports:

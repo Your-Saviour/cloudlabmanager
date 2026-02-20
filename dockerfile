@@ -31,6 +31,8 @@ RUN pip install --no-cache-dir ansible
 # --- Stage 3: Runtime ---
 FROM python:3.13-slim-bookworm AS runtime-stage
 
+ARG BUILD_COMMIT=unknown
+
 EXPOSE 8000
 
 RUN apt update -y && apt install git openssh-client sshpass ca-certificates -y && update-ca-certificates
@@ -49,6 +51,9 @@ COPY --from=frontend-build /frontend/dist/ ./static/
 
 # Install ansible collections
 RUN ansible-galaxy collection install vultr.cloud community.general community.docker community.crypto community.dns
+
+# Write build info
+RUN echo "{\"commit\": \"${BUILD_COMMIT}\", \"built_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /app/BUILD_INFO
 
 # Create directories that symlinks will target
 RUN mkdir -p /inventory /outputs

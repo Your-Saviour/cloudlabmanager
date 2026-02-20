@@ -44,8 +44,9 @@ export default function SSHTerminalPage() {
 
     const term = new Terminal({
       cursorBlink: true,
+      allowProposedApi: true,
       fontSize: 14,
-      fontFamily: '"JetBrains Mono", "Noto Color Emoji", monospace',
+      fontFamily: '"JetBrains Mono NF", "JetBrains Mono", monospace',
       theme: {
         background: '#0a0a12',
         foreground: '#e0e4ef',
