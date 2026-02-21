@@ -14,6 +14,7 @@ from permissions import require_permission, has_permission
 from inventory_auth import check_inventory_permission, check_type_permission
 from db_session import get_db_session
 from audit import log_action
+from routes.service_routes import resolve_library_files
 
 
 def _utc_iso(dt: datetime | None) -> str | None:
@@ -713,10 +714,15 @@ async def run_object_action(type_slug: str, obj_id: int, action_name: str,
     obj_data = json.loads(obj.data)
     runner = request.app.state.ansible_runner
 
-    # Inject inputs as environment variables
+    # Inject inputs as environment variables (resolve library file references first)
+    library_file_ids = None
     if body and body.inputs:
         action_def = dict(action_def) if not isinstance(action_def, dict) else action_def
-        action_def["_inputs"] = body.inputs
+        parsed_inputs = dict(body.inputs)
+        library_file_ids = resolve_library_files(parsed_inputs, user, session)
+        action_def["_inputs"] = parsed_inputs
+        if library_file_ids:
+            action_def["_library_file_ids"] = library_file_ids
 
     log_action(session, user.id, user.username, f"inventory.action.{action_name}",
                f"inventory/{type_slug}/{obj_id}",

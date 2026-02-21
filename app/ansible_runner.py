@@ -508,6 +508,22 @@ class AnsibleRunner:
         self._persist_job(job, object_id=object_id, type_slug=type_slug)
         await self._notify_job(job)
 
+        # Update last_used_at for referenced library files
+        library_file_ids = action_def.get("_library_file_ids")
+        if library_file_ids:
+            try:
+                from database import SessionLocal, FileLibraryItem
+                with SessionLocal() as sess:
+                    sess.query(FileLibraryItem).filter(
+                        FileLibraryItem.id.in_(library_file_ids)
+                    ).update(
+                        {"last_used_at": datetime.now(timezone.utc)},
+                        synchronize_session=False
+                    )
+                    sess.commit()
+            except Exception as e:
+                print(f"[library] Failed to update last_used_at: {e}")
+
         # Post-action: keep instances cache and inventory objects in sync
         if ok and type_slug == "server":
             try:
@@ -583,6 +599,26 @@ class AnsibleRunner:
         for input_def in script_def.get("inputs", []):
             if input_def.get("required") and input_def["name"] not in inputs:
                 raise ValueError(f"Missing required input: {input_def['name']}")
+
+        # Resolve ssh_key_select inputs: convert user IDs to actual SSH public keys
+        ssh_key_inputs = {
+            inp["name"] for inp in script_def.get("inputs", [])
+            if inp.get("type") == "ssh_key_select"
+        }
+        if ssh_key_inputs:
+            from database import SessionLocal, User as DBUser
+            with SessionLocal() as db:
+                for iname in ssh_key_inputs:
+                    user_ids = inputs.get(iname)
+                    if not user_ids or not isinstance(user_ids, list):
+                        continue
+                    int_ids = [int(uid) for uid in user_ids]
+                    users = db.query(DBUser).filter(
+                        DBUser.id.in_(int_ids),
+                        DBUser.ssh_public_key != None,
+                    ).all()
+                    keys = [u.ssh_public_key for u in users if u.ssh_public_key]
+                    inputs[iname] = keys
 
         # Build env vars from inputs (includes both user-provided and backend-injected values)
         env = dict(os.environ)

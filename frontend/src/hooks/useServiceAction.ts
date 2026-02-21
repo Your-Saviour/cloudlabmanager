@@ -201,10 +201,23 @@ export function useServiceAction() {
     })
 
     if (scriptModal.objId > 0 && !hasFiles) {
+      // Convert library refs to { library_file_id } for JSON body (same as runServiceScriptMutation)
+      const actionInputs: Record<string, any> = {}
+      for (const [key, val] of Object.entries(processed)) {
+        if (isLibraryFileRef(val)) {
+          actionInputs[key] = { library_file_id: val._libraryFileId }
+        } else if (Array.isArray(val) && val.length > 0 && isLibraryFileRef(val[0])) {
+          actionInputs[key] = val.map((item) =>
+            isLibraryFileRef(item) ? { library_file_id: item._libraryFileId } : item
+          )
+        } else {
+          actionInputs[key] = val
+        }
+      }
       runActionMutation.mutate({
         objId: scriptModal.objId,
         actionName: 'run_script',
-        body: { script: scriptModal.script.name, inputs: processed },
+        body: { script: scriptModal.script.name, inputs: actionInputs },
       })
     } else {
       runServiceScriptMutation.mutate({
