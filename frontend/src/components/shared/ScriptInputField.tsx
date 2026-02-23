@@ -314,9 +314,13 @@ export function ScriptInputField({ input, value, onChange, serviceName }: Script
         <Select value={value as string} onValueChange={onChange}>
           <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
           <SelectContent>
-            {input.options.map((opt) => (
-              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-            ))}
+            {input.options.map((opt) => {
+              const optValue = typeof opt === 'string' ? opt : opt.value
+              const optLabel = typeof opt === 'string' ? opt : opt.label
+              return (
+                <SelectItem key={optValue} value={optValue}>{optLabel}</SelectItem>
+              )
+            })}
           </SelectContent>
         </Select>
       </div>

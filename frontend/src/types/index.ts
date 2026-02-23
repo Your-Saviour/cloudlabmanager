@@ -113,7 +113,7 @@ export interface ScriptInput {
   description?: string
   required?: boolean
   default?: string
-  options?: string[]
+  options?: (string | { value: string; label: string })[]
 }
 
 export interface ServiceOutput {
