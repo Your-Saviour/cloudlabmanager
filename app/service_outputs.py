@@ -118,6 +118,17 @@ def sync_credentials_to_inventory(service_name: str, outputs: list[dict]):
             }
             search_text = f"{cred_name} {obj_data['username']}".lower()
 
+            # Prepare instance tag if target_host is specified
+            target_host = cred.get("target_host")
+            inst_tag = None
+            if target_host:
+                inst_tag_name = f"instance:{target_host}"
+                inst_tag = session.query(InventoryTag).filter_by(name=inst_tag_name).first()
+                if not inst_tag:
+                    inst_tag = InventoryTag(name=inst_tag_name, color="#6366f1")
+                    session.add(inst_tag)
+                    session.flush()
+
             existing = existing_by_name.get(cred_name)
             if existing:
                 existing.data = json.dumps(obj_data)
@@ -132,6 +143,9 @@ def sync_credentials_to_inventory(service_name: str, outputs: list[dict]):
                     session.flush()
                 if credtype_tag not in existing.tags:
                     existing.tags.append(credtype_tag)
+                # Add instance: tag
+                if inst_tag and inst_tag not in existing.tags:
+                    existing.tags.append(inst_tag)
             else:
                 new_obj = InventoryObject(
                     type_id=cred_type.id,
@@ -151,6 +165,9 @@ def sync_credentials_to_inventory(service_name: str, outputs: list[dict]):
                     session.flush()
                 if credtype_tag not in new_obj.tags:
                     new_obj.tags.append(credtype_tag)
+                # Add instance: tag
+                if inst_tag and inst_tag not in new_obj.tags:
+                    new_obj.tags.append(inst_tag)
 
         session.commit()
     except Exception as e:
