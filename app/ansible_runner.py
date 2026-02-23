@@ -528,6 +528,15 @@ class AnsibleRunner:
         else:
             job.output.append(f"[ERROR: Unknown action type: {action_type}]")
 
+        if ok:
+            self._sync_service_outputs(job, service_name)
+            try:
+                from inventory_sync import run_sync_for_source
+                run_sync_for_source("ssh_credential_sync")
+                job.output.append("[SSH credentials synced]")
+            except Exception as e:
+                job.output.append(f"[Warning: SSH credential sync failed: {e}]")
+
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(job, object_id=object_id, type_slug=type_slug)

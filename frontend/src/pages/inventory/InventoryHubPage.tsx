@@ -206,6 +206,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
   const [credModalOpen, setCredModalOpen] = useState(false)
   const [credModalName, setCredModalName] = useState('')
   const [credModalValue, setCredModalValue] = useState('')
+  const [credModalPublicKey, setCredModalPublicKey] = useState('')
   const [credModalLoading, setCredModalLoading] = useState(false)
   const [reauthOpen, setReauthOpen] = useState(false)
   const [reauthGrantedUntil, setReauthGrantedUntil] = useState(0)
@@ -230,28 +231,18 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
     }
   }
 
-  const fetchAndShowPrivateKey = async (name: string, keyPath: string) => {
-    // keyPath is like "/services/jump-hosts/outputs/sshkey"
-    const match = keyPath.match(/^\/services\/([^/]+)\/([^/]+)\/(.+)$/)
-    if (!match) {
-      toast.error('Invalid key path')
-      return
-    }
-    const [, serviceName, subdir, filename] = match
+  const fetchAndShowSSHKeys = async (name: string, credentialId: number) => {
     setCredModalName(name)
     setCredModalValue('')
+    setCredModalPublicKey('')
     setCredModalLoading(true)
     setCredModalOpen(true)
     try {
-      const token = useAuthStore.getState().token
-      const resp = await fetch(`/api/services/${serviceName}/files/${subdir}/${filename}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!resp.ok) throw new Error('Failed to fetch')
-      const text = await resp.text()
-      setCredModalValue(text)
+      const { data } = await api.get(`/api/inventory/credential/${credentialId}/key-content`)
+      setCredModalValue(data.private_key || '')
+      setCredModalPublicKey(data.public_key || '')
     } catch {
-      toast.error('Failed to fetch private key')
+      toast.error('Failed to fetch SSH keys')
       setCredModalOpen(false)
     } finally {
       setCredModalLoading(false)
@@ -391,7 +382,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
                     className="h-7 text-xs"
                     onClick={(e) => {
                       e.stopPropagation()
-                      requireReauth(() => fetchAndShowPrivateKey(row.original.name, keyPath))
+                      requireReauth(() => fetchAndShowSSHKeys(row.original.name, row.original.id))
                     }}
                   >
                     <Eye className="h-3 w-3 mr-1" /> View Key
@@ -798,6 +789,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
         onOpenChange={setCredModalOpen}
         name={credModalName}
         value={credModalValue}
+        publicKey={credModalPublicKey}
         loading={credModalLoading}
       />
 

@@ -374,6 +374,72 @@ async def get_object(type_slug: str, obj_id: int, request: Request,
     return result
 
 
+@router.get("/credential/{obj_id}/key-content")
+async def get_credential_key_content(obj_id: int, request: Request,
+                                     user: User = Depends(get_current_user),
+                                     session: Session = Depends(get_db_session)):
+    """Read SSH private and public key files from disk for a credential object."""
+    import os
+
+    tc = session.query(InventoryType).filter_by(slug="credential").first()
+    if not tc:
+        raise HTTPException(status_code=404, detail="Credential type not found")
+
+    obj = session.query(InventoryObject).filter_by(id=obj_id, type_id=tc.id).first()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Credential not found")
+
+    if not check_inventory_permission(session, user, obj.id, "view"):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    from credential_access import user_can_view_credential
+    if not user_can_view_credential(session, user, obj):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    data = json.loads(obj.data)
+    if data.get("credential_type") != "ssh_key":
+        raise HTTPException(status_code=400, detail="Not an SSH key credential")
+
+    key_path = data.get("key_path", "")
+    if not key_path:
+        raise HTTPException(status_code=404, detail="No key path configured")
+
+    # Resolve path inside container
+    SERVICES_DIR = "/app/cloudlab/services"
+    # key_path is like /services/xxx/outputs/yyy — strip leading /services/ to get relative
+    if key_path.startswith("/services/"):
+        rel = key_path[len("/services/"):]
+        private_key_path = os.path.join(SERVICES_DIR, rel)
+    else:
+        private_key_path = key_path
+
+    private_key_path = os.path.realpath(private_key_path)
+    if not private_key_path.startswith(os.path.realpath(SERVICES_DIR) + "/"):
+        raise HTTPException(status_code=400, detail="Invalid key path")
+
+    private_key = ""
+    public_key = ""
+
+    if os.path.isfile(private_key_path):
+        with open(private_key_path, "r") as f:
+            private_key = f.read()
+
+    pub_path = private_key_path + ".pub"
+    if os.path.isfile(pub_path):
+        with open(pub_path, "r") as f:
+            public_key = f.read()
+
+    if not private_key and not public_key:
+        raise HTTPException(status_code=404, detail="Key files not found on disk")
+
+    log_action(session, user.id, user.username, "credential.key_viewed",
+               f"inventory/credential/{obj.id}",
+               details={"credential_name": data.get("name", "")},
+               ip_address=request.client.host if request.client else None)
+
+    return {"private_key": private_key, "public_key": public_key}
+
+
 @router.put("/{type_slug}/{obj_id}")
 async def update_object(type_slug: str, obj_id: int, body: InventoryObjectUpdate,
                         request: Request,

@@ -14,22 +14,25 @@ interface CredentialViewModalProps {
   onOpenChange: (open: boolean) => void
   name: string
   value: string
+  publicKey?: string
   loading?: boolean
 }
 
-export function CredentialViewModal({ open, onOpenChange, name, value, loading }: CredentialViewModalProps) {
-  const [copied, setCopied] = useState(false)
+export function CredentialViewModal({ open, onOpenChange, name, value, publicKey, loading }: CredentialViewModalProps) {
+  const [copiedField, setCopiedField] = useState<string | null>(null)
 
-  const handleCopy = async () => {
+  const handleCopy = async (text: string, field: string) => {
     try {
-      await navigator.clipboard.writeText(value)
-      setCopied(true)
+      await navigator.clipboard.writeText(text)
+      setCopiedField(field)
       toast.success('Copied')
-      setTimeout(() => setCopied(false), 2000)
+      setTimeout(() => setCopiedField(null), 2000)
     } catch {
       toast.error('Failed to copy to clipboard')
     }
   }
+
+  const hasPublicKey = !!publicKey
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -37,29 +40,56 @@ export function CredentialViewModal({ open, onOpenChange, name, value, loading }
         <DialogHeader>
           <DialogTitle>{name}</DialogTitle>
         </DialogHeader>
-        <div className="relative">
-          {loading ? (
-            <div className="bg-muted rounded-md p-4 h-32 flex items-center justify-center">
-              <span className="text-sm text-muted-foreground animate-pulse">Loading...</span>
-            </div>
-          ) : (
-            <pre className="bg-muted rounded-md p-4 text-xs font-mono whitespace-pre-wrap break-all max-h-96 overflow-auto">
-              {value}
-            </pre>
-          )}
-          {!loading && value && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="absolute top-2 right-2"
-              onClick={handleCopy}
-              aria-label={copied ? 'Copied to clipboard' : 'Copy to clipboard'}
-            >
-              {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
-              {copied ? 'Copied' : 'Copy'}
-            </Button>
-          )}
-        </div>
+        {loading ? (
+          <div className="bg-muted rounded-md p-4 h-32 flex items-center justify-center">
+            <span className="text-sm text-muted-foreground animate-pulse">Loading...</span>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {value && (
+              <div>
+                {hasPublicKey && (
+                  <div className="text-xs font-medium text-muted-foreground mb-1">Private Key</div>
+                )}
+                <div className="relative">
+                  <pre className="bg-muted rounded-md p-4 text-xs font-mono whitespace-pre-wrap break-all max-h-64 overflow-auto">
+                    {value}
+                  </pre>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="absolute top-2 right-2"
+                    onClick={() => handleCopy(value, 'private')}
+                    aria-label={copiedField === 'private' ? 'Copied to clipboard' : 'Copy to clipboard'}
+                  >
+                    {copiedField === 'private' ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                    {copiedField === 'private' ? 'Copied' : 'Copy'}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {publicKey && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Public Key</div>
+                <div className="relative">
+                  <pre className="bg-muted rounded-md p-4 text-xs font-mono whitespace-pre-wrap break-all max-h-40 overflow-auto">
+                    {publicKey}
+                  </pre>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="absolute top-2 right-2"
+                    onClick={() => handleCopy(publicKey, 'public')}
+                    aria-label={copiedField === 'public' ? 'Copied to clipboard' : 'Copy to clipboard'}
+                  >
+                    {copiedField === 'public' ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                    {copiedField === 'public' ? 'Copied' : 'Copy'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
