@@ -110,6 +110,7 @@ export interface ScriptInput {
   name: string
   label: string
   type: string
+  description?: string
   required?: boolean
   default?: string
   options?: string[]

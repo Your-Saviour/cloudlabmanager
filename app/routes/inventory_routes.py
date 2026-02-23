@@ -911,6 +911,61 @@ async def websocket_ssh_by_hostname(websocket: WebSocket, hostname: str):
     await _handle_ssh_websocket(websocket, hostname, user_info)
 
 
+@router.get("/server/{hostname}/ssh-users")
+async def get_ssh_users(
+    hostname: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+):
+    """Get available SSH usernames for a server hostname."""
+    # Check SSH permission (same as websocket handler)
+    if not has_permission(session, user.id, "instances.ssh") and \
+       not has_permission(session, user.id, "inventory.server.ssh"):
+        raise HTTPException(status_code=403, detail="Permission denied: SSH access")
+
+    runner = request.app.state.ansible_runner
+    creds = runner.resolve_ssh_credentials(hostname)
+    default_user = creds["ansible_user"] if creds else "root"
+
+    users = []
+    seen_usernames = set()
+
+    # Add default user from inventory
+    if creds:
+        users.append({"username": default_user, "source": "ssh_key"})
+        seen_usernames.add(default_user)
+
+    # Query credential inventory objects tagged with instance:{hostname}
+    cred_type = session.query(InventoryType).filter_by(slug="credential").first()
+    if cred_type:
+        from credential_access import user_can_view_credential
+        tag_name = f"instance:{hostname}"
+        cred_objects = (
+            session.query(InventoryObject)
+            .filter_by(type_id=cred_type.id)
+            .join(object_tags)
+            .join(InventoryTag)
+            .filter(InventoryTag.name == tag_name)
+            .all()
+        )
+        for obj in cred_objects:
+            if not user_can_view_credential(session, user, obj):
+                continue
+            data = json.loads(obj.data) if isinstance(obj.data, str) else obj.data
+            username = data.get("username", "")
+            cred_source = data.get("credential_type", "password")
+            if username and username not in seen_usernames:
+                users.append({"username": username, "source": cred_source})
+                seen_usernames.add(username)
+
+    return {
+        "hostname": hostname,
+        "default_user": default_user,
+        "users": users,
+    }
+
+
 async def _handle_ssh_websocket(websocket: WebSocket, hostname: str, user_info: dict):
     """Shared SSH WebSocket handler."""
     ssh_user_param = websocket.query_params.get("user")

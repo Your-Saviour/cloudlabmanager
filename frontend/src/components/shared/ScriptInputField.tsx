@@ -223,6 +223,9 @@ export function ScriptInputField({ input, value, onChange, serviceName }: Script
     return (
       <div className="space-y-2">
         <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
+        {input.description && (
+          <p className="text-xs text-muted-foreground">{input.description}</p>
+        )}
         <div className="space-y-2 max-h-48 overflow-auto border rounded-md p-2">
           {sshKeys.length === 0 ? (
             <p className="text-xs text-muted-foreground">No SSH keys available</p>
@@ -261,6 +264,9 @@ export function ScriptInputField({ input, value, onChange, serviceName }: Script
     return (
       <div className="space-y-2">
         <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
+        {input.description && (
+          <p className="text-xs text-muted-foreground">{input.description}</p>
+        )}
         <div className="space-y-2">
           {rows.map((row: string, idx: number) => (
             <div key={idx} className="flex gap-2">
@@ -302,6 +308,9 @@ export function ScriptInputField({ input, value, onChange, serviceName }: Script
     return (
       <div className="space-y-2">
         <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
+        {input.description && (
+          <p className="text-xs text-muted-foreground">{input.description}</p>
+        )}
         <Select value={value as string} onValueChange={onChange}>
           <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
           <SelectContent>
@@ -318,6 +327,9 @@ export function ScriptInputField({ input, value, onChange, serviceName }: Script
     return (
       <div className="space-y-2">
         <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
+        {input.description && (
+          <p className="text-xs text-muted-foreground">{input.description}</p>
+        )}
         <Select value={value as string} onValueChange={onChange}>
           <SelectTrigger><SelectValue placeholder="Select deployment..." /></SelectTrigger>
           <SelectContent>
@@ -330,10 +342,16 @@ export function ScriptInputField({ input, value, onChange, serviceName }: Script
     )
   }
 
+  const isPasswordInput = input.name.toLowerCase().includes('password')
+
   return (
     <div className="space-y-2">
       <Label>{input.label || input.name}{input.required ? ' *' : ''}</Label>
+      {input.description && (
+        <p className="text-xs text-muted-foreground">{input.description}</p>
+      )}
       <Input
+        type={isPasswordInput ? 'password' : 'text'}
         value={value as string}
         onChange={(e) => onChange(e.target.value)}
         placeholder={input.default || ''}

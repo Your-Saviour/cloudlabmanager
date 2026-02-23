@@ -427,6 +427,31 @@ class AnsibleRunner:
         run_env = None
         inputs = action_def.get("_inputs", {})
         if inputs:
+            # Resolve ssh_key_select inputs for dynamic_scripts actions
+            if action_type == "dynamic_scripts":
+                script_name = action_def.get("script_name", "deploy")
+                scripts = self.get_service_scripts(service_name)
+                sd = next((s for s in scripts if s["name"] == script_name), None)
+                if sd:
+                    ssh_key_inputs = {
+                        inp["name"] for inp in sd.get("inputs", [])
+                        if inp.get("type") == "ssh_key_select"
+                    }
+                    if ssh_key_inputs:
+                        from database import SessionLocal, User as DBUser
+                        with SessionLocal() as db:
+                            for iname in ssh_key_inputs:
+                                user_ids = inputs.get(iname)
+                                if not user_ids or not isinstance(user_ids, list):
+                                    continue
+                                int_ids = [int(uid) for uid in user_ids]
+                                users = db.query(DBUser).filter(
+                                    DBUser.id.in_(int_ids),
+                                    DBUser.ssh_public_key != None,
+                                ).all()
+                                keys = [u.ssh_public_key for u in users if u.ssh_public_key]
+                                inputs[iname] = keys
+
             run_env = dict(os.environ)
             for iname, value in inputs.items():
                 env_key = f"INPUT_{iname.upper()}"

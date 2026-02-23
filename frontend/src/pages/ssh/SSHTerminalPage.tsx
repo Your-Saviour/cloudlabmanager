@@ -1,17 +1,28 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Key, Lock } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
+
+interface SSHUser {
+  username: string
+  source: string
+}
 
 const statusConfig: Record<ConnectionStatus, { color: string; label: string }> = {
   connecting: { color: 'bg-yellow-500', label: 'Connecting...' },
   connected: { color: 'bg-green-500', label: 'Connected' },
   disconnected: { color: 'bg-red-500', label: 'Disconnected' },
   error: { color: 'bg-red-500', label: 'Error' },
+}
+
+const sourceIcon: Record<string, typeof Key> = {
+  ssh_key: Key,
+  password: Lock,
 }
 
 export default function SSHTerminalPage() {
@@ -25,6 +36,30 @@ export default function SSHTerminalPage() {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const [sshUser, setSshUser] = useState(routeUser || '')
   const [activeUser, setActiveUser] = useState(routeUser || '')
+  const [sshUsers, setSshUsers] = useState<SSHUser[]>([])
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+
+  // Fetch available SSH users
+  useEffect(() => {
+    if (!hostname || !token) return
+    fetch(`/api/inventory/server/${hostname}/ssh-users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.users?.length) {
+          setSshUsers(data.users)
+          // If no user was specified in route, use the default
+          if (!routeUser && data.default_user) {
+            setSshUser(data.default_user)
+            setActiveUser(data.default_user)
+          }
+        }
+      })
+      .catch(() => {
+        // Graceful degradation — input still works as before
+      })
+  }, [hostname, token, routeUser])
 
   const connect = useCallback(async (user: string) => {
     if (!terminalRef.current || !hostname || !token) return
@@ -150,8 +185,15 @@ export default function SSHTerminalPage() {
 
   const handleUserKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
+      setDropdownOpen(false)
       setActiveUser(sshUser)
     }
+  }
+
+  const handleSelectUser = (username: string) => {
+    setSshUser(username)
+    setDropdownOpen(false)
+    setActiveUser(username)
   }
 
   const statusInfo = statusConfig[status]
@@ -170,13 +212,40 @@ export default function SSHTerminalPage() {
         <span className="text-xs text-muted-foreground">({ip})</span>
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-xs text-muted-foreground">user:</span>
-          <Input
-            value={sshUser}
-            onChange={(e) => setSshUser(e.target.value)}
-            onKeyDown={handleUserKeyDown}
-            placeholder="root"
-            className="h-7 w-32 text-xs"
-          />
+          <Popover open={dropdownOpen} onOpenChange={setDropdownOpen}>
+            <PopoverTrigger asChild>
+              <div className="relative">
+                <Input
+                  value={sshUser}
+                  onChange={(e) => setSshUser(e.target.value)}
+                  onKeyDown={handleUserKeyDown}
+                  placeholder="root"
+                  className="h-7 w-40 text-xs pr-6"
+                />
+                {sshUsers.length > 0 && (
+                  <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                )}
+              </div>
+            </PopoverTrigger>
+            {sshUsers.length > 0 && (
+              <PopoverContent align="end" className="w-52 p-1">
+                {sshUsers.map((u) => {
+                  const Icon = sourceIcon[u.source] || Key
+                  return (
+                    <button
+                      key={u.username}
+                      onClick={() => handleSelectUser(u.username)}
+                      className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent text-left"
+                    >
+                      <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
+                      <span className="truncate">{u.username}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground">{u.source === 'ssh_key' ? 'key' : u.source}</span>
+                    </button>
+                  )
+                })}
+              </PopoverContent>
+            )}
+          </Popover>
         </div>
       </div>
       <div ref={terminalRef} className="flex-1 p-1" />
