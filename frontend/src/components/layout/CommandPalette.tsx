@@ -11,6 +11,7 @@ import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
 import { mainRoutes, toolRoutes, adminRoutes, quickRoutes, routeIcons, type RouteDefinition } from '@/lib/routes'
 import { useCommandActions, formatRelativeTime, type CommandAction } from '@/lib/commandRegistry'
 import { useServiceAction } from '@/hooks/useServiceAction'
+import { FolderOpen } from 'lucide-react'
 import { DryRunPreview } from '@/components/services/DryRunPreview'
 import { ScriptInputField } from '@/components/shared/ScriptInputField'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -252,6 +253,24 @@ export function CommandPalette() {
                       </Command.Item>
                     )
                   })}
+                </Command.Group>
+              )}
+
+              {hasPermission('services.run') && (
+                <Command.Group heading="Files">
+                  <Command.Item
+                    value="Browse Instance Files"
+                    keywords={['files', 'browse', 'remote', 'sftp', 'directory']}
+                    onSelect={() => {
+                      setOpen(false)
+                      setSearch('')
+                      navigate('/portal')
+                    }}
+                    className={itemClassName}
+                  >
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                    Browse Instance Files
+                  </Command.Item>
                 </Command.Group>
               )}
 

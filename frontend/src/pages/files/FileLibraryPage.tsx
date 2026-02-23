@@ -8,6 +8,7 @@ import {
   Download,
   Upload,
   FileIcon,
+  Globe,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useHasPermission } from '@/lib/permissions'
@@ -27,6 +28,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,6 +57,18 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function parseSourceMeta(tags: string[] | null | undefined) {
+  if (!tags) return null
+  const isRemote = tags.some((t) => t === 'source:remote')
+  if (!isRemote) return null
+  const instanceTag = tags.find((t) => t.startsWith('instance:'))
+  const pathTag = tags.find((t) => t.startsWith('path:'))
+  return {
+    instance: instanceTag ? instanceTag.slice('instance:'.length) : null,
+    path: pathTag ? pathTag.slice('path:'.length) : null,
+  }
+}
+
 export default function FileLibraryPage() {
   const queryClient = useQueryClient()
 
@@ -60,6 +80,9 @@ export default function FileLibraryPage() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [editItem, setEditItem] = useState<FileLibraryItem | null>(null)
   const [deleteItem, setDeleteItem] = useState<FileLibraryItem | null>(null)
+
+  // Source instance filter
+  const [sourceFilter, setSourceFilter] = useState<string>('')
 
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -93,6 +116,25 @@ export default function FileLibraryPage() {
       }
     },
   })
+
+  // Compute unique source instances for filter dropdown
+  const sourceInstances = useMemo(() => {
+    const instances = new Set<string>()
+    for (const file of files) {
+      const meta = parseSourceMeta(file.tags)
+      if (meta?.instance) instances.add(meta.instance)
+    }
+    return Array.from(instances).sort()
+  }, [files])
+
+  // Filter files by source instance
+  const filteredFiles = useMemo(() => {
+    if (!sourceFilter) return files
+    return files.filter((file) => {
+      const meta = parseSourceMeta(file.tags)
+      return meta?.instance === sourceFilter
+    })
+  }, [files, sourceFilter])
 
   // Upload mutation
   const uploadMutation = useMutation({
@@ -279,13 +321,47 @@ export default function FileLibraryPage() {
         cell: ({ row }) => {
           const tags = row.original.tags
           if (!tags || tags.length === 0) return null
+          // Filter out source metadata tags from display (they're shown in Source column)
+          const displayTags = tags.filter(
+            (t) => !t.startsWith('source:') && !t.startsWith('instance:') && !t.startsWith('path:')
+          )
+          if (displayTags.length === 0) return null
           return (
             <div className="flex gap-1 flex-wrap">
-              {tags.map((tag) => (
+              {displayTags.map((tag) => (
                 <Badge key={tag} variant="secondary" className="text-[10px]">
                   {tag}
                 </Badge>
               ))}
+            </div>
+          )
+        },
+      },
+      {
+        id: 'source',
+        header: 'Source',
+        cell: ({ row }) => {
+          const meta = parseSourceMeta(row.original.tags)
+          if (!meta) return <span className="text-muted-foreground/60 text-xs">—</span>
+          const display = [meta.instance, meta.path].filter(Boolean).join(':')
+          return (
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="text-[10px] shrink-0 gap-1">
+                <Globe className="h-3 w-3" />
+                Remote
+              </Badge>
+              {display && (
+                <Tooltip delayDuration={0}>
+                  <TooltipTrigger asChild>
+                    <span className="text-xs text-muted-foreground truncate max-w-[120px] block cursor-default">
+                      {display}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[400px] font-mono text-xs">
+                    {display}
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
           )
         },
@@ -385,6 +461,28 @@ export default function FileLibraryPage() {
         </div>
       )}
 
+      {sourceInstances.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <Label className="text-sm text-muted-foreground shrink-0">Source Instance:</Label>
+          <Select value={sourceFilter || '__all'} onValueChange={(v) => setSourceFilter(v === '__all' ? '' : v)}>
+            <SelectTrigger className="h-8 w-48 text-xs">
+              <SelectValue placeholder="All" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all">All</SelectItem>
+              {sourceInstances.map((inst) => (
+                <SelectItem key={inst} value={inst}>{inst}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {sourceFilter && (
+            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setSourceFilter('')}>
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
@@ -394,7 +492,7 @@ export default function FileLibraryPage() {
       ) : (
         <DataTable
           columns={columns}
-          data={files}
+          data={filteredFiles}
           searchKey="original_name"
           searchPlaceholder="Search files..."
         />

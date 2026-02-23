@@ -315,6 +315,9 @@ def test_app(test_engine, mock_services_dir, monkeypatch):
     from routes.file_routes import router as file_router
     app.include_router(file_router)
 
+    from routes.file_browser_routes import router as file_browser_router
+    app.include_router(file_browser_router)
+
     return app
 
 

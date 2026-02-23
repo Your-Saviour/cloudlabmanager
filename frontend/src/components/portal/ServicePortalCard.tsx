@@ -5,6 +5,7 @@ import {
   Link,
   Terminal,
   Copy,
+  FolderOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useHasPermission } from '@/lib/permissions'
@@ -45,12 +46,14 @@ interface ServicePortalCardProps {
   service: PortalService
   index: number
   userHasPersonalKey?: boolean
+  onBrowseFiles?: (service: string, hostname: string) => void
 }
 
-export function ServicePortalCard({ service, index, userHasPersonalKey }: ServicePortalCardProps) {
+export function ServicePortalCard({ service, index, userHasPersonalKey, onBrowseFiles }: ServicePortalCardProps) {
   const isRunning = service.power_status === 'running'
   const isSuspended = service.power_status === 'suspended'
   const canEditBookmarks = useHasPermission('portal.bookmarks.edit')
+  const canRun = useHasPermission('services.run')
   const [sshOpen, setSshOpen] = useState(false)
 
   const primaryUrl = service.outputs.find((o) => o.type === 'url')?.value
@@ -269,6 +272,18 @@ export function ServicePortalCard({ service, index, userHasPersonalKey }: Servic
               aria-label={`Open SSH terminal for ${service.display_name}`}
             >
               <Terminal className="mr-1.5 h-3.5 w-3.5" /> SSH
+            </Button>
+          )}
+          {canRun && isRunning && service.hostname && onBrowseFiles && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-7"
+              onClick={() => onBrowseFiles(service.name, service.hostname)}
+              title="Browse Files"
+              aria-label={`Browse files on ${service.display_name}`}
+            >
+              <FolderOpen className="mr-1.5 h-3.5 w-3.5" /> Files
             </Button>
           )}
           {(primaryUrl || service.fqdn) && (

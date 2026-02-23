@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Trash2, Play, Plus, X, Terminal, Monitor, Camera, MoreHorizontal, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Trash2, Play, Plus, X, Terminal, Monitor, Camera, MoreHorizontal, RotateCcw, FolderOpen } from 'lucide-react'
 import api from '@/lib/api'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useHasPermission } from '@/lib/permissions'
@@ -33,6 +33,7 @@ import {
 import { toast } from 'sonner'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
+import RemoteFileBrowser from '@/components/files/RemoteFileBrowser'
 import { DataTable } from '@/components/data/DataTable'
 import { relativeTime } from '@/lib/utils'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -50,8 +51,10 @@ export default function InventoryDetailPage() {
   const canSnapshot = useHasPermission('snapshots.create')
   const canDeleteSnapshot = useHasPermission('snapshots.delete')
   const canRestoreSnapshot = useHasPermission('snapshots.restore')
+  const canRun = useHasPermission('services.run')
 
   const [editing, setEditing] = useState(false)
+  const [browseOpen, setBrowseOpen] = useState(false)
   const [formData, setFormData] = useState<Record<string, unknown>>({})
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [actionConfirm, setActionConfirm] = useState<string | null>(null)
@@ -402,6 +405,11 @@ export default function InventoryDetailPage() {
               <StatusBadge status={lastJob.status} />
               <span>{relativeTime(lastJob.started_at)}</span>
             </button>
+          )}
+          {canRun && typeSlug === 'server' && !!obj?.data?.hostname && (
+            <Button variant="outline" size="sm" onClick={() => setBrowseOpen(true)}>
+              <FolderOpen className="mr-2 h-3 w-3" /> Browse Files
+            </Button>
           )}
           {canEdit && !editing && (
             <Button variant="outline" size="sm" onClick={startEdit}>Edit</Button>
@@ -807,6 +815,27 @@ export default function InventoryDetailPage() {
         variant="destructive"
         onConfirm={() => deleteSnapshotTarget && deleteSnapshotMutation.mutate(deleteSnapshotTarget.id)}
       />
+
+      {/* Browse Files Dialog */}
+      <Dialog open={browseOpen} onOpenChange={setBrowseOpen}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Browse Files — {String(obj?.data?.hostname || obj?.name || '')}</DialogTitle>
+          </DialogHeader>
+          {browseOpen && !!obj?.data?.hostname && (
+            <RemoteFileBrowser
+              serviceName={
+                (obj.data.service as string) ||
+                (obj.data.service_name as string) ||
+                obj.tags.find((t) => t.name.startsWith('svc:'))?.name.slice(4) ||
+                obj.name
+              }
+              hostname={obj.data.hostname as string}
+              initialPath="/"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

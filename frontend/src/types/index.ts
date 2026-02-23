@@ -306,5 +306,33 @@ export interface FileLibraryItem {
   last_used_at: string | null
 }
 
+export interface RemoteFileEntry {
+  name: string
+  type: 'file' | 'directory' | 'symlink'
+  size: number
+  permissions: string
+  owner: string
+  group: string
+  modified: string
+  link_target: string | null
+}
+
+export interface BrowseResponse {
+  path: string
+  hostname: string
+  entries: RemoteFileEntry[]
+  cached: boolean
+}
+
+export interface FilePreviewResponse {
+  path: string
+  hostname: string
+  is_binary: boolean
+  size: number
+  mime_type: string
+  content: string | null
+  lines_returned?: number
+}
+
 export type { ScheduledJob, CronPreview } from './schedule'
 export type { WebhookEndpoint } from './webhook'

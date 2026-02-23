@@ -12,6 +12,7 @@ import {
   Trash2,
   RefreshCw,
   User,
+  FolderOpen,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -21,8 +22,10 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ServicePortalCard } from '@/components/portal/ServicePortalCard'
 import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
+import RemoteFileBrowser from '@/components/files/RemoteFileBrowser'
 import { toast } from 'sonner'
 import { usePersonalInstances, useDestroyPersonalInstance, useExtendPersonalInstanceTTL } from '@/hooks/usePersonalInstances'
 import { useHasPermission } from '@/lib/permissions'
@@ -46,6 +49,7 @@ export default function PortalPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [searchQuery, setSearchQuery] = useState('')
   const [groupBy, setGroupBy] = useState<'none' | 'tag' | 'region'>('none')
+  const [browseTarget, setBrowseTarget] = useState<{ service: string; hostname: string } | null>(null)
   const canPersonal = useHasPermission('personal_instances.create')
 
   const { data, isLoading } = useQuery({
@@ -171,7 +175,13 @@ export default function PortalPage() {
             {viewMode === 'grid' ? (
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {services.map((service, index) => (
-                  <ServicePortalCard key={service.name} service={service} index={index} userHasPersonalKey={data?.user_has_personal_key} />
+                  <ServicePortalCard
+                    key={service.name}
+                    service={service}
+                    index={index}
+                    userHasPersonalKey={data?.user_has_personal_key}
+                    onBrowseFiles={(svc, host) => setBrowseTarget({ service: svc, hostname: host })}
+                  />
                 ))}
               </div>
             ) : (
@@ -184,6 +194,22 @@ export default function PortalPage() {
           </div>
         ))
       )}
+
+      {/* Browse Files Dialog */}
+      <Dialog open={!!browseTarget} onOpenChange={(open) => !open && setBrowseTarget(null)}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Browse Files — {browseTarget?.hostname}</DialogTitle>
+          </DialogHeader>
+          {browseTarget && (
+            <RemoteFileBrowser
+              serviceName={browseTarget.service}
+              hostname={browseTarget.hostname}
+              initialPath="/"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
