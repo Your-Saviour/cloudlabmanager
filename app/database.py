@@ -1,10 +1,15 @@
 import json
+import time
+import logging
 from datetime import datetime, timezone
 from sqlalchemy import (
     create_engine, Column, Integer, String, Boolean, Text, DateTime,
     ForeignKey, Index, Table, event, text, UniqueConstraint,
 )
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = "/data/cloudlab.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
@@ -23,6 +28,40 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+
+def run_with_retry(fn, max_retries=3, base_delay=0.5):
+    """Execute a database operation with retry on SQLite lock errors.
+
+    Use this for background task writes (health checks, scheduler, notifications)
+    where multiple concurrent writers may contend for the SQLite write lock.
+
+    Args:
+        fn: Callable that takes a Session and performs DB operations.
+            The session is committed and closed automatically.
+        max_retries: Number of retry attempts after the initial try.
+        base_delay: Base delay in seconds (doubled each retry).
+    """
+    for attempt in range(max_retries + 1):
+        session = SessionLocal()
+        try:
+            result = fn(session)
+            session.commit()
+            return result
+        except OperationalError as e:
+            session.rollback()
+            if attempt < max_retries and "database is locked" in str(e):
+                delay = base_delay * (2 ** attempt)
+                logger.warning("DB locked (attempt %d/%d), retrying in %.1fs",
+                               attempt + 1, max_retries + 1, delay)
+                time.sleep(delay)
+            else:
+                raise
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
 
 def utcnow():

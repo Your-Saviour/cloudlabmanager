@@ -11,7 +11,8 @@ from datetime import datetime, timezone, timedelta
 
 import httpx
 
-from database import SessionLocal, HealthCheckResult, AppMetadata
+from database import SessionLocal, HealthCheckResult, AppMetadata, run_with_retry
+from env_filter import filter_instances_cache
 
 logger = logging.getLogger("health_checker")
 
@@ -266,22 +267,22 @@ class HealthPoller:
 
     async def _cleanup_old_results(self):
         """Delete health check results older than retention period."""
-        session = SessionLocal()
         try:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=self._retention_hours)
-            deleted = (
-                session.query(HealthCheckResult)
-                .filter(HealthCheckResult.checked_at < cutoff)
-                .delete()
-            )
-            session.commit()
-            if deleted:
-                logger.info("Cleaned up %d old health check results", deleted)
+
+            def _do_cleanup(session):
+                deleted = (
+                    session.query(HealthCheckResult)
+                    .filter(HealthCheckResult.checked_at < cutoff)
+                    .delete()
+                )
+                if deleted:
+                    logger.info("Cleaned up %d old health check results", deleted)
+                return deleted
+
+            run_with_retry(_do_cleanup)
         except Exception:
-            session.rollback()
             logger.exception("Failed to clean up old health check results")
-        finally:
-            session.close()
 
         # Also clean up old notifications
         from notification_service import cleanup_old_notifications
@@ -328,7 +329,7 @@ class HealthPoller:
         """
         session = SessionLocal()
         try:
-            cache = AppMetadata.get(session, "instances_cache")
+            cache = filter_instances_cache(AppMetadata.get(session, "instances_cache"))
             if not cache:
                 return {}
 
@@ -454,30 +455,31 @@ class HealthPoller:
                              check_type: str, target: str, result: dict,
                              service_config: dict):
         """Store health check result in the database and handle state transitions."""
-        session = SessionLocal()
         try:
-            # Get previous status for transition detection
-            prev = (
-                session.query(HealthCheckResult)
-                .filter_by(service_name=service_name, check_name=check_name)
-                .order_by(HealthCheckResult.checked_at.desc())
-                .first()
-            )
-            previous_status = prev.status if prev else "unknown"
+            def _do_store(session):
+                prev = (
+                    session.query(HealthCheckResult)
+                    .filter_by(service_name=service_name, check_name=check_name)
+                    .order_by(HealthCheckResult.checked_at.desc())
+                    .first()
+                )
+                previous_status = prev.status if prev else "unknown"
 
-            record = HealthCheckResult(
-                service_name=service_name,
-                check_name=check_name,
-                status=result.get("status", "unknown"),
-                previous_status=previous_status,
-                response_time_ms=result.get("response_time_ms"),
-                status_code=result.get("status_code"),
-                error_message=result.get("error_message"),
-                check_type=check_type,
-                target=target,
-            )
-            session.add(record)
-            session.commit()
+                record = HealthCheckResult(
+                    service_name=service_name,
+                    check_name=check_name,
+                    status=result.get("status", "unknown"),
+                    previous_status=previous_status,
+                    response_time_ms=result.get("response_time_ms"),
+                    status_code=result.get("status_code"),
+                    error_message=result.get("error_message"),
+                    check_type=check_type,
+                    target=target,
+                )
+                session.add(record)
+                return previous_status
+
+            previous_status = run_with_retry(_do_store)
 
             # Check for state transition (healthy -> unhealthy or vice versa)
             current_status = result.get("status", "unknown")
@@ -506,14 +508,11 @@ class HealthPoller:
                         "old_status": previous_status,
                         "new_status": current_status,
                     })
-                except Exception as e:
+                except Exception:
                     logger.exception("Failed to dispatch health notification for %s/%s", service_name, check_name)
 
         except Exception:
-            session.rollback()
             logger.exception("Failed to store health check result for %s/%s", service_name, check_name)
-        finally:
-            session.close()
 
     async def _maybe_notify(self, service_name: str, check_name: str,
                              old_status: str, new_status: str,

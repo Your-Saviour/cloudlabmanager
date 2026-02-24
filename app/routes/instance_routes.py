@@ -10,6 +10,7 @@ from database import SessionLocal, User, AppMetadata
 from permissions import require_permission, has_permission
 from db_session import get_db_session
 from audit import log_action
+from env_filter import filter_instances_cache
 
 try:
     import asyncssh
@@ -28,7 +29,7 @@ router = APIRouter(prefix="/api/instances", tags=["instances"])
 async def list_instances(user: User = Depends(require_permission("instances.view"))):
     session = SessionLocal()
     try:
-        cache = AppMetadata.get(session, "instances_cache")
+        cache = filter_instances_cache(AppMetadata.get(session, "instances_cache"))
         cache_time = AppMetadata.get(session, "instances_cache_time")
         return {
             "instances": cache or {},

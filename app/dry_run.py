@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from database import SessionLocal, AppMetadata, User
 from permissions import has_permission
 from plan_pricing import estimate_service_cost
+from env_filter import filter_instances_cache
 
 CLOUDLAB_CONFIG = "/app/cloudlab/config.yml"
 SERVICES_DIR = "/app/cloudlab/services"
@@ -126,7 +127,7 @@ def check_valid_plan(instance_config: dict | None, session) -> dict:
 def check_duplicate_hostname(instance_config: dict | None, session) -> dict:
     if not instance_config or not isinstance(instance_config.get("instances"), list):
         return _check("duplicate_hostname", "fail", "No instances to validate")
-    cache = AppMetadata.get(session, "instances_cache") or {}
+    cache = filter_instances_cache(AppMetadata.get(session, "instances_cache")) or {}
     existing_hosts = set(cache.get("all", {}).get("hosts", {}).keys())
     if not existing_hosts:
         return _check("duplicate_hostname", "pass", "No running instances to check against (cache empty)")

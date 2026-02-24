@@ -5,6 +5,7 @@ import os
 import yaml
 from sqlalchemy.orm import Session
 from database import InventoryType, InventoryObject, InventoryTag, AppMetadata, User, JobRecord, SessionLocal
+from env_filter import filter_instances_cache
 
 SERVICES_DIR = "/app/cloudlab/services"
 INVENTORY_FILE = "/inventory/vultr.yml"
@@ -68,13 +69,14 @@ class VultrInventorySync:
         fields = type_config.get("fields", [])
 
         # Read from DB cache (populated by refresh_instances)
-        cache = AppMetadata.get(session, "instances_cache")
+        cache = filter_instances_cache(AppMetadata.get(session, "instances_cache"))
         if not cache:
             # Try reading from file
             if os.path.isfile(INVENTORY_FILE):
                 try:
                     with open(INVENTORY_FILE, "r") as f:
-                        cache = yaml.safe_load(f)
+                        raw = yaml.safe_load(f)
+                    cache = filter_instances_cache(raw)
                 except Exception:
                     pass
         if not cache:
@@ -314,7 +316,7 @@ class DeploymentSync:
 
         # Build a hostname/IP lookup from server inventory cache
         server_lookup = {}
-        cache = AppMetadata.get(session, "instances_cache")
+        cache = filter_instances_cache(AppMetadata.get(session, "instances_cache"))
         if cache:
             hosts = cache.get("all", {}).get("hosts", {})
             for hostname, info in hosts.items():

@@ -1,10 +1,12 @@
 import html
 import json
 import logging
+import time
 from datetime import timedelta
+from sqlalchemy.exc import OperationalError
 from database import (
     SessionLocal, NotificationRule, Notification, NotificationChannel,
-    User, user_roles, utcnow,
+    User, user_roles, utcnow, run_with_retry,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,7 +88,17 @@ async def notify(event_type: str, context: dict):
             except Exception:
                 logger.exception("Failed to process notification rule %d", rule.id)
 
-        session.commit()
+        for attempt in range(4):
+            try:
+                session.commit()
+                break
+            except OperationalError as e:
+                session.rollback()
+                if attempt < 3 and "database is locked" in str(e):
+                    logger.warning("DB locked in notify (attempt %d/4), retrying", attempt + 1)
+                    time.sleep(0.5 * (2 ** attempt))
+                else:
+                    raise
     except Exception:
         session.rollback()
         logger.exception("Failed to dispatch notifications for event %s", event_type)
@@ -215,15 +227,14 @@ async def _send_slack_notification(session, channel_id: int | None, event_type: 
 
 def cleanup_old_notifications(retention_days: int = 30):
     """Delete notifications older than retention_days."""
-    session = SessionLocal()
     try:
         cutoff = utcnow() - timedelta(days=retention_days)
-        deleted = session.query(Notification).filter(Notification.created_at < cutoff).delete()
-        session.commit()
-        if deleted:
-            logger.info("Cleaned up %d old notifications", deleted)
+
+        def _do_cleanup(session):
+            deleted = session.query(Notification).filter(Notification.created_at < cutoff).delete()
+            if deleted:
+                logger.info("Cleaned up %d old notifications", deleted)
+
+        run_with_retry(_do_cleanup)
     except Exception:
-        session.rollback()
         logger.exception("Failed to cleanup old notifications")
-    finally:
-        session.close()

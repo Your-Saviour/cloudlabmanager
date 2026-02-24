@@ -378,6 +378,12 @@ def write_vault_password():
 async def main():
     print("CloudLabManager starting up...")
 
+    # Set CLOUDLAB_ENV_TAG early so all subprocess calls inherit it
+    from env_filter import get_env_tag
+    env_tag = get_env_tag()
+    os.environ["CLOUDLAB_ENV_TAG"] = env_tag
+    print(f"Environment tag: {env_tag}")
+
     # Ensure /data directory exists
     os.makedirs("/data", exist_ok=True)
     os.makedirs("/data/file_library", exist_ok=True)

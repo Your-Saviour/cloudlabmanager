@@ -9,6 +9,8 @@ import yaml
 from datetime import datetime, timezone, timedelta
 from models import Job
 
+from env_filter import filter_instances_cache
+
 VAULT_PASS_FILE = "/tmp/.vault_pass.txt"
 CLOUDLAB_PATH = "/app/cloudlab"
 SERVICES_DIR = os.path.join(CLOUDLAB_PATH, "services")
@@ -600,6 +602,7 @@ class AnsibleRunner:
                 if os.path.isfile(INVENTORY_FILE):
                     with open(INVENTORY_FILE, "r") as f:
                         inv_data = yaml.safe_load(f)
+                    inv_data = filter_instances_cache(inv_data) or inv_data
                     AppMetadata.set(session, "instances_cache", inv_data)
                     AppMetadata.set(session, "instances_cache_time",
                                     datetime.now(timezone.utc).isoformat())
@@ -1056,6 +1059,8 @@ class AnsibleRunner:
             if os.path.isfile(INVENTORY_FILE):
                 with open(INVENTORY_FILE, "r") as f:
                     inv_data = yaml.safe_load(f)
+                # Filter to only this environment's instances
+                inv_data = filter_instances_cache(inv_data) or inv_data
                 session = SessionLocal()
                 try:
                     AppMetadata.set(session, "instances_cache", inv_data)
@@ -1089,6 +1094,8 @@ class AnsibleRunner:
                 try:
                     with open(INVENTORY_FILE, "r") as f:
                         inv_data = yaml.safe_load(f)
+                    # Filter to only this environment's instances before caching
+                    inv_data = filter_instances_cache(inv_data) or inv_data
                     from database import SessionLocal, AppMetadata
                     session = SessionLocal()
                     try:
@@ -1438,7 +1445,7 @@ class AnsibleRunner:
                     try:
                         # Look up instance label from cache
                         instance_label = None
-                        instances_cache = AppMetadata.get(session, "instances_cache") or {}
+                        instances_cache = filter_instances_cache(AppMetadata.get(session, "instances_cache")) or {}
                         hosts = instances_cache.get("all", {}).get("hosts", {})
                         for _hostname, info in hosts.items():
                             if info.get("vultr_id") == instance_vultr_id:

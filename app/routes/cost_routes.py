@@ -14,6 +14,7 @@ from routes.personal_instance_routes import (
 )
 from db_session import get_db_session
 from audit import log_action
+from env_filter import filter_instances_cache
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -24,7 +25,7 @@ BUDGET_SETTINGS_KEY = "cost_budget_settings"
 
 def _compute_costs_from_cache(session):
     """Compute cost data on-the-fly by joining instances_cache + plans_cache."""
-    instances_cache = AppMetadata.get(session, "instances_cache") or {}
+    instances_cache = filter_instances_cache(AppMetadata.get(session, "instances_cache")) or {}
     plans_cache = AppMetadata.get(session, "plans_cache") or []
 
     # Build plan cost lookup: plan_id -> {monthly_cost, hourly_cost}

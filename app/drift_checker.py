@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from html import escape as html_escape
 
-from database import SessionLocal, DriftReport, AppMetadata
+from database import SessionLocal, DriftReport, AppMetadata, run_with_retry
 
 logger = logging.getLogger("drift_checker")
 
@@ -264,19 +264,25 @@ async def run_drift_check(triggered_by: str = "poller") -> DriftReport | None:
             status = "clean"
 
         # Store report in DB with transition detection
-        session = SessionLocal()
         try:
-            previous_status = _get_previous_status(session)
+            store_result = {}
 
-            report = DriftReport(
-                status=status,
-                previous_status=previous_status,
-                summary=json.dumps(summary),
-                report_data=json.dumps(report_data),
-                triggered_by=triggered_by,
-            )
-            session.add(report)
-            session.commit()
+            def _do_store(session):
+                previous_status = _get_previous_status(session)
+                report = DriftReport(
+                    status=status,
+                    previous_status=previous_status,
+                    summary=json.dumps(summary),
+                    report_data=json.dumps(report_data),
+                    triggered_by=triggered_by,
+                )
+                session.add(report)
+                store_result["previous_status"] = previous_status
+                store_result["report"] = report
+
+            run_with_retry(_do_store)
+
+            previous_status = store_result["previous_status"]
             logger.info("Drift check complete: status=%s previous=%s (triggered_by=%s)", status, previous_status, triggered_by)
 
             # Notify on state transitions
@@ -284,13 +290,10 @@ async def run_drift_check(triggered_by: str = "poller") -> DriftReport | None:
                 logger.info("Drift state transition: %s -> %s", previous_status, status)
                 await _maybe_notify_drift(status, previous_status, summary, report_data)
 
-            return report
+            return store_result.get("report")
         except Exception:
-            session.rollback()
             logger.exception("Failed to store drift report")
             return None
-        finally:
-            session.close()
 
     finally:
         _check_in_progress = False
@@ -298,22 +301,20 @@ async def run_drift_check(triggered_by: str = "poller") -> DriftReport | None:
 
 def _store_error_report(triggered_by: str, error_message: str):
     """Store an error report when the playbook fails."""
-    session = SessionLocal()
     try:
-        report = DriftReport(
-            status="error",
-            summary=json.dumps({}),
-            report_data=json.dumps({}),
-            triggered_by=triggered_by,
-            error_message=error_message,
-        )
-        session.add(report)
-        session.commit()
+        def _do_store(session):
+            report = DriftReport(
+                status="error",
+                summary=json.dumps({}),
+                report_data=json.dumps({}),
+                triggered_by=triggered_by,
+                error_message=error_message,
+            )
+            session.add(report)
+
+        run_with_retry(_do_store)
     except Exception:
-        session.rollback()
         logger.exception("Failed to store drift error report")
-    finally:
-        session.close()
 
 
 class DriftPoller:

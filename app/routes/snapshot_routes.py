@@ -8,6 +8,7 @@ from database import SessionLocal, User, Snapshot, AppMetadata
 from permissions import require_permission
 from db_session import get_db_session
 from audit import log_action
+from env_filter import filter_instances_cache
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
 
@@ -136,7 +137,7 @@ async def create_snapshot(
 
     # Look up instance label from cache for display
     instance_label = None
-    instances_cache = AppMetadata.get(session, "instances_cache") or {}
+    instances_cache = filter_instances_cache(AppMetadata.get(session, "instances_cache")) or {}
     hosts = instances_cache.get("all", {}).get("hosts", {})
     for _hostname, info in hosts.items():
         if info.get("vultr_id") == body.instance_vultr_id:
