@@ -35,6 +35,8 @@ export interface PersonalInstanceConfig {
     type: string
     description?: string
     required?: boolean
+    default?: string
+    options?: (string | { value: string; label: string })[]
   }>
 }
 

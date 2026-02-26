@@ -15,6 +15,7 @@ import {
   type PersonalInstance,
 } from '@/hooks/usePersonalInstances'
 
+import { ScriptInputField } from '@/components/shared/ScriptInputField'
 import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -428,24 +429,15 @@ export default function PersonalInstancesPage() {
 
             {/* Dynamic required inputs */}
             {createService && selectedConfig?.required_inputs?.map((input) => (
-              <div key={input.name} className="space-y-2">
-                <Label>
-                  {input.label}
-                  {input.required !== false && <span className="text-red-500 ml-1">*</span>}
-                </Label>
-                {input.description && (
-                  <p className="text-xs text-muted-foreground">{input.description}</p>
-                )}
-                <Input
-                  type={input.type === 'password' ? 'password' : 'text'}
-                  value={createInputs[input.name] || ''}
-                  onChange={(e) =>
-                    setCreateInputs((prev) => ({ ...prev, [input.name]: e.target.value }))
-                  }
-                  placeholder={input.label}
-                  aria-required={input.required !== false}
-                />
-              </div>
+              <ScriptInputField
+                key={input.name}
+                input={input}
+                value={createInputs[input.name] ?? input.default ?? ''}
+                onChange={(val) =>
+                  setCreateInputs((prev) => ({ ...prev, [input.name]: val }))
+                }
+                serviceName={createService}
+              />
             ))}
 
             {createService && (
