@@ -8,7 +8,7 @@ from models import (
     PasswordResetRequest, PasswordResetConfirm, ChangePasswordRequest,
     UpdateProfileRequest, PersonalSSHKeyUpdate,
     MFAConfirmRequest, MFAVerifyRequest, MFADisableRequest,
-    VerifyIdentityRequest,
+    VerifyIdentityRequest, JoinViaLinkRequest,
 )
 from auth import (
     hash_password, verify_password, create_access_token,
@@ -586,3 +586,86 @@ async def mfa_regenerate_backup_codes(user: User = Depends(get_current_user),
     session.flush()
 
     return {"backup_codes": codes}
+
+
+# --- Invite link join endpoints ---
+
+
+@router.get("/join/{token}/info")
+async def join_link_info(token: str, session: Session = Depends(get_db_session)):
+    from database import InviteLink
+    link = session.query(InviteLink).filter_by(token=token).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Invite link not found")
+
+    now = datetime.now(timezone.utc)
+    if not link.is_active:
+        raise HTTPException(status_code=410, detail="This invite link has been revoked")
+    if link.expires_at and link.expires_at < now:
+        raise HTTPException(status_code=410, detail="This invite link has expired")
+    if link.max_uses and link.use_count >= link.max_uses:
+        raise HTTPException(status_code=410, detail="This invite link has reached its maximum number of uses")
+
+    return {
+        "label": link.label,
+        "roles": [{"id": r.id, "name": r.name} for r in link.roles],
+        "expires_at": link.expires_at.isoformat() if link.expires_at else None,
+    }
+
+
+@router.post("/join")
+@limiter.limit("5/minute")
+async def join_via_link(req: JoinViaLinkRequest, request: Request,
+                        session: Session = Depends(get_db_session)):
+    from database import InviteLink, InviteLinkRegistration
+
+    link = session.query(InviteLink).filter_by(token=req.token).first()
+    if not link:
+        raise HTTPException(status_code=400, detail="Invalid invite link")
+
+    now = datetime.now(timezone.utc)
+    if not link.is_active:
+        raise HTTPException(status_code=400, detail="This invite link has been revoked")
+    if link.expires_at and link.expires_at < now:
+        raise HTTPException(status_code=400, detail="This invite link has expired")
+    if link.max_uses and link.use_count >= link.max_uses:
+        raise HTTPException(status_code=400, detail="This invite link has reached its maximum number of uses")
+
+    # Check username/email uniqueness
+    if session.query(User).filter_by(username=req.username).first():
+        raise HTTPException(status_code=400, detail="Username already taken")
+    if session.query(User).filter(User.email == req.email).first():
+        raise HTTPException(status_code=400, detail="Email already in use")
+
+    # Create user
+    user = User(
+        username=req.username,
+        email=req.email,
+        display_name=req.display_name,
+        password_hash=hash_password(req.password),
+        is_active=True,
+        invite_accepted_at=now,
+    )
+    for role in link.roles:
+        user.roles.append(role)
+    session.add(user)
+    session.flush()
+
+    # Record registration and increment use count
+    reg = InviteLinkRegistration(link_id=link.id, user_id=user.id)
+    session.add(reg)
+    link.use_count = (link.use_count or 0) + 1
+    session.flush()
+
+    from audit import log_action
+    log_action(session, user.id, user.username, "joined_via_invite_link", "auth",
+               details={"link_id": link.id, "link_label": link.label},
+               ip_address=request.client.host if request.client else None)
+
+    token = create_access_token(user)
+    perms = get_user_permissions(session, user.id)
+    return TokenResponse(
+        access_token=token,
+        user=_user_dict(user),
+        permissions=sorted(perms),
+    )

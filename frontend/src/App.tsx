@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import LoginPage from '@/pages/auth/LoginPage'
 import SetupPage from '@/pages/auth/SetupPage'
 import AcceptInvitePage from '@/pages/auth/AcceptInvitePage'
+import JoinPage from '@/pages/auth/JoinPage'
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
@@ -93,6 +94,7 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/setup" element={<SetupPage />} />
       <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
+      <Route path="/join/:token" element={<JoinPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 

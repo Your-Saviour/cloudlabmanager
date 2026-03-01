@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from croniter import croniter
-from database import SessionLocal, ScheduledJob, JobRecord
+from database import SessionLocal, ScheduledJob, JobRecord, _bg_write_lock
 
 logger = logging.getLogger("scheduler")
 
@@ -69,7 +69,8 @@ class Scheduler:
                 except Exception:
                     logger.exception("Failed to dispatch schedule %d (%s)", schedule.id, schedule.name)
 
-            session.commit()
+            async with _bg_write_lock:
+                session.commit()
         except Exception:
             session.rollback()
             raise
@@ -249,7 +250,8 @@ class Scheduler:
                     except Exception:
                         logger.exception("Failed to notify for schedule %d", schedule.id)
 
-            session.commit()
+            async with _bg_write_lock:
+                session.commit()
         except Exception:
             session.rollback()
             logger.exception("Error updating completed schedules")

@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 
 import httpx
 
-from database import SessionLocal, HealthCheckResult, AppMetadata, run_with_retry
+from database import SessionLocal, HealthCheckResult, AppMetadata, run_with_retry_async
 from env_filter import filter_instances_cache
 
 logger = logging.getLogger("health_checker")
@@ -280,13 +280,13 @@ class HealthPoller:
                     logger.info("Cleaned up %d old health check results", deleted)
                 return deleted
 
-            run_with_retry(_do_cleanup)
+            await run_with_retry_async(_do_cleanup)
         except Exception:
             logger.exception("Failed to clean up old health check results")
 
         # Also clean up old notifications
         from notification_service import cleanup_old_notifications
-        cleanup_old_notifications()
+        await cleanup_old_notifications()
 
     async def _tick(self):
         """Check all services and run due health checks."""
@@ -479,7 +479,7 @@ class HealthPoller:
                 session.add(record)
                 return previous_status
 
-            previous_status = run_with_retry(_do_store)
+            previous_status = await run_with_retry_async(_do_store)
 
             # Check for state transition (healthy -> unhealthy or vice versa)
             current_status = result.get("status", "unknown")

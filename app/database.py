@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 import logging
@@ -30,7 +31,13 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-def run_with_retry(fn, max_retries=3, base_delay=0.5):
+# Serialize background DB writes to prevent SQLite lock contention.
+# All callers of run_with_retry share this lock so only one background
+# write proceeds at a time (health checks, scheduler, notifications, etc.).
+_bg_write_lock = asyncio.Lock()
+
+
+def run_with_retry(fn, max_retries=5, base_delay=0.3):
     """Execute a database operation with retry on SQLite lock errors.
 
     Use this for background task writes (health checks, scheduler, notifications)
@@ -62,6 +69,16 @@ def run_with_retry(fn, max_retries=3, base_delay=0.5):
             raise
         finally:
             session.close()
+
+
+async def run_with_retry_async(fn, max_retries=5, base_delay=0.3):
+    """Like run_with_retry but serializes writes behind an asyncio lock.
+
+    Use this from async background tasks (health checks, scheduler) to
+    prevent multiple concurrent writers from piling up on the SQLite lock.
+    """
+    async with _bg_write_lock:
+        return run_with_retry(fn, max_retries=max_retries, base_delay=base_delay)
 
 
 def utcnow():
@@ -639,6 +656,45 @@ class FeedbackRequest(Base):
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     user = relationship("User", lazy="selectin")
+
+
+invite_link_roles = Table(
+    "invite_link_roles",
+    Base.metadata,
+    Column("link_id", Integer, ForeignKey("invite_links.id", ondelete="CASCADE"), primary_key=True),
+    Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class InviteLink(Base):
+    __tablename__ = "invite_links"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    label = Column(String(100), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    max_uses = Column(Integer, nullable=True)
+    use_count = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    roles = relationship("Role", secondary=invite_link_roles, lazy="selectin")
+    registrations = relationship("InviteLinkRegistration", back_populates="link", cascade="all, delete-orphan")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class InviteLinkRegistration(Base):
+    __tablename__ = "invite_link_registrations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    link_id = Column(Integer, ForeignKey("invite_links.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    registered_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    link = relationship("InviteLink", back_populates="registrations")
+    user = relationship("User")
 
 
 class FileLibraryItem(Base):

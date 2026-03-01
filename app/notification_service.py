@@ -6,7 +6,7 @@ from datetime import timedelta
 from sqlalchemy.exc import OperationalError
 from database import (
     SessionLocal, NotificationRule, Notification, NotificationChannel,
-    User, user_roles, utcnow, run_with_retry,
+    User, user_roles, utcnow, run_with_retry, run_with_retry_async,
 )
 
 logger = logging.getLogger(__name__)
@@ -225,7 +225,7 @@ async def _send_slack_notification(session, channel_id: int | None, event_type: 
         logger.exception("Failed to send Slack notification")
 
 
-def cleanup_old_notifications(retention_days: int = 30):
+async def cleanup_old_notifications(retention_days: int = 30):
     """Delete notifications older than retention_days."""
     try:
         cutoff = utcnow() - timedelta(days=retention_days)
@@ -235,6 +235,6 @@ def cleanup_old_notifications(retention_days: int = 30):
             if deleted:
                 logger.info("Cleaned up %d old notifications", deleted)
 
-        run_with_retry(_do_cleanup)
+        await run_with_retry_async(_do_cleanup)
     except Exception:
         logger.exception("Failed to cleanup old notifications")

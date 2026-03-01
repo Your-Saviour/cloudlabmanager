@@ -700,6 +700,56 @@ class CredentialAccessRuleResponse(BaseModel):
 
 # --- File library models ---
 
+class InviteLinkCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=100)
+    expiry: str = "never"  # "24h", "7d", "30d", "never"
+    max_uses: Optional[int] = None
+    role_ids: list[int] = []
+
+    @field_validator("expiry")
+    @classmethod
+    def validate_expiry(cls, v):
+        if v not in ("24h", "7d", "30d", "never"):
+            raise ValueError("Expiry must be '24h', '7d', '30d', or 'never'")
+        return v
+
+    @field_validator("max_uses")
+    @classmethod
+    def validate_max_uses(cls, v):
+        if v is not None and v < 1:
+            raise ValueError("max_uses must be at least 1")
+        return v
+
+
+class JoinViaLinkRequest(BaseModel):
+    token: str
+    username: str
+    email: str
+    password: str
+    display_name: Optional[str] = None
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v):
+        if not re.match(r"^[a-zA-Z0-9_]{3,30}$", v):
+            raise ValueError("Username must be 3-30 alphanumeric characters or underscores")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v):
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError("Invalid email format")
+        return v.lower()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
 class FileLibraryUpdate(BaseModel):
     description: Optional[str] = None
     tags: Optional[list[str]] = None

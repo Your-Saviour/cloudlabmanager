@@ -26,7 +26,7 @@ RUN python -m venv /app/venv
 RUN pip install --no-cache-dir -r ./requirements.txt
 
 # Install ansible in the venv
-RUN pip install --no-cache-dir ansible
+RUN pip install --no-cache-dir ansible pywinrm
 
 # --- Stage 3: Runtime ---
 FROM python:3.13-slim-bookworm AS runtime-stage
@@ -50,7 +50,7 @@ COPY /app .
 COPY --from=frontend-build /frontend/dist/ ./static/
 
 # Install ansible collections
-RUN ansible-galaxy collection install vultr.cloud community.general community.docker community.crypto community.dns
+RUN ansible-galaxy collection install vultr.cloud community.general community.docker community.crypto community.dns ansible.windows community.windows microsoft.ad
 
 # Write build info
 RUN echo "{\"commit\": \"${BUILD_COMMIT}\", \"built_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /app/BUILD_INFO

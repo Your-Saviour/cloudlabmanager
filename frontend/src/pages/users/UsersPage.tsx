@@ -27,9 +27,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
 import UserServiceAccess from '@/components/users/UserServiceAccess'
+import InviteLinksTab from './InviteLinksTab'
 import type { User, Role } from '@/types'
 
 export default function UsersPage() {
@@ -40,6 +42,7 @@ export default function UsersPage() {
   const canDelete = useHasPermission('users.delete')
   const canMfaReset = useHasPermission('users.mfa_reset')
   const canResetPassword = useHasPermission('users.password_reset')
+  const canViewInviteLinks = useHasPermission('users.invite_links.view')
   const [inviteOpen, setInviteOpen] = useState(false)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
   const [editUser, setEditUser] = useState<User | null>(null)
@@ -284,6 +287,13 @@ export default function UsersPage() {
         )}
       </PageHeader>
 
+      <Tabs defaultValue="users">
+        <TabsList>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          {canViewInviteLinks && <TabsTrigger value="invite-links">Invite Links</TabsTrigger>}
+        </TabsList>
+        <TabsContent value="users">
+
       {isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -467,6 +477,14 @@ export default function UsersPage() {
           {accessUser && <UserServiceAccess userId={accessUser.id} />}
         </DialogContent>
       </Dialog>
+
+        </TabsContent>
+        {canViewInviteLinks && (
+          <TabsContent value="invite-links">
+            <InviteLinksTab />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   )
 }

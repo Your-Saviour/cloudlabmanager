@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from html import escape as html_escape
 
-from database import SessionLocal, DriftReport, AppMetadata, run_with_retry
+from database import SessionLocal, DriftReport, AppMetadata, run_with_retry, run_with_retry_async
 
 logger = logging.getLogger("drift_checker")
 
@@ -236,13 +236,13 @@ async def run_drift_check(triggered_by: str = "poller") -> DriftReport | None:
 
         if process.returncode != 0:
             logger.error("Drift playbook failed (exit %d)", process.returncode)
-            _store_error_report(triggered_by, f"Playbook exited with code {process.returncode}\n{output_text[-2000:]}")
+            await _store_error_report(triggered_by, f"Playbook exited with code {process.returncode}\n{output_text[-2000:]}")
             return None
 
         # Read the report file
         if not os.path.isfile(DRIFT_REPORT_FILE):
             logger.error("Drift report file not found: %s", DRIFT_REPORT_FILE)
-            _store_error_report(triggered_by, "Drift report file not found after playbook run")
+            await _store_error_report(triggered_by, "Drift report file not found after playbook run")
             return None
 
         with open(DRIFT_REPORT_FILE, "r") as f:
@@ -280,7 +280,7 @@ async def run_drift_check(triggered_by: str = "poller") -> DriftReport | None:
                 store_result["previous_status"] = previous_status
                 store_result["report"] = report
 
-            run_with_retry(_do_store)
+            await run_with_retry_async(_do_store)
 
             previous_status = store_result["previous_status"]
             logger.info("Drift check complete: status=%s previous=%s (triggered_by=%s)", status, previous_status, triggered_by)
@@ -299,7 +299,7 @@ async def run_drift_check(triggered_by: str = "poller") -> DriftReport | None:
         _check_in_progress = False
 
 
-def _store_error_report(triggered_by: str, error_message: str):
+async def _store_error_report(triggered_by: str, error_message: str):
     """Store an error report when the playbook fails."""
     try:
         def _do_store(session):
@@ -312,7 +312,7 @@ def _store_error_report(triggered_by: str, error_message: str):
             )
             session.add(report)
 
-        run_with_retry(_do_store)
+        await run_with_retry_async(_do_store)
     except Exception:
         logger.exception("Failed to store drift error report")
 

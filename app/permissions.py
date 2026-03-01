@@ -95,6 +95,9 @@ STATIC_PERMISSION_DEFS = [
     # credential access
     ("credential_access.view", "credential_access", "View Credential Access Rules", "View credential-type access rules"),
     ("credential_access.manage", "credential_access", "Manage Credential Access Rules", "Create, edit, and delete credential access rules"),
+    # invite links
+    ("users.invite_links.view", "users", "View Invite Links", "View invite link list and registrations"),
+    ("users.invite_links.manage", "users", "Manage Invite Links", "Create, revoke, and delete invite links"),
     # files
     ("files.view", "files", "View File Library", "View file library"),
     ("files.upload", "files", "Upload Files", "Upload files to library"),
