@@ -32,7 +32,7 @@ Base = declarative_base()
 
 
 # Serialize background DB writes to prevent SQLite lock contention.
-# All callers of run_with_retry share this lock so only one background
+# All callers of run_with_retry_async share this lock so only one background
 # write proceeds at a time (health checks, scheduler, notifications, etc.).
 _bg_write_lock = asyncio.Lock()
 
@@ -72,13 +72,15 @@ def run_with_retry(fn, max_retries=5, base_delay=0.3):
 
 
 async def run_with_retry_async(fn, max_retries=5, base_delay=0.3):
-    """Like run_with_retry but serializes writes behind an asyncio lock.
+    """Serialize background writes behind an asyncio lock and run in a thread.
 
-    Use this from async background tasks (health checks, scheduler) to
-    prevent multiple concurrent writers from piling up on the SQLite lock.
+    Uses asyncio.to_thread() so the blocking DB write + any retry sleeps
+    don't freeze the event loop (which would block all API routes).
     """
     async with _bg_write_lock:
-        return run_with_retry(fn, max_retries=max_retries, base_delay=base_delay)
+        return await asyncio.to_thread(
+            run_with_retry, fn, max_retries=max_retries, base_delay=base_delay
+        )
 
 
 def utcnow():
