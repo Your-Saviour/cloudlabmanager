@@ -11,8 +11,12 @@ Endpoints:
   POST   /api/jit/grants/{id}/deny     — Deny a pending request
   POST   /api/jit/grants/{id}/revoke   — Revoke an active grant
   GET    /api/jit/ad-groups            — List available AD groups
+  GET    /api/jit/ad-users             — List cached AD users (searchable)
+  GET    /api/jit/ad-groups/live       — List cached AD groups from domain
+  POST   /api/jit/ad-sync             — Trigger manual AD directory sync
 """
 
+import json
 import logging
 import os
 from datetime import datetime, timezone, timedelta
@@ -21,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import yaml
-from database import User, JitGrant, utcnow
+from database import SessionLocal, User, JitGrant, AdUser, AdGroup, utcnow
 from auth import get_current_user
 from permissions import require_permission, has_permission
 from db_session import get_db_session
@@ -141,14 +145,24 @@ async def _revoke_grant(grant: JitGrant, runner, status: str = "revoked") -> str
 
 
 def _validate_grant_fields(username: str, ad_group: str, duration: int, workflow: str | None = None):
-    """Validate grant fields against current config. Raises HTTPException on failure."""
+    """Validate grant fields against current config + cached AD data. Raises HTTPException on failure."""
     username = username.strip()
     if not username or len(username) > 100:
         raise HTTPException(400, "Username must be 1-100 characters")
 
+    # Accept group if it's in static config OR in the cached live groups
     groups = get_ad_groups()
-    if ad_group not in groups:
-        raise HTTPException(400, f"AD group must be one of: {', '.join(groups)}")
+    live_group_names = set()
+    try:
+        session = SessionLocal()
+        live_group_names = {g.name for g in session.query(AdGroup.name).all()}
+        session.close()
+    except Exception:
+        pass
+
+    all_valid_groups = set(groups) | live_group_names
+    if ad_group not in all_valid_groups:
+        raise HTTPException(400, f"AD group '{ad_group}' is not a recognized group")
 
     durations = get_valid_durations()
     if duration not in durations:
@@ -180,8 +194,104 @@ class DenyRequest(BaseModel):
 @router.get("/ad-groups")
 async def list_ad_groups(
     user: User = Depends(require_permission("jit.self_service")),
+    session: Session = Depends(get_db_session),
 ):
-    return {"groups": get_ad_groups(), "durations": get_valid_durations()}
+    # Include live groups from DB if available
+    live_groups = []
+    try:
+        db_groups = session.query(AdGroup).order_by(AdGroup.name).all()
+        live_groups = [
+            {
+                "name": g.name,
+                "group_scope": g.group_scope,
+                "group_category": g.group_category,
+                "description": g.description,
+                "member_count": g.member_count,
+                "synced_at": g.synced_at.isoformat() if g.synced_at else None,
+            }
+            for g in db_groups
+        ]
+    except Exception:
+        pass
+    return {
+        "groups": get_ad_groups(),
+        "durations": get_valid_durations(),
+        "live_groups": live_groups,
+    }
+
+
+@router.get("/ad-users")
+async def list_ad_users(
+    search: Optional[str] = Query(None, max_length=100),
+    user: User = Depends(require_permission("jit.self_service")),
+    session: Session = Depends(get_db_session),
+):
+    """List cached AD users, optionally filtered by search term."""
+    query = session.query(AdUser)
+    if search:
+        term = f"%{search}%"
+        query = query.filter(
+            (AdUser.sam_account_name.ilike(term)) | (AdUser.display_name.ilike(term))
+        )
+    users = query.order_by(AdUser.sam_account_name).limit(50).all()
+    return {
+        "users": [
+            {
+                "sam_account_name": u.sam_account_name,
+                "display_name": u.display_name,
+                "enabled": u.enabled,
+                "distinguished_name": u.distinguished_name,
+                "groups": json.loads(u.groups) if u.groups else [],
+                "synced_at": u.synced_at.isoformat() if u.synced_at else None,
+            }
+            for u in users
+        ]
+    }
+
+
+@router.get("/ad-groups/live")
+async def list_live_ad_groups(
+    user: User = Depends(require_permission("jit.self_service")),
+    session: Session = Depends(get_db_session),
+):
+    """List cached AD groups from the domain."""
+    groups = session.query(AdGroup).order_by(AdGroup.name).all()
+    return {
+        "groups": [
+            {
+                "name": g.name,
+                "group_scope": g.group_scope,
+                "group_category": g.group_category,
+                "description": g.description,
+                "member_count": g.member_count,
+                "synced_at": g.synced_at.isoformat() if g.synced_at else None,
+            }
+            for g in groups
+        ]
+    }
+
+
+@router.post("/ad-sync")
+async def trigger_ad_sync(
+    request: Request,
+    user: User = Depends(require_permission("jit.admin_grant")),
+    session: Session = Depends(get_db_session),
+):
+    """Trigger a manual AD directory sync."""
+    from ad_sync import run_ad_sync
+
+    runner = request.app.state.ansible_runner
+    result = await run_ad_sync(runner)
+
+    log_action(
+        session, user.id, user.username,
+        "jit.ad_sync",
+        "Manual AD directory sync",
+        details=result,
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return result
 
 
 @router.get("/grants/history")

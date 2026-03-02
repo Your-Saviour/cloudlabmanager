@@ -734,6 +734,30 @@ class JitGrant(Base):
     approver = relationship("User", foreign_keys=[approved_by])
 
 
+class AdUser(Base):
+    __tablename__ = "ad_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sam_account_name = Column(String(100), nullable=False, index=True)
+    display_name = Column(String(200), nullable=True)
+    enabled = Column(Boolean, default=True, nullable=False)
+    distinguished_name = Column(String(500), nullable=True)
+    groups = Column(Text, nullable=True)  # JSON array of group names
+    synced_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class AdGroup(Base):
+    __tablename__ = "ad_groups"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, index=True)
+    group_scope = Column(String(50), nullable=True)
+    group_category = Column(String(50), nullable=True)
+    description = Column(String(500), nullable=True)
+    member_count = Column(Integer, default=0, nullable=False)
+    synced_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
 class FileLibraryItem(Base):
     __tablename__ = "file_library"
 

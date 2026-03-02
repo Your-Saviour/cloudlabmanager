@@ -1,5 +1,24 @@
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
+
+export interface AdUserEntry {
+  sam_account_name: string
+  display_name: string | null
+  enabled: boolean
+  distinguished_name: string | null
+  groups: string[]
+  synced_at: string | null
+}
+
+export interface AdGroupEntry {
+  name: string
+  group_scope: string | null
+  group_category: string | null
+  description: string | null
+  member_count: number
+  synced_at: string | null
+}
 
 export interface JitGrant {
   id: number
@@ -51,9 +70,54 @@ export function useJitConfig() {
     queryKey: ['jit-config'],
     queryFn: async () => {
       const { data } = await api.get('/api/jit/ad-groups')
-      return data as { groups: string[]; durations: number[] }
+      return data as { groups: string[]; durations: number[]; live_groups: AdGroupEntry[] }
     },
     staleTime: 60000,
+  })
+}
+
+export function useAdUsers(search?: string) {
+  const [debouncedSearch, setDebouncedSearch] = useState(search ?? '')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search ?? ''), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  return useQuery({
+    queryKey: ['ad-users', debouncedSearch],
+    queryFn: async () => {
+      const params = debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''
+      const { data } = await api.get(`/api/jit/ad-users${params}`)
+      return data.users as AdUserEntry[]
+    },
+    staleTime: 30000,
+  })
+}
+
+export function useAdGroups() {
+  return useQuery({
+    queryKey: ['ad-groups-live'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/jit/ad-groups/live')
+      return data.groups as AdGroupEntry[]
+    },
+    staleTime: 30000,
+  })
+}
+
+export function useAdSync() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/api/jit/ad-sync')
+      return data as { users: number; groups: number; error?: string; skipped?: boolean }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ad-users'] })
+      qc.invalidateQueries({ queryKey: ['ad-groups-live'] })
+      qc.invalidateQueries({ queryKey: ['jit-config'] })
+    },
   })
 }
 

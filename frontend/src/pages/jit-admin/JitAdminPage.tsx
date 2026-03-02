@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { ShieldCheck, Clock, CheckCircle2, XCircle, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { ShieldCheck, Clock, CheckCircle2, XCircle, AlertTriangle, ChevronLeft, ChevronRight, RefreshCw, Search, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useHasPermission } from '@/lib/permissions'
 import {
   useJitGrants,
@@ -24,7 +25,11 @@ import {
   useApproveJitGrant,
   useDenyJitGrant,
   useRevokeJitGrant,
+  useAdUsers,
+  useAdGroups,
+  useAdSync,
   type JitGrant,
+  type AdUserEntry,
 } from '@/hooks/useJitAdmin'
 
 function formatDuration(minutes: number): string {
@@ -70,6 +75,103 @@ function workflowLabel(workflow: string): string {
     case 'admin_grant': return 'Admin Grant'
     default: return workflow
   }
+}
+
+// ─── AD User Combobox ───
+function AdUserCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [search, setSearch] = useState(value)
+  const [open, setOpen] = useState(false)
+  const { data: users } = useAdUsers(search)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Keep search in sync with external value changes
+  useEffect(() => {
+    setSearch(value)
+  }, [value])
+
+  const hasUsers = users && users.length > 0
+
+  return (
+    <Popover open={open && hasUsers} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            ref={inputRef}
+            placeholder="Search AD users..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              onChange(e.target.value)
+              setOpen(true)
+            }}
+            onFocus={() => setOpen(true)}
+            className="pl-9"
+          />
+        </div>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] p-0"
+        align="start"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <div className="max-h-[200px] overflow-y-auto">
+          {users?.map((u) => (
+            <button
+              key={u.sam_account_name}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent transition-colors"
+              onClick={() => {
+                onChange(u.sam_account_name)
+                setSearch(u.sam_account_name)
+                setOpen(false)
+              }}
+            >
+              <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="font-mono">{u.sam_account_name}</span>
+              {u.display_name && (
+                <span className="text-muted-foreground truncate">— {u.display_name}</span>
+              )}
+              {!u.enabled && (
+                <Badge variant="secondary" className="ml-auto text-[10px] py-0">Disabled</Badge>
+              )}
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// ─── Live AD Group Select ───
+function LiveGroupSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { data: liveGroups } = useAdGroups()
+  const { data: config } = useJitConfig()
+  const staticGroups = config?.groups ?? []
+
+  // Merge: use live groups if available, fallback to static
+  const groups = liveGroups && liveGroups.length > 0
+    ? liveGroups
+    : staticGroups.map((g) => ({ name: g, member_count: 0 }))
+
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger>
+        <SelectValue placeholder="Select AD group" />
+      </SelectTrigger>
+      <SelectContent>
+        {groups.map((g) => (
+          <SelectItem key={typeof g === 'string' ? g : g.name} value={typeof g === 'string' ? g : g.name}>
+            <span className="flex items-center gap-2">
+              {typeof g === 'string' ? g : g.name}
+              {typeof g !== 'string' && g.member_count > 0 && (
+                <span className="text-xs text-muted-foreground">({g.member_count} members)</span>
+              )}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 }
 
 // ─── Active Grants Tab ───
@@ -150,7 +252,6 @@ function ActiveGrantsTab() {
 function RequestAccessTab() {
   const { data: config } = useJitConfig()
   const createMutation = useCreateJitGrant()
-  const groups = config?.groups ?? []
   const durations = config?.durations ?? [60]
   const canSelfService = useHasPermission('jit.self_service')
   const canRequest = useHasPermission('jit.request')
@@ -198,24 +299,11 @@ function RequestAccessTab() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>AD Username</Label>
-            <Input
-              placeholder="e.g. john.doe"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
+            <AdUserCombobox value={username} onChange={setUsername} />
           </div>
           <div className="space-y-2">
             <Label>AD Group</Label>
-            <Select value={group} onValueChange={setGroup}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select AD group" />
-              </SelectTrigger>
-              <SelectContent>
-                {groups.map((g) => (
-                  <SelectItem key={g} value={g}>{g}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <LiveGroupSelect value={group} onChange={setGroup} />
           </div>
           <div className="space-y-2">
             <Label>Duration</Label>
@@ -388,7 +476,6 @@ function ApprovalQueueTab() {
 function AdminGrantTab() {
   const { data: config } = useJitConfig()
   const adminMutation = useAdminJitGrant()
-  const groups = config?.groups ?? []
   const durations = config?.durations ?? [60]
 
   const [username, setUsername] = useState('')
@@ -426,24 +513,11 @@ function AdminGrantTab() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Target AD Username</Label>
-            <Input
-              placeholder="e.g. john.doe"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
+            <AdUserCombobox value={username} onChange={setUsername} />
           </div>
           <div className="space-y-2">
             <Label>AD Group</Label>
-            <Select value={group} onValueChange={setGroup}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select AD group" />
-              </SelectTrigger>
-              <SelectContent>
-                {groups.map((g) => (
-                  <SelectItem key={g} value={g}>{g}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <LiveGroupSelect value={group} onChange={setGroup} />
           </div>
           <div className="space-y-2">
             <Label>Duration</Label>
@@ -575,16 +649,55 @@ export default function JitAdminPage() {
   const canAdminGrant = useHasPermission('jit.admin_grant')
   const { data: activeGrants } = useJitGrants('active')
   const { data: pendingGrants } = useJitGrants('pending_approval')
+  const { data: liveGroups } = useAdGroups()
+  const syncMutation = useAdSync()
 
   const activeCount = activeGrants?.length ?? 0
   const pendingCount = pendingGrants?.length ?? 0
+
+  // Get last sync time from the first live group's synced_at
+  const lastSyncAt = liveGroups?.[0]?.synced_at
+    ? new Date(liveGroups[0].synced_at).toLocaleString()
+    : null
 
   return (
     <div className="p-6 space-y-6">
       <PageHeader
         title="JIT Administration"
         description="Temporary elevated AD group membership with automatic revocation"
-      />
+      >
+        {canAdminGrant && (
+          <div className="flex items-center gap-3">
+            {lastSyncAt && (
+              <span className="text-xs text-muted-foreground">
+                Last sync: {lastSyncAt}
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                syncMutation.mutate(undefined, {
+                  onSuccess: (data) => {
+                    if (data.skipped) {
+                      toast.info('Sync already in progress')
+                    } else if (data.error) {
+                      toast.error(`Sync failed: ${data.error}`)
+                    } else {
+                      toast.success(`Synced ${data.users} users, ${data.groups} groups`)
+                    }
+                  },
+                  onError: (e: any) => toast.error(e.response?.data?.detail || 'Sync failed'),
+                })
+              }
+              disabled={syncMutation.isPending}
+            >
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+              {syncMutation.isPending ? 'Syncing...' : 'Refresh Directory'}
+            </Button>
+          </div>
+        )}
+      </PageHeader>
 
       <Tabs defaultValue="active">
         <TabsList>

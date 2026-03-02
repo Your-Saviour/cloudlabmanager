@@ -143,6 +143,15 @@ class Scheduler:
                 if revoked:
                     logger.info("JIT cleanup revoked %d grant(s): %s", len(revoked), revoked)
                 return
+            elif schedule.system_task == "ad_sync":
+                from ad_sync import run_ad_sync
+                result = await run_ad_sync(self.runner)
+                schedule.last_run_at = datetime.now(timezone.utc)
+                schedule.last_status = "completed" if "error" not in result else "failed"
+                schedule.next_run_at = self._next_run(schedule.cron_expression)
+                if not result.get("skipped"):
+                    logger.info("AD sync: %d users, %d groups", result.get("users", 0), result.get("groups", 0))
+                return
 
         elif schedule.job_type == "inventory_action":
             job = await self._dispatch_inventory_action(schedule, inputs)
