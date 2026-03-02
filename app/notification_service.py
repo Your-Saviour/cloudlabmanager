@@ -36,6 +36,12 @@ EVENT_PASSWORD_ADMIN_RESET = "password.admin_reset"
 EVENT_CREDENTIAL_VIEWED = "credential.viewed"
 EVENT_CREDENTIAL_COPIED = "credential.copied"
 EVENT_CREDENTIAL_ACCESS_DENIED = "credential.access_denied"
+EVENT_JIT_REQUESTED = "jit.requested"
+EVENT_JIT_APPROVED = "jit.approved"
+EVENT_JIT_DENIED = "jit.denied"
+EVENT_JIT_ACTIVATED = "jit.activated"
+EVENT_JIT_EXPIRED = "jit.expired"
+EVENT_JIT_REVOKED = "jit.revoked"
 
 
 async def notify(event_type: str, context: dict):

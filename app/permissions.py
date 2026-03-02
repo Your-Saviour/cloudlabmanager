@@ -103,6 +103,13 @@ STATIC_PERMISSION_DEFS = [
     ("files.upload", "files", "Upload Files", "Upload files to library"),
     ("files.delete", "files", "Delete Files", "Delete own files from library"),
     ("files.manage", "files", "Manage Files", "Manage all users' files (admin)"),
+    # jit administration
+    ("jit.self_service", "jit", "JIT Self-Service", "Grant yourself temporary AD group membership"),
+    ("jit.request", "jit", "JIT Request Access", "Request temporary access (requires approval)"),
+    ("jit.approve", "jit", "JIT Approve Requests", "Approve or deny JIT access requests"),
+    ("jit.admin_grant", "jit", "JIT Admin Grant", "Grant temporary AD access to any user"),
+    ("jit.view_all", "jit", "JIT View All Grants", "View all JIT grants across all users"),
+    ("jit.revoke", "jit", "JIT Revoke Grants", "Manually revoke any active JIT grant"),
 ]
 
 # In-memory permission cache: user_id -> (permissions_set, timestamp)

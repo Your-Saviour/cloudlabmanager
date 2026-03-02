@@ -699,6 +699,41 @@ class InviteLinkRegistration(Base):
     user = relationship("User")
 
 
+class JitGrant(Base):
+    __tablename__ = "jit_grants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    target_username = Column(String(100), nullable=False, index=True)
+    ad_group = Column(String(200), nullable=False)
+    workflow = Column(String(30), nullable=False)  # "self_service", "request_approval", "admin_grant"
+    status = Column(String(30), nullable=False, default="pending_approval", index=True)
+    # statuses: pending_approval, active, expired, revoked, denied, failed
+
+    duration_minutes = Column(Integer, nullable=False)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    reason = Column(Text, nullable=True)
+    denial_reason = Column(Text, nullable=True)
+
+    requested_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    requested_by_username = Column(String(30), nullable=True)
+    requested_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_by_username = Column(String(30), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+
+    service_name = Column(String(100), nullable=False, default="windows-ad")
+
+    elevate_job_id = Column(String(20), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
+    revoke_job_id = Column(String(20), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True)
+
+    requester = relationship("User", foreign_keys=[requested_by])
+    approver = relationship("User", foreign_keys=[approved_by])
+
+
 class FileLibraryItem(Base):
     __tablename__ = "file_library"
 

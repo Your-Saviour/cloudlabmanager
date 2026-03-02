@@ -25,6 +25,7 @@ import {
   MessageSquareMore,
   KeyRound,
   FolderOpen,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -64,12 +65,14 @@ export const routeIcons: Record<string, LucideIcon> = {
   MessageSquareMore,
   KeyRound,
   FolderOpen,
+  ShieldCheck,
 }
 
 export const mainRoutes: RouteDefinition[] = [
   { label: 'Dashboard', href: '/dashboard', icon: 'LayoutDashboard', section: 'main', keywords: ['home', 'overview'] },
   { label: 'Portal', href: '/portal', icon: 'Compass', section: 'main', permission: 'portal.view', keywords: ['access', 'links', 'bookmarks'] },
   { label: 'My Instances', href: '/personal-instances', icon: 'Monitor', section: 'main', permission: 'personal_instances.create', keywords: ['personal', 'instance', 'my', 'jump', 'terminal', 'browser'] },
+  { label: 'JIT Admin', href: '/jit-admin', icon: 'ShieldCheck', section: 'main', permission: 'jit.self_service', keywords: ['jit', 'admin', 'elevate', 'temporary', 'privileged', 'ad', 'group'] },
   { label: 'Services', href: '/services', icon: 'Boxes', section: 'main', permission: 'services.view', keywords: ['deploy', 'stop', 'manage'] },
   { label: 'Inventory', href: '/inventory', icon: 'Server', section: 'main', keywords: ['servers', 'instances', 'objects'] },
   { label: 'Jobs', href: '/jobs', icon: 'Play', section: 'main', keywords: ['tasks', 'running', 'logs', 'history'] },

@@ -134,6 +134,15 @@ class Scheduler:
                 if destroyed:
                     logger.info("TTL cleanup destroyed %d host(s): %s", len(destroyed), ", ".join(destroyed))
                 return
+            elif schedule.system_task == "jit_cleanup":
+                from jit_cleanup import check_and_revoke_expired
+                revoked = await check_and_revoke_expired(self.runner)
+                schedule.last_run_at = datetime.now(timezone.utc)
+                schedule.last_status = "completed"
+                schedule.next_run_at = self._next_run(schedule.cron_expression)
+                if revoked:
+                    logger.info("JIT cleanup revoked %d grant(s): %s", len(revoked), revoked)
+                return
 
         elif schedule.job_type == "inventory_action":
             job = await self._dispatch_inventory_action(schedule, inputs)

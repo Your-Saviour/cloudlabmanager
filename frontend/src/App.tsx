@@ -41,6 +41,7 @@ import PersonalInstancesPage from '@/pages/personal-instances/PersonalInstancesP
 import FeedbackPage from '@/pages/feedback/FeedbackPage'
 import CredentialAccessRulesPage from '@/pages/settings/CredentialAccessRulesPage'
 import FileLibraryPage from '@/pages/files/FileLibraryPage'
+import JitAdminPage from '@/pages/jit-admin/JitAdminPage'
 
 // Redirect /services/:name/files to /services/:name/config?tab=files
 function ServiceFilesRedirect() {
@@ -132,6 +133,7 @@ function AppRoutes() {
         <Route path="/notifications/rules" element={<NotificationRulesPage />} />
         <Route path="/snapshots" element={<SnapshotsPage />} />
         <Route path="/personal-instances" element={<PersonalInstancesPage />} />
+        <Route path="/jit-admin" element={<JitAdminPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />
         <Route path="/credential-access" element={<CredentialAccessRulesPage />} />
         <Route path="/files" element={<FileLibraryPage />} />

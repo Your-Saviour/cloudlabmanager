@@ -241,6 +241,47 @@ def seed_personal_instance_cleanup_schedule():
         session.close()
 
 
+def seed_jit_cleanup_schedule():
+    """Create the JIT grant cleanup scheduled job if it doesn't exist."""
+    from database import SessionLocal, ScheduledJob
+    from croniter import croniter
+    from datetime import datetime, timezone
+
+    session = SessionLocal()
+    try:
+        existing = (
+            session.query(ScheduledJob)
+            .filter_by(system_task="jit_cleanup")
+            .first()
+        )
+        if existing:
+            return
+
+        now = datetime.now(timezone.utc)
+        cron_expr = "* * * * *"
+        cron = croniter(cron_expr, now)
+        next_run = cron.get_next(datetime).replace(tzinfo=timezone.utc)
+
+        schedule = ScheduledJob(
+            name="JIT Grant Cleanup",
+            description="Revoke expired JIT AD group memberships",
+            job_type="system_task",
+            system_task="jit_cleanup",
+            cron_expression=cron_expr,
+            is_enabled=True,
+            skip_if_running=True,
+            next_run_at=next_run,
+        )
+        session.add(schedule)
+        session.commit()
+        print("  Seeded JIT cleanup schedule (every minute)")
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Could not seed JIT cleanup schedule: {e}")
+    finally:
+        session.close()
+
+
 def backfill_credtype_tags():
     """One-time backfill of credtype: tags on existing credential objects."""
     import json
@@ -366,6 +407,9 @@ def init_database():
 
     # Seed personal instance cleanup schedule (idempotent)
     seed_personal_instance_cleanup_schedule()
+
+    # Seed JIT cleanup schedule (idempotent)
+    seed_jit_cleanup_schedule()
 
     return type_configs
 
