@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import api from '@/lib/api'
-import type { UserPreferences, CustomLink } from '@/types/preferences'
-import { DEFAULT_PREFERENCES } from '@/types/preferences'
+import type { UserPreferences, CustomLink, WidgetDashboard, WidgetInstance, WidgetLayoutItem } from '@/types/preferences'
+import { DEFAULT_PREFERENCES, DEFAULT_WIDGET_DASHBOARD } from '@/types/preferences'
 
 interface PreferencesState {
   preferences: UserPreferences
@@ -18,6 +18,14 @@ interface PreferencesState {
   addCustomLink: (link: CustomLink) => void
   removeCustomLink: (linkId: string) => void
   editCustomLink: (linkId: string, updates: Partial<CustomLink>) => void
+
+  // Widget dashboard actions
+  getWidgetDashboard: () => WidgetDashboard
+  updateWidgetLayouts: (layouts: { lg: WidgetLayoutItem[] }) => void
+  addWidget: (widget: WidgetInstance, layout: WidgetLayoutItem) => void
+  removeWidget: (widgetId: string) => void
+  updateWidgetConfig: (widgetId: string, config: Record<string, any>) => void
+  updateWidgetTitle: (widgetId: string, title: string) => void
 }
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null
@@ -47,7 +55,15 @@ export const usePreferencesStore = create<PreferencesState>()((set, get) => ({
       if (!Array.isArray(merged.quick_links.custom_links)) {
         merged.quick_links.custom_links = []
       }
-      set({ preferences: merged, loaded: true })
+
+      // Migrate: if no widget_dashboard, generate default and save
+      if (!merged.widget_dashboard) {
+        merged.widget_dashboard = { ...DEFAULT_WIDGET_DASHBOARD }
+        set({ preferences: merged, loaded: true })
+        debouncedSave(merged)
+      } else {
+        set({ preferences: merged, loaded: true })
+      }
     } catch {
       set({ loaded: true })
     }
@@ -142,6 +158,88 @@ export const usePreferencesStore = create<PreferencesState>()((set, get) => ({
         ...preferences.quick_links,
         custom_links: preferences.quick_links.custom_links.map((l) =>
           l.id === linkId ? { ...l, ...updates } : l
+        ),
+      },
+    }
+    set({ preferences: updated })
+    debouncedSave(updated)
+  },
+
+  // Widget dashboard actions
+  getWidgetDashboard: () => {
+    return get().preferences.widget_dashboard ?? DEFAULT_WIDGET_DASHBOARD
+  },
+
+  updateWidgetLayouts: (layouts: { lg: WidgetLayoutItem[] }) => {
+    const { preferences } = get()
+    const dashboard = preferences.widget_dashboard ?? DEFAULT_WIDGET_DASHBOARD
+    const updated = {
+      ...preferences,
+      widget_dashboard: { ...dashboard, layouts },
+    }
+    set({ preferences: updated })
+    debouncedSave(updated)
+  },
+
+  addWidget: (widget: WidgetInstance, layout: WidgetLayoutItem) => {
+    const { preferences } = get()
+    const dashboard = preferences.widget_dashboard ?? DEFAULT_WIDGET_DASHBOARD
+    const updated = {
+      ...preferences,
+      widget_dashboard: {
+        ...dashboard,
+        widgets: [...dashboard.widgets, widget],
+        layouts: {
+          lg: [...dashboard.layouts.lg, layout],
+        },
+      },
+    }
+    set({ preferences: updated })
+    debouncedSave(updated)
+  },
+
+  removeWidget: (widgetId: string) => {
+    const { preferences } = get()
+    const dashboard = preferences.widget_dashboard ?? DEFAULT_WIDGET_DASHBOARD
+    const updated = {
+      ...preferences,
+      widget_dashboard: {
+        ...dashboard,
+        widgets: dashboard.widgets.filter((w) => w.id !== widgetId),
+        layouts: {
+          lg: dashboard.layouts.lg.filter((l) => l.i !== widgetId),
+        },
+      },
+    }
+    set({ preferences: updated })
+    debouncedSave(updated)
+  },
+
+  updateWidgetConfig: (widgetId: string, config: Record<string, any>) => {
+    const { preferences } = get()
+    const dashboard = preferences.widget_dashboard ?? DEFAULT_WIDGET_DASHBOARD
+    const updated = {
+      ...preferences,
+      widget_dashboard: {
+        ...dashboard,
+        widgets: dashboard.widgets.map((w) =>
+          w.id === widgetId ? { ...w, config: { ...w.config, ...config } } : w
+        ),
+      },
+    }
+    set({ preferences: updated })
+    debouncedSave(updated)
+  },
+
+  updateWidgetTitle: (widgetId: string, title: string) => {
+    const { preferences } = get()
+    const dashboard = preferences.widget_dashboard ?? DEFAULT_WIDGET_DASHBOARD
+    const updated = {
+      ...preferences,
+      widget_dashboard: {
+        ...dashboard,
+        widgets: dashboard.widgets.map((w) =>
+          w.id === widgetId ? { ...w, title } : w
         ),
       },
     }

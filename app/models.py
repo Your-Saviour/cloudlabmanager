@@ -532,6 +532,7 @@ class UserPreferencesUpdate(BaseModel):
     pinned_services: Optional[list[str]] = Field(None, max_length=50)
     dashboard_sections: Optional[dict[str, Any]] = None
     quick_links: Optional[dict[str, Any]] = None
+    widget_dashboard: Optional[dict[str, Any]] = None
 
 
 class NotificationChannelCreate(BaseModel):

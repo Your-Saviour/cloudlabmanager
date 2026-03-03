@@ -110,6 +110,39 @@
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.3), 0 0 2px rgba(16, 185, 129, 0.5);
 }
 
+/* react-grid-layout resize handle styling */
+.react-grid-item > .react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+}
+.react-grid-item > .react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid hsl(var(--muted-foreground) / 0.4);
+  border-bottom: 2px solid hsl(var(--muted-foreground) / 0.4);
+}
+.react-grid-item > .react-resizable-handle:hover::after {
+  border-color: hsl(var(--primary) / 0.7);
+}
+.react-grid-placeholder {
+  background: hsl(var(--primary) / 0.15) !important;
+  border: 1px dashed hsl(var(--primary) / 0.4) !important;
+  border-radius: var(--radius);
+}
+/* Hide resize handles when not editing */
+.widget-grid .react-grid-item:not(.react-grid-item--resizing) > .react-resizable-handle {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.widget-grid .react-grid-item:hover > .react-resizable-handle {
+  opacity: 1;
+}
+
 /* xterm overrides */
 .xterm {
   padding: 8px;
