@@ -17,7 +17,7 @@ from audit import log_action
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 FILE_LIBRARY_DIR = "/data/file_library"
-MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100MB
+MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 
 
 def _sanitize_filename(name: str) -> str:
@@ -130,7 +130,7 @@ async def upload_file(
     # Read file content
     content = await file.read()
     if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=400, detail="File must be under 100MB")
+        raise HTTPException(status_code=400, detail="File must be under 2GB")
     if len(content) == 0:
         raise HTTPException(status_code=400, detail="File is empty")
 

@@ -114,7 +114,7 @@ class TestFileLibraryItemModel:
 
 class TestStorageQuotaColumn:
     def test_default_quota(self, db_session, admin_user):
-        assert admin_user.storage_quota_mb == 500
+        assert admin_user.storage_quota_mb == 2048
 
     def test_custom_quota(self, db_session, admin_user):
         admin_user.storage_quota_mb = 1000

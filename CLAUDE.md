@@ -142,7 +142,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 
 SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `cost_snapshots`, `notifications`, `notification_rules`, `notification_channels`, `user_preferences`, `portal_bookmarks`, `webhook_endpoints`, `bug_reports`, `feedback_requests`, `file_library`.
 
-The `users` table includes a `storage_quota_mb` column (default: 500 MB) for per-user file library storage quotas.
+The `users` table includes a `storage_quota_mb` column (default: 2 GB) for per-user file library storage quotas.
 
 See `app/database.py` for full schema.
 
@@ -153,7 +153,7 @@ Persistent file storage for reuse across script executions. Files are stored at 
 | Endpoint | Method | Permission | Description |
 |----------|--------|------------|-------------|
 | `/api/files` | GET | `files.view` | List files (own + shared, or all if `files.manage`) with `search` and `tag` query params |
-| `/api/files` | POST | `files.upload` | Upload file (multipart, max 100MB). Auto-stores as `{uuid}_{original_name}` |
+| `/api/files` | POST | `files.upload` | Upload file (multipart, max 2GB). Auto-stores as `{uuid}_{original_name}` |
 | `/api/files/stats` | GET | `files.view` | Storage usage stats (total size, file count, quota, used percent) |
 | `/api/files/{id}` | PUT | `files.view` | Update description/tags (own files or `files.manage`) |
 | `/api/files/{id}` | DELETE | `files.delete` | Delete file from disk + DB (own files or `files.manage`) |

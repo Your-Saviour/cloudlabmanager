@@ -129,7 +129,7 @@ class User(Base):
     invite_accepted_at = Column(DateTime(timezone=True), nullable=True)
     ssh_public_key = Column(Text, nullable=True)
     personal_ssh_public_key = Column(Text, nullable=True)
-    storage_quota_mb = Column(Integer, default=500, nullable=False)  # Default 500 MB
+    storage_quota_mb = Column(Integer, default=2048, nullable=False)  # Default 2 GB
 
     roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
     invited_by = relationship("User", remote_side="User.id", foreign_keys=[invited_by_id])
@@ -792,6 +792,7 @@ def create_tables():
         "ALTER TABLE notification_rules ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN personal_ssh_public_key TEXT",
         "ALTER TABLE users ADD COLUMN storage_quota_mb INTEGER NOT NULL DEFAULT 500",
+        "UPDATE users SET storage_quota_mb = 2048 WHERE storage_quota_mb = 500",
     ]
     with engine.connect() as conn:
         for sql in migrations:
