@@ -713,6 +713,14 @@ class AnsibleRunner:
             except Exception as e:
                 job.output.append(f"[Warning: SSH credential sync failed: {e}]")
 
+            # After a destroy script, refresh inventory so destroyed instances
+            # are removed from DB (prevents TTL cleanup from re-destroying)
+            if job.script and "destroy" in job.script:
+                try:
+                    self._refresh_cache_after_stop(job)
+                except Exception as e:
+                    job.output.append(f"[Warning: inventory refresh after destroy failed: {e}]")
+
         # Update last_used_at for referenced library files
         if library_file_ids:
             try:
