@@ -657,6 +657,9 @@ class AnsibleRunner:
                     keys = [u.ssh_public_key for u in users if u.ssh_public_key]
                     inputs[iname] = keys
 
+        # Extract stage selections before building env vars
+        stages = inputs.pop("_stages", None)
+
         # Build env vars from inputs (includes both user-provided and backend-injected values)
         env = dict(os.environ)
         for iname, value in inputs.items():
@@ -665,6 +668,12 @@ class AnsibleRunner:
                 env[env_key] = ",".join(str(v) for v in value)
             else:
                 env[env_key] = str(value)
+
+        # Convert stage selections to STAGE_* env vars
+        if stages and isinstance(stages, dict):
+            env["STAGES_DEFINED"] = "1"
+            for stage_id, enabled in stages.items():
+                env[f"STAGE_{stage_id.upper()}"] = "1" if enabled else "0"
 
         # Auto-inject authenticated user's username if not already provided
         if username and "INPUT_USERNAME" not in env:
