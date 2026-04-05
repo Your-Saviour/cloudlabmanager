@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { DryRunPreview } from '@/components/services/DryRunPreview'
+import { StageSelectModal } from '@/components/services/StageSelectModal'
 import type { ServiceSummary } from '@/components/services/ServiceCrossLinks'
 import { ServiceControlsBar } from '@/components/services/ServiceControlsBar'
 import type { StatusFilter, GroupBy, ViewMode } from '@/components/services/ServiceControlsBar'
@@ -58,10 +59,12 @@ export default function ServicesPage() {
   const {
     triggerAction,
     confirmDeploy,
+    confirmStages,
     submitScriptInputs,
     dismissModals,
     dryRunModal,
     scriptModal,
+    stageModal,
     scriptInputs,
     setScriptInputs,
     saveToLibrary,
@@ -549,6 +552,17 @@ export default function ServicesPage() {
           }] : []),
         ]}
       />
+
+      {/* Stage Select Modal */}
+      {stageModal && (
+        <StageSelectModal
+          serviceName={stageModal.serviceName}
+          stages={stageModal.script.stages!}
+          open={true}
+          onOpenChange={(open) => { if (!open) dismissModals() }}
+          onContinue={confirmStages}
+        />
+      )}
 
       {/* Dry Run Preview Modal */}
       {dryRunModal && (

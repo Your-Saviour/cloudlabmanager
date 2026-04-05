@@ -18,6 +18,8 @@ export function useServiceAction() {
 
   const [dryRunModal, setDryRunModal] = useState<ModalState | null>(null)
   const [scriptModal, setScriptModal] = useState<ModalState | null>(null)
+  const [stageModal, setStageModal] = useState<ModalState | null>(null)
+  const [selectedStages, setSelectedStages] = useState<Record<string, boolean>>({})
   const [scriptInputs, setScriptInputs] = useState<Record<string, any>>({})
   const [saveToLibrary, setSaveToLibrary] = useState(true)
 
@@ -120,6 +122,8 @@ export function useServiceAction() {
       })
       setScriptInputs(defaults)
       setScriptModal({ serviceName, objId: objId ?? -1, script })
+    } else if (script.name === 'deploy' && script.stages && script.stages.length > 0) {
+      setStageModal({ serviceName, objId: objId ?? -1, script })
     } else if (script.name === 'deploy') {
       if (objId) {
         setDryRunModal({ serviceName, objId, script })
@@ -139,22 +143,36 @@ export function useServiceAction() {
     }
   }
 
+  const confirmStages = (stages: Record<string, boolean>) => {
+    setSelectedStages(stages)
+    setStageModal(null)
+    if (stageModal) {
+      if (stageModal.objId > 0) {
+        setDryRunModal({ serviceName: stageModal.serviceName, objId: stageModal.objId, script: stageModal.script })
+      } else {
+        runServiceScriptMutation.mutate({ serviceName: stageModal.serviceName, script: 'deploy', inputs: { _stages: stages } })
+      }
+    }
+  }
+
   const confirmDeploy = () => {
     if (!dryRunModal) return
+    const stageInputs = Object.keys(selectedStages).length > 0 ? { _stages: selectedStages } : {}
     if (dryRunModal.objId > 0) {
       runActionMutation.mutate({
         objId: dryRunModal.objId,
         actionName: 'run_script',
-        body: { script: dryRunModal.script.name, inputs: {} },
+        body: { script: dryRunModal.script.name, inputs: stageInputs },
       })
     } else {
       runServiceScriptMutation.mutate({
         serviceName: dryRunModal.serviceName,
         script: dryRunModal.script.name,
-        inputs: {},
+        inputs: stageInputs,
       })
     }
     setDryRunModal(null)
+    setSelectedStages({})
   }
 
   const submitScriptInputs = () => {
@@ -232,15 +250,19 @@ export function useServiceAction() {
   const dismissModals = () => {
     setDryRunModal(null)
     setScriptModal(null)
+    setStageModal(null)
+    setSelectedStages({})
   }
 
   return {
     triggerAction,
     confirmDeploy,
+    confirmStages,
     submitScriptInputs,
     dismissModals,
     dryRunModal,
     scriptModal,
+    stageModal,
     scriptInputs,
     setScriptInputs,
     saveToLibrary,
