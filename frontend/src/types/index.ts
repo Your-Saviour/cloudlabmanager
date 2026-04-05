@@ -100,10 +100,17 @@ export interface Service {
   configs?: string[]
 }
 
+export interface DeployStage {
+  id: string
+  label: string
+  default: boolean
+}
+
 export interface ServiceScript {
   name: string
   label: string
   inputs?: ScriptInput[]
+  stages?: DeployStage[]
 }
 
 export interface ScriptInput {
