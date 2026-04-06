@@ -247,6 +247,7 @@ _LEGACY_TO_INVENTORY = {
     "services.config.edit": "inventory.service.edit",
     "services.files.view": "inventory.service.files",
     "services.files.edit": "inventory.service.edit",
+    "services.plan_select": "inventory.service.plan_select",
 }
 
 
