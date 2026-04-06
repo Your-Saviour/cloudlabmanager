@@ -58,6 +58,38 @@ scripts:
 
 Scripts are executed via `POST /api/services/{name}/run` with a JSON body specifying the script name and inputs. Input values are passed as environment variables to the script (e.g., `INPUT_USERNAME`).
 
+## Deploy Stage Selection
+
+Deploy scripts can define selectable stages in `scripts.yaml`. When stages are present, the UI shows a stage selection modal before the dry-run preview, letting users toggle individual steps on/off.
+
+```yaml
+scripts:
+  - name: deploy
+    label: Deploy
+    file: deploy.sh
+    stages:
+      - id: provision
+        label: Provision VM
+        default: true
+      - id: wait_boot
+        label: Wait for boot
+        default: true
+      - id: service
+        label: Deploy service
+        default: true
+```
+
+**How it works:**
+1. Frontend sends `_stages` dict in the script inputs (e.g., `{"_stages": {"provision": false, "service": true}}`)
+2. `ansible_runner.py` extracts `_stages` from inputs and converts to env vars: `STAGES_DEFINED=1`, `STAGE_PROVISION=0`, `STAGE_SERVICE=1`
+3. Each `deploy.sh` uses a `run_stage()` helper that checks these env vars and skips disabled stages
+4. When `STAGES_DEFINED` is not set, all stages run (backwards compatible with direct execution)
+
+**UI behavior:**
+- Disabling "Provision VM" auto-disables "Wait for boot"
+- A warning appears when provisioning is skipped: "will use existing inventory"
+- Services without stages defined skip the modal and go straight to dry-run preview
+
 ## Service Discovery
 
 A directory under `cloudlab/services/` is a deployable service if it contains:
