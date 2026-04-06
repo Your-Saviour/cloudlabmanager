@@ -55,6 +55,7 @@ export default function ServicesPage() {
   const canConfig = useHasPermission('services.config.view')
   const canFiles = useHasPermission('services.files.view')
   const canManageACL = useHasPermission('inventory.acl.manage')
+  const canSelectPlan = useHasPermission('services.plan_select')
 
   const {
     triggerAction,
@@ -146,6 +147,23 @@ export default function ServicesPage() {
   for (const svc of servicesData) {
     scriptsMap[svc.name] = svc.scripts || []
   }
+
+  // Build plan context map for services that have plan info
+  const planContextMap = useMemo(() => {
+    const map: Record<string, { defaultPlan?: string; minPlan?: string | null; minPlanMonthlyCost?: number | null; showPlanSelector: boolean }> = {}
+    if (!canSelectPlan) return map
+    for (const svc of servicesData) {
+      if (svc.default_plan) {
+        map[svc.name] = {
+          defaultPlan: svc.default_plan,
+          minPlan: svc.min_plan,
+          minPlanMonthlyCost: svc.min_plan_monthly_cost ?? null,
+          showPlanSelector: true,
+        }
+      }
+    }
+    return map
+  }, [servicesData, canSelectPlan])
 
   // Filtered + sorted objects
   const filteredObjects = useMemo(() => {
@@ -385,7 +403,7 @@ export default function ServicesPage() {
                       onToggleSelect={() => toggleSelect(obj.id)}
                       onTogglePin={() => togglePin(name)}
                       onToggleExpand={() => setExpandedService(expandedService === name ? null : name)}
-                      onRunScript={(script) => triggerAction(name, obj.id, script)}
+                      onRunScript={(script) => triggerAction(name, obj.id, script, planContextMap[name])}
                       onStop={() => stopServiceMutation.mutate({ objId: obj.id })}
                     />
                   )
@@ -411,7 +429,7 @@ export default function ServicesPage() {
                       isStopPending={stopServiceMutation.isPending}
                       onToggleSelect={() => toggleSelect(obj.id)}
                       onTogglePin={() => togglePin(name)}
-                      onRunScript={(script) => triggerAction(name, obj.id, script)}
+                      onRunScript={(script) => triggerAction(name, obj.id, script, planContextMap[name])}
                       onStop={() => stopServiceMutation.mutate({ objId: obj.id })}
                     />
                   )
@@ -557,10 +575,14 @@ export default function ServicesPage() {
       {stageModal && (
         <StageSelectModal
           serviceName={stageModal.serviceName}
-          stages={stageModal.script.stages!}
+          stages={stageModal.script.stages || []}
           open={true}
           onOpenChange={(open) => { if (!open) dismissModals() }}
           onContinue={confirmStages}
+          showPlanSelector={stageModal.planContext?.showPlanSelector}
+          defaultPlan={stageModal.planContext?.defaultPlan}
+          minPlan={stageModal.planContext?.minPlan}
+          minPlanMonthlyCost={stageModal.planContext?.minPlanMonthlyCost}
         />
       )}
 

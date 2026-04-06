@@ -145,6 +145,19 @@ class AnsibleRunner:
                 pass
         return []
 
+    def _enrich_service_plan_info(self, name: str, entry: dict) -> None:
+        """Add default_plan, min_plan, and min_plan_monthly_cost to a service entry from instance.yaml."""
+        instance_cfg = self.read_service_instance_config(name)
+        if instance_cfg:
+            instances = instance_cfg.get("instances", [])
+            if instances:
+                entry["default_plan"] = instances[0].get("plan")
+            min_plan = instance_cfg.get("min_plan")
+            entry["min_plan"] = min_plan
+            if min_plan:
+                from plan_pricing import get_min_plan_cost
+                entry["min_plan_monthly_cost"] = get_min_plan_cost(min_plan)
+
     def get_services(self) -> list[dict]:
         results = []
         if not os.path.isdir(SERVICES_DIR):
@@ -161,6 +174,7 @@ class AnsibleRunner:
                 }
                 if output_defs:
                     entry["output_definitions"] = output_defs
+                self._enrich_service_plan_info(dirname, entry)
                 results.append(entry)
         return results
 
@@ -169,7 +183,9 @@ class AnsibleRunner:
         deploy_path = os.path.join(service_path, "deploy.sh")
         if not os.path.isdir(service_path) or not os.path.isfile(deploy_path):
             return None
-        return {"name": name, "service_dir": f"/services/{name}"}
+        entry = {"name": name, "service_dir": f"/services/{name}"}
+        self._enrich_service_plan_info(name, entry)
+        return entry
 
     def get_service_configs(self, name: str) -> dict | None:
         service = self.get_service(name)

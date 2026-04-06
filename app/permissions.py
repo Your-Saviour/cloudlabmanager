@@ -19,6 +19,7 @@ STATIC_PERMISSION_DEFS = [
     ("services.config.edit", "services", "Edit Configs", "Edit service configuration files"),
     ("services.files.view", "services", "View Files", "View service input/output files"),
     ("services.files.edit", "services", "Edit Files", "Upload, edit, and delete service files"),
+    ("services.plan_select", "services", "Select VM Plan", "Override the default VM plan when deploying services"),
     # jobs
     ("jobs.view_own", "jobs", "View Own Jobs", "View jobs started by this user"),
     ("jobs.view_all", "jobs", "View All Jobs", "View jobs started by any user"),

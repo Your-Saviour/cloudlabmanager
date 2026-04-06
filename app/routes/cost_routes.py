@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from database import SessionLocal, User, AppMetadata, CostSnapshot, Snapshot, InventoryObject, InventoryType
+from auth import get_current_user
 from permissions import require_permission, has_permission
 from routes.personal_instance_routes import (
     _get_all_instances,
@@ -159,6 +160,31 @@ async def get_plans(user: User = Depends(require_permission("costs.view"))):
             "count": len(plans_cache),
             "cached_at": plans_cache_time,
         }
+    finally:
+        session.close()
+
+
+@router.get("/plans/vc2")
+async def get_vc2_plans(user: User = Depends(get_current_user)):
+    """Return vc2-* plans for the plan selector. Requires login only, not costs.view."""
+    session = SessionLocal()
+    try:
+        plans_cache = AppMetadata.get(session, "plans_cache") or []
+        vc2_plans = [
+            {
+                "id": p["id"],
+                "vcpu_count": p.get("vcpu_count", 0),
+                "ram": p.get("ram", 0),
+                "disk": p.get("disk", 0),
+                "monthly_cost": float(p.get("monthly_cost", 0)),
+                "hourly_cost": float(p.get("hourly_cost", 0)),
+                "bandwidth": p.get("bandwidth", 0),
+            }
+            for p in plans_cache
+            if isinstance(p.get("id"), str) and p["id"].startswith("vc2-")
+        ]
+        vc2_plans.sort(key=lambda p: p["monthly_cost"])
+        return {"plans": vc2_plans}
     finally:
         session.close()
 

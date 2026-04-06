@@ -6,10 +6,18 @@ import api from '@/lib/api'
 import type { ServiceScript } from '@/types'
 import { isLibraryFileRef } from '@/components/shared/ScriptInputField'
 
+interface PlanContext {
+  defaultPlan?: string
+  minPlan?: string | null
+  minPlanMonthlyCost?: number | null
+  showPlanSelector?: boolean
+}
+
 interface ModalState {
   serviceName: string
   objId: number // -1 when no inventory object exists
   script: ServiceScript
+  planContext?: PlanContext
 }
 
 export function useServiceAction() {
@@ -20,6 +28,7 @@ export function useServiceAction() {
   const [scriptModal, setScriptModal] = useState<ModalState | null>(null)
   const [stageModal, setStageModal] = useState<ModalState | null>(null)
   const [selectedStages, setSelectedStages] = useState<Record<string, boolean>>({})
+  const [selectedPlan, setSelectedPlan] = useState<string | undefined>()
   const [scriptInputs, setScriptInputs] = useState<Record<string, any>>({})
   const [saveToLibrary, setSaveToLibrary] = useState(true)
 
@@ -109,7 +118,7 @@ export function useServiceAction() {
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Action failed'),
   })
 
-  const triggerAction = (serviceName: string, objId: number | undefined, script: ServiceScript) => {
+  const triggerAction = (serviceName: string, objId: number | undefined, script: ServiceScript, planContext?: PlanContext) => {
     if (script.inputs && script.inputs.length > 0) {
       // Scripts with inputs always show the input modal first
       const defaults: Record<string, any> = {}
@@ -121,9 +130,9 @@ export function useServiceAction() {
         else if (inp.default) defaults[inp.name] = inp.default
       })
       setScriptInputs(defaults)
-      setScriptModal({ serviceName, objId: objId ?? -1, script })
-    } else if (script.name === 'deploy' && script.stages && script.stages.length > 0) {
-      setStageModal({ serviceName, objId: objId ?? -1, script })
+      setScriptModal({ serviceName, objId: objId ?? -1, script, planContext })
+    } else if (script.name === 'deploy' && ((script.stages && script.stages.length > 0) || planContext?.showPlanSelector)) {
+      setStageModal({ serviceName, objId: objId ?? -1, script, planContext })
     } else if (script.name === 'deploy') {
       if (objId) {
         setDryRunModal({ serviceName, objId, script })
@@ -143,36 +152,41 @@ export function useServiceAction() {
     }
   }
 
-  const confirmStages = (stages: Record<string, boolean>) => {
+  const confirmStages = (stages: Record<string, boolean>, plan?: string) => {
     setSelectedStages(stages)
+    setSelectedPlan(plan)
     setStageModal(null)
     if (stageModal) {
       if (stageModal.objId > 0) {
         setDryRunModal({ serviceName: stageModal.serviceName, objId: stageModal.objId, script: stageModal.script })
       } else {
-        runServiceScriptMutation.mutate({ serviceName: stageModal.serviceName, script: 'deploy', inputs: { _stages: stages } })
+        const inputs: Record<string, any> = { _stages: stages }
+        if (plan) inputs.plan = plan
+        runServiceScriptMutation.mutate({ serviceName: stageModal.serviceName, script: 'deploy', inputs })
       }
     }
   }
 
   const confirmDeploy = () => {
     if (!dryRunModal) return
-    const stageInputs = Object.keys(selectedStages).length > 0 ? { _stages: selectedStages } : {}
+    const inputs: Record<string, any> = Object.keys(selectedStages).length > 0 ? { _stages: selectedStages } : {}
+    if (selectedPlan) inputs.plan = selectedPlan
     if (dryRunModal.objId > 0) {
       runActionMutation.mutate({
         objId: dryRunModal.objId,
         actionName: 'run_script',
-        body: { script: dryRunModal.script.name, inputs: stageInputs },
+        body: { script: dryRunModal.script.name, inputs },
       })
     } else {
       runServiceScriptMutation.mutate({
         serviceName: dryRunModal.serviceName,
         script: dryRunModal.script.name,
-        inputs: stageInputs,
+        inputs,
       })
     }
     setDryRunModal(null)
     setSelectedStages({})
+    setSelectedPlan(undefined)
   }
 
   const submitScriptInputs = () => {
@@ -252,6 +266,7 @@ export function useServiceAction() {
     setScriptModal(null)
     setStageModal(null)
     setSelectedStages({})
+    setSelectedPlan(undefined)
   }
 
   return {

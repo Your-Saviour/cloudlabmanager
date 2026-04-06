@@ -29,6 +29,8 @@ export interface PersonalInstanceConfig {
   default_ttl_hours: number
   max_per_user: number
   hostname_template: string
+  min_plan?: string | null
+  min_plan_monthly_cost?: number | null
   required_inputs: Array<{
     name: string
     label: string

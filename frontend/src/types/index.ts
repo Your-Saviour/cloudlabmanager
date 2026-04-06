@@ -98,6 +98,9 @@ export interface Service {
   scripts: ServiceScript[]
   has_instance?: boolean
   configs?: string[]
+  default_plan?: string
+  min_plan?: string | null
+  min_plan_monthly_cost?: number | null
 }
 
 export interface DeployStage {

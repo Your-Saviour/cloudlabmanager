@@ -16,6 +16,7 @@ import {
 } from '@/hooks/usePersonalInstances'
 
 import { ScriptInputField } from '@/components/shared/ScriptInputField'
+import { PlanSelector } from '@/components/shared/PlanSelector'
 import { CredentialDisplay } from '@/components/portal/CredentialDisplay'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -80,6 +81,7 @@ export default function PersonalInstancesPage() {
   const navigate = useNavigate()
   const canCreate = useHasPermission('personal_instances.create')
   const canDestroy = useHasPermission('personal_instances.destroy')
+  const canSelectPlan = useHasPermission('services.plan_select')
 
   const { data: services = [] } = usePersonalServices()
   const [activeTab, setActiveTab] = useState('all')
@@ -96,6 +98,7 @@ export default function PersonalInstancesPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createService, setCreateService] = useState('')
   const [createRegion, setCreateRegion] = useState('')
+  const [createPlan, setCreatePlan] = useState('')
   const [createInputs, setCreateInputs] = useState<Record<string, string>>({})
   const [destroyHost, setDestroyHost] = useState<PersonalInstance | null>(null)
 
@@ -127,7 +130,11 @@ export default function PersonalInstancesPage() {
       return
     }
     const region = createRegion || selectedConfig?.default_region || 'mel'
-    const inputs = Object.keys(createInputs).length > 0 ? createInputs : undefined
+    const allInputs: Record<string, string> = { ...createInputs }
+    if (createPlan && createPlan !== (selectedConfig?.default_plan || '')) {
+      allInputs.plan = createPlan
+    }
+    const inputs = Object.keys(allInputs).length > 0 ? allInputs : undefined
     createMutation.mutate(
       { service: createService, region, inputs },
       {
@@ -147,6 +154,7 @@ export default function PersonalInstancesPage() {
   const resetCreateDialog = () => {
     setCreateService('')
     setCreateRegion('')
+    setCreatePlan('')
     setCreateInputs({})
   }
 
@@ -389,6 +397,7 @@ export default function PersonalInstancesPage() {
                 onValueChange={(val) => {
                   setCreateService(val)
                   setCreateRegion('')
+                  setCreatePlan('')
                   setCreateInputs({})
                 }}
               >
@@ -425,6 +434,17 @@ export default function PersonalInstancesPage() {
                   </SelectContent>
                 </Select>
               </div>
+            )}
+
+            {/* Plan selection (RBAC-gated) */}
+            {canSelectPlan && createService && selectedConfig && (
+              <PlanSelector
+                value={createPlan || selectedConfig.default_plan || 'vc2-1c-1gb'}
+                onChange={setCreatePlan}
+                defaultPlan={selectedConfig.default_plan}
+                minPlan={selectedConfig.min_plan}
+                minMonthlyCost={selectedConfig.min_plan_monthly_cost}
+              />
             )}
 
             {/* Dynamic required inputs */}

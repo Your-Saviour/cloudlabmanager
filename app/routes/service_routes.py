@@ -40,6 +40,26 @@ def _utc_iso(dt: datetime | None) -> str | None:
     return dt.isoformat()
 
 
+def _validate_plan_input(plan_val: str, runner, service_name: str, session: Session) -> None:
+    """Validate a user-supplied plan against vc2-* plans and service min_plan."""
+    if not isinstance(plan_val, str) or not plan_val.startswith("vc2-"):
+        raise HTTPException(400, f"Invalid plan: {plan_val}")
+    plans_cache = AppMetadata.get(session, "plans_cache") or []
+    valid_ids = {p["id"] for p in plans_cache if isinstance(p.get("id"), str) and p["id"].startswith("vc2-")}
+    if not valid_ids:
+        raise HTTPException(503, "Plans cache not available — cannot validate plan selection")
+    if plan_val not in valid_ids:
+        raise HTTPException(400, f"Invalid plan: {plan_val}")
+    # Enforce min_plan from instance.yaml
+    instance_cfg = runner.read_service_instance_config(service_name)
+    min_plan = instance_cfg.get("min_plan") if instance_cfg else None
+    if min_plan:
+        plan_costs = {p["id"]: float(p.get("monthly_cost", 0)) for p in plans_cache}
+        min_cost = plan_costs.get(min_plan, 0)
+        if plan_costs.get(plan_val, 0) < min_cost:
+            raise HTTPException(400, f"Selected plan is below minimum ({min_plan})")
+
+
 class ConfigUpdate(BaseModel):
     content: str
     change_note: Optional[str] = None
@@ -491,6 +511,14 @@ async def run_script(name: str, body: RunScriptRequest, request: Request,
     try:
         # Resolve library file references before running
         parsed_inputs = dict(body.inputs)
+
+        # Plan selection validation
+        if "plan" in parsed_inputs:
+            if not has_permission(session, user.id, "services.plan_select"):
+                parsed_inputs.pop("plan")
+            else:
+                _validate_plan_input(parsed_inputs["plan"], runner, name, session)
+
         library_file_ids = resolve_library_files(parsed_inputs, user, session)
 
         job = await runner.run_script(name, body.script, parsed_inputs,
@@ -527,6 +555,13 @@ async def run_script_with_files(
         parsed_inputs = json.loads(inputs)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON in inputs field")
+
+    # Plan selection validation
+    if "plan" in parsed_inputs:
+        if not has_permission(session, user.id, "services.plan_select"):
+            parsed_inputs.pop("plan")
+        else:
+            _validate_plan_input(parsed_inputs["plan"], runner, name, session)
 
     # Create a temp directory for uploaded files
     form = await request.form()

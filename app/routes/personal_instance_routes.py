@@ -59,7 +59,7 @@ def _validate_hostname(hostname: str) -> str:
 # Service names: lowercase alphanumeric with hyphens/underscores (no path traversal)
 _SERVICE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$")
 # Reserved input keys that cannot be overridden by user-supplied inputs
-_RESERVED_INPUT_KEYS = {"username", "region", "hostname", "plan", "ttl_hours"}
+_RESERVED_INPUT_KEYS = {"username", "region", "hostname", "ttl_hours"}
 
 
 class CreatePersonalInstanceRequest(BaseModel):
@@ -298,6 +298,7 @@ async def list_personal_services(
     """List all services that support personal instances."""
     runner = request.app.state.ansible_runner
     services = _list_personal_services(runner)
+    from plan_pricing import get_min_plan_cost
     return {
         "services": [
             {
@@ -309,6 +310,8 @@ async def list_personal_services(
                     "max_per_user": s["config"].get("max_per_user", 3),
                     "hostname_template": s["config"].get("hostname_template", "{username}-{service}-{region}"),
                     "required_inputs": s["config"].get("required_inputs", []),
+                    "min_plan": s["config"].get("min_plan"),
+                    "min_plan_monthly_cost": get_min_plan_cost(s["config"].get("min_plan")),
                 },
             }
             for s in services
@@ -328,6 +331,7 @@ async def get_personal_instance_config(
     config = _load_personal_config(runner, service)
     if not config:
         raise HTTPException(404, f"Service '{service}' does not support personal instances")
+    from plan_pricing import get_min_plan_cost
     return {
         "service": service,
         "default_plan": config.get("default_plan", "vc2-1c-1gb"),
@@ -335,6 +339,8 @@ async def get_personal_instance_config(
         "default_ttl_hours": config.get("default_ttl_hours", 24),
         "max_per_user": config.get("max_per_user", 3),
         "required_inputs": config.get("required_inputs", []),
+        "min_plan": config.get("min_plan"),
+        "min_plan_monthly_cost": get_min_plan_cost(config.get("min_plan")),
     }
 
 
@@ -391,6 +397,32 @@ async def create_personal_instance(
         k: v for k, v in (body.inputs or {}).items()
         if k not in _RESERVED_INPUT_KEYS
     }
+
+    # Plan selection: validate if provided, requires services.plan_select permission
+    if "plan" in user_inputs:
+        if not has_permission(session, user.id, "services.plan_select"):
+            # User doesn't have permission — silently drop the plan override
+            user_inputs.pop("plan")
+        else:
+            from database import AppMetadata
+            from plan_pricing import get_min_plan_cost
+            plan_val = user_inputs["plan"]
+            if not isinstance(plan_val, str) or not plan_val.startswith("vc2-"):
+                raise HTTPException(400, f"Invalid plan: {plan_val}")
+            plans_cache = AppMetadata.get(session, "plans_cache") or []
+            valid_ids = {p["id"] for p in plans_cache if isinstance(p.get("id"), str) and p["id"].startswith("vc2-")}
+            if not valid_ids:
+                raise HTTPException(503, "Plans cache not available — cannot validate plan selection")
+            if plan_val not in valid_ids:
+                raise HTTPException(400, f"Invalid plan: {plan_val}")
+            # Enforce min_plan
+            min_plan = config.get("min_plan")
+            if min_plan:
+                plan_costs = {p["id"]: float(p.get("monthly_cost", 0)) for p in plans_cache}
+                min_cost = plan_costs.get(min_plan, 0)
+                if plan_costs.get(plan_val, 0) < min_cost:
+                    raise HTTPException(400, f"Selected plan is below minimum ({min_plan})")
+
     inputs = {
         **user_inputs,
         "username": user.username,

@@ -26,6 +26,16 @@ def get_plan_cost(plan_id: str) -> dict | None:
         session.close()
 
 
+def get_min_plan_cost(min_plan_id: str | None) -> float | None:
+    """Resolve a plan ID string to its monthly cost for frontend filtering."""
+    if not min_plan_id:
+        return None
+    cost_info = get_plan_cost(min_plan_id)
+    if cost_info:
+        return cost_info["monthly_cost"]
+    return None
+
+
 def get_all_plans() -> list[dict]:
     """Return the full cached plans list."""
     session = SessionLocal()

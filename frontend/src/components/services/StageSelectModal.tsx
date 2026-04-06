@@ -11,13 +11,18 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import type { DeployStage } from '@/types'
+import { PlanSelector } from '@/components/shared/PlanSelector'
 
 interface StageSelectModalProps {
   serviceName: string
   stages: DeployStage[]
   open: boolean
   onOpenChange: (open: boolean) => void
-  onContinue: (selectedStages: Record<string, boolean>) => void
+  onContinue: (selectedStages: Record<string, boolean>, plan?: string) => void
+  showPlanSelector?: boolean
+  defaultPlan?: string
+  minPlan?: string | null
+  minPlanMonthlyCost?: number | null
 }
 
 export function StageSelectModal({
@@ -26,8 +31,13 @@ export function StageSelectModal({
   open,
   onOpenChange,
   onContinue,
+  showPlanSelector,
+  defaultPlan,
+  minPlan,
+  minPlanMonthlyCost,
 }: StageSelectModalProps) {
   const [selected, setSelected] = useState<Record<string, boolean>>({})
+  const [selectedPlan, setSelectedPlan] = useState(defaultPlan || '')
 
   // Initialize from stage defaults when modal opens or stages change
   useEffect(() => {
@@ -37,8 +47,9 @@ export function StageSelectModal({
         initial[stage.id] = stage.default
       }
       setSelected(initial)
+      setSelectedPlan(defaultPlan || '')
     }
-  }, [open, stages])
+  }, [open, stages, defaultPlan])
 
   const handleToggle = (stageId: string, checked: boolean) => {
     setSelected((prev) => {
@@ -69,10 +80,23 @@ export function StageSelectModal({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Deploy {serviceName}</DialogTitle>
-          <DialogDescription>Select which stages to run</DialogDescription>
+          <DialogDescription>
+            {stages.length > 0 ? 'Select which stages to run' : 'Configure deployment options'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-2">
+          {showPlanSelector && (
+            <PlanSelector
+              value={selectedPlan}
+              onChange={setSelectedPlan}
+              defaultPlan={defaultPlan}
+              minPlan={minPlan}
+              minMonthlyCost={minPlanMonthlyCost}
+              disabled={provisionDisabled}
+            />
+          )}
+
           {stages.map((stage) => (
             <div
               key={stage.id}
@@ -106,7 +130,14 @@ export function StageSelectModal({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={() => onContinue(selected)}>Continue</Button>
+          <Button
+            onClick={() => {
+              const plan = selectedPlan && selectedPlan !== defaultPlan ? selectedPlan : undefined
+              onContinue(selected, plan)
+            }}
+          >
+            Continue
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
