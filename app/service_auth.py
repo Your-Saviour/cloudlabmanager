@@ -21,6 +21,7 @@ SERVICE_PERMISSIONS = {"view", "deploy", "stop", "config"}
 _GLOBAL_PERM_MAP = {
     "view": "services.view",
     "deploy": "services.deploy",
+    "run": "services.deploy",
     "stop": "services.stop",
     "config": "services.config.view",
 }

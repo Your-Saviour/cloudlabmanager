@@ -1,4 +1,10 @@
 services:
+  guacd:
+    image: guacamole/guacd:1.5.5
+    platform: linux/amd64
+    container_name: cloudlab-guacd
+    restart: no
+
   cloudlabmanager:
     build:
       dockerfile: Dockerfile
@@ -8,12 +14,14 @@ services:
 
     ports:
       - 8000:8000
+      - 8765:8765
 
     environment:
       HOST_HOSTNAME: "jakesmac"
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
       VAULT_PASSWORD: ${VAULT_PASSWORD:-}
       LOCAL_MODE: ${LOCAL_MODE:-}
+      MCP_SERVICE_ACCOUNT_PASSWORD: ${MCP_SERVICE_ACCOUNT_PASSWORD:-}
       SENDAMATIC_API_KEY: ${SENDAMATIC_API_KEY:-}
       SENDAMATIC_SENDER_EMAIL: ${SENDAMATIC_SENDER_EMAIL:-}
       SENDAMATIC_SENDER_NAME: ${SENDAMATIC_SENDER_NAME:-CloudLab Manager}
@@ -26,8 +34,12 @@ services:
       SMTP_SENDER_EMAIL: ${SMTP_SENDER_EMAIL:-}
       SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-CloudLab Manager}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      GUACD_HOST: ${GUACD_HOST:-guacd}
 
     container_name: cloud-lab-manager
+
+    depends_on:
+      - guacd
 
     #restart: unless-stopped
     restart: no

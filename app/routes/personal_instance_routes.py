@@ -59,7 +59,8 @@ def _validate_hostname(hostname: str) -> str:
 # Service names: lowercase alphanumeric with hyphens/underscores (no path traversal)
 _SERVICE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$")
 # Reserved input keys that cannot be overridden by user-supplied inputs
-_RESERVED_INPUT_KEYS = {"username", "region", "hostname", "ttl_hours"}
+_RESERVED_INPUT_KEYS = {"username", "region", "hostname", "ttl_hours", "pi_source", "hostname_label"}
+_MCP_SERVICE_USERNAME = "mcp-service"
 
 
 class CreatePersonalInstanceRequest(BaseModel):
@@ -376,15 +377,32 @@ async def create_personal_instance(
         raise HTTPException(404, f"Service '{body.service}' does not support personal instances")
 
     region = body.region or config.get("default_region", "mel")
-    hostname = _generate_hostname(config, user.username, body.service, region)
+    base_hostname = _generate_hostname(config, user.username, body.service, region)
+
+    # Allow a custom label suffix (e.g., "webserver" -> mcp-service-linuxvm-mel-webserver)
+    user_inputs_raw = body.inputs or {}
+    hostname_label = user_inputs_raw.get("hostname_label", "")
+    if hostname_label:
+        import re
+        # Sanitize: lowercase alphanumeric and hyphens only
+        hostname_label = re.sub(r'[^a-z0-9-]', '', hostname_label.lower().strip())
+        if hostname_label:
+            base_hostname = f"{base_hostname}-{hostname_label}"
 
     # Validate generated hostname is DNS-safe (protects against usernames with special chars)
-    _validate_hostname(hostname)
+    _validate_hostname(base_hostname)
 
-    # Check collision
+    # Auto-suffix if hostname already taken (e.g., mcp-service-linuxvm-mel -> mcp-service-linuxvm-mel-2)
+    hostname = base_hostname
     existing = _find_instance_by_hostname(session, hostname)
     if existing:
-        raise HTTPException(409, f"Personal instance '{hostname}' already exists")
+        for i in range(2, 100):
+            candidate = f"{base_hostname}-{i}"
+            if not _find_instance_by_hostname(session, candidate):
+                hostname = candidate
+                break
+        else:
+            raise HTTPException(409, f"Too many personal instances for '{base_hostname}'")
 
     # Enforce per-user limit (scoped to this service)
     max_per_user = config.get("max_per_user", 3)
@@ -427,7 +445,12 @@ async def create_personal_instance(
         **user_inputs,
         "username": user.username,
         "region": region,
+        "hostname": hostname,
     }
+
+    # Inject pi_source for MCP service account (server-side, cannot be spoofed)
+    if user.username == _MCP_SERVICE_USERNAME:
+        inputs["pi_source"] = "mcp"
 
     deploy_script = config.get("deploy_script", "deploy.sh").replace(".sh", "")
 

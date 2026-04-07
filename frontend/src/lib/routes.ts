@@ -26,6 +26,7 @@ import {
   KeyRound,
   FolderOpen,
   ShieldCheck,
+  Bot,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -66,6 +67,7 @@ export const routeIcons: Record<string, LucideIcon> = {
   KeyRound,
   FolderOpen,
   ShieldCheck,
+  Bot,
 }
 
 export const mainRoutes: RouteDefinition[] = [
@@ -91,6 +93,7 @@ export const adminRoutes: RouteDefinition[] = [
   { label: 'Notifications', href: '/notifications/rules', icon: 'Bell', section: 'admin', permission: 'notifications.rules.view', keywords: ['alerts', 'rules', 'channels'] },
   { label: 'Credential Access', href: '/credential-access', icon: 'KeyRound', section: 'admin', permission: 'credential_access.view', keywords: ['credential', 'rbac', 'access', 'rules', 'ssh', 'password'] },
   { label: 'Feedback', href: '/feedback', icon: 'MessageSquareMore', section: 'admin', permission: 'feedback.view_all', keywords: ['feature', 'bug', 'request', 'feedback'] },
+  { label: 'MCP Server', href: '/mcp', icon: 'Bot', section: 'admin', permission: 'mcp.manage', keywords: ['mcp', 'ai', 'agent', 'claude', 'model'] },
 ]
 
 export const toolRoutes: RouteDefinition[] = [

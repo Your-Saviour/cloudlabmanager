@@ -24,6 +24,7 @@ import ServicesPage from '@/pages/services/ServicesPage'
 import ServiceConfigPage from '@/pages/services/ServiceConfigPage'
 // ServiceFilesPage merged into ServiceConfigPage as a tab
 import SSHTerminalPage from '@/pages/ssh/SSHTerminalPage'
+import RDPViewerPage from '@/pages/rdp/RDPViewerPage'
 import UsersPage from '@/pages/users/UsersPage'
 import RolesPage from '@/pages/roles/RolesPage'
 import RoleEditPage from '@/pages/roles/RoleEditPage'
@@ -42,6 +43,7 @@ import FeedbackPage from '@/pages/feedback/FeedbackPage'
 import CredentialAccessRulesPage from '@/pages/settings/CredentialAccessRulesPage'
 import FileLibraryPage from '@/pages/files/FileLibraryPage'
 import JitAdminPage from '@/pages/jit-admin/JitAdminPage'
+import MCPPage from '@/pages/mcp/MCPPage'
 
 // Redirect /services/:name/files to /services/:name/config?tab=files
 function ServiceFilesRedirect() {
@@ -122,6 +124,7 @@ function AppRoutes() {
         <Route path="/services/:name/files" element={<ServiceFilesRedirect />} />
         <Route path="/ssh/:hostname/:ip" element={<SSHTerminalPage />} />
         <Route path="/ssh/:hostname/:ip/:user" element={<SSHTerminalPage />} />
+        <Route path="/rdp/:hostname/:ip" element={<RDPViewerPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/roles/:roleId" element={<RoleEditPage />} />
@@ -138,6 +141,7 @@ function AppRoutes() {
         <Route path="/credential-access" element={<CredentialAccessRulesPage />} />
         <Route path="/files" element={<FileLibraryPage />} />
         <Route path="/portal" element={<PortalPage />} />
+        <Route path="/mcp" element={<MCPPage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>
 

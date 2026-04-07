@@ -38,7 +38,9 @@ from routes.file_routes import router as file_router
 from routes.file_browser_routes import router as file_browser_router
 from routes.invite_link_routes import router as invite_link_router
 from routes.jit_routes import router as jit_router
+from routes.mcp_routes import router as mcp_router
 from health_checker import HealthPoller, load_health_configs
+from mcp_manager import MCPProcessManager
 from drift_checker import DriftPoller
 from snapshot_poller import SnapshotPoller
 from update_checker import UpdateChecker
@@ -106,7 +108,15 @@ async def lifespan(app: FastAPI):
 
     cost_refresh_task = asyncio.create_task(_periodic_cost_refresh(app.state.ansible_runner))
 
+    # Start MCP process manager
+    mcp_manager = MCPProcessManager()
+    app.state.mcp_manager = mcp_manager
+    mcp_manager.start()
+
     yield
+
+    # Stop MCP process manager
+    await mcp_manager.stop()
 
     # Stop periodic cost refresh
     cost_refresh_task.cancel()
@@ -176,6 +186,7 @@ app.include_router(file_router)
 app.include_router(file_browser_router)
 app.include_router(invite_link_router)
 app.include_router(jit_router)
+app.include_router(mcp_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

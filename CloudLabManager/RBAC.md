@@ -72,6 +72,8 @@ These are always present:
 | Feedback | `feedback.manage` | Update status, add notes, delete feedback |
 | Credential Access | `credential_access.view` | View credential access rules |
 | Credential Access | `credential_access.manage` | Create, edit, and delete credential access rules |
+| MCP | `mcp.manage` | Start/stop MCP server and edit configuration |
+| MCP | `mcp.config.read` | Read MCP configuration (service account use) |
 
 ### Dynamic Permissions
 

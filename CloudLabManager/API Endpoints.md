@@ -1438,3 +1438,93 @@ Status changes trigger an in-app notification to the original submitter.
 
 - `feedback.submitted` — dispatched when feedback is submitted (targets admin roles via notification rules)
 - `feedback.status_changed` — dispatched when an admin changes the status (direct notification to submitter)
+
+## MCP Server Management
+
+| Method | Endpoint | Permission | Description |
+|--------|----------|------------|-------------|
+| GET | `/api/mcp/config` | `mcp.manage` or `mcp.config.read` | Read MCP server configuration |
+| PUT | `/api/mcp/config` | `mcp.manage` | Update MCP server configuration |
+| GET | `/api/mcp/status` | `mcp.manage` | Get MCP process status (running, pid, uptime) |
+| POST | `/api/mcp/start` | `mcp.manage` | Start the MCP server process |
+| POST | `/api/mcp/stop` | `mcp.manage` | Stop the MCP server process |
+| GET | `/api/mcp/logs` | `mcp.manage` | Get MCP server log tail (query: `lines`, default 200) |
+| GET | `/api/mcp/instances` | `mcp.manage` or `mcp.config.read` | List MCP-created personal instances |
+| DELETE | `/api/mcp/instances/{hostname}` | `mcp.manage` | Force-destroy an MCP-created instance |
+
+### Configuration Schema
+
+MCP config is stored in `AppMetadata` under key `mcp_config`:
+
+```json
+{
+  "enabled": false,
+  "auto_restart": true,
+  "allowed_services": ["personal-linux-vm", "personal-testing-vm"],
+  "max_concurrent": 3,
+  "default_ttl_hours": 4,
+  "max_ttl_hours": 8,
+  "plan_limits": {
+    "default": "vc2-1c-1gb",
+    "personal-linux-vm": "vc2-1c-2gb"
+  },
+  "sse_port": 8765
+}
+```
+
+### PUT `/api/mcp/config`
+
+All fields are optional — only provided fields are updated:
+
+```json
+{
+  "enabled": true,
+  "allowed_services": ["personal-linux-vm"],
+  "max_concurrent": 5
+}
+```
+
+### GET `/api/mcp/status`
+
+```json
+{
+  "running": true,
+  "pid": 1234,
+  "started_at": "2026-04-07T10:00:00+00:00",
+  "uptime_seconds": 3600,
+  "restart_count": 0,
+  "enabled": true
+}
+```
+
+### GET `/api/mcp/instances`
+
+Returns personal instances tagged with `pi-source:mcp`:
+
+```json
+{
+  "instances": [
+    {
+      "hostname": "mcp-service-linuxvm-mel",
+      "ip_address": "1.2.3.4",
+      "region": "mel",
+      "plan": "vc2-1c-1gb",
+      "power_status": "running",
+      "service": "personal-linux-vm",
+      "owner": "mcp-service",
+      "ttl_hours": 4,
+      "created_at": "2026-04-07T10:00:00"
+    }
+  ]
+}
+```
+
+### Safeguards
+
+The MCP server enforces these limits before creating instances:
+
+- **Service allowlist** — only services listed in `allowed_services` can be created
+- **Plan limit** — per-service max plan compared by monthly cost (from `plan_limits`)
+- **Concurrent limit** — max number of active MCP instances (from `max_concurrent`)
+- **TTL limit** — requested TTL clamped to `max_ttl_hours`
+- **Ownership** — MCP server can only destroy instances it created (tracked via `pi-source:mcp` Vultr tag)

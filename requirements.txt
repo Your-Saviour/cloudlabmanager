@@ -18,3 +18,4 @@ croniter>=2.0.0
 jsonpath-ng
 pyotp
 qrcode[pil]
+mcp

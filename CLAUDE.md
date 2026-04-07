@@ -46,9 +46,17 @@ cloudlabmanager/
 │   │   ├── audit_routes.py    # /api/audit/*
 │   │   ├── personal_instance_routes.py # /api/personal-instances/*
 │   │   ├── feedback_routes.py # /api/feedback/*
+│   │   ├── mcp_routes.py     # /api/mcp/* (MCP server management)
 │   │   └── file_routes.py    # /api/files/* (file library CRUD)
+│   ├── mcp_server/                   # MCP server package
+│   │   ├── server.py          # FastMCP entry point (stdio/SSE)
+│   │   ├── clm_client.py     # Async HTTP client for CLM API
+│   │   ├── tools.py           # MCP tool implementations
+│   │   ├── safeguards.py     # Safeguard checks (allowlist, plan, TTL)
+│   │   └── instance_tracker.py # Instance ownership tracking
 │   ├── static/                # Frontend SPA
 │   ├── app.py                 # FastAPI entry point
+│   ├── mcp_manager.py         # MCP subprocess lifecycle management
 │   ├── startup.py             # Startup: clone, symlinks, DB init, sync
 │   ├── database.py            # SQLAlchemy ORM models
 │   ├── auth.py                # JWT, password hashing, invite/reset tokens
@@ -117,6 +125,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 - **Personal instance permissions**: `personal_instances.create`, `personal_instances.destroy`, `personal_instances.view_all`, `personal_instances.manage_all`
 - **Feedback permissions**: `feedback.submit`, `feedback.view_all`, `feedback.manage`
 - **File library permissions**: `files.view`, `files.upload`, `files.delete`, `files.manage`
+- **MCP permissions**: `mcp.manage`, `mcp.config.read`
 
 ## Environment Variables
 
@@ -136,6 +145,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 | `SMTP_USE_TLS` | No | Enable STARTTLS (default: true) |
 | `SMTP_SENDER_EMAIL` | No | SMTP sender email (falls back to `SENDAMATIC_SENDER_EMAIL`) |
 | `SMTP_SENDER_NAME` | No | SMTP sender name (default: "CloudLab Manager") |
+| `MCP_SERVICE_ACCOUNT_PASSWORD` | No | Password for `mcp-service` account (enables MCP server) |
 | `ALLOWED_ORIGINS` | No | CORS origins (default: `*`) |
 
 ## Database

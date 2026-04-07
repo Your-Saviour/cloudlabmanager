@@ -104,6 +104,9 @@ STATIC_PERMISSION_DEFS = [
     ("files.upload", "files", "Upload Files", "Upload files to library"),
     ("files.delete", "files", "Delete Files", "Delete own files from library"),
     ("files.manage", "files", "Manage Files", "Manage all users' files (admin)"),
+    # mcp server
+    ("mcp.manage", "mcp", "Manage MCP Server", "Start/stop MCP server and edit configuration"),
+    ("mcp.config.read", "mcp", "Read MCP Config", "Read MCP configuration (service account use)"),
     # jit administration
     ("jit.self_service", "jit", "JIT Self-Service", "Grant yourself temporary AD group membership"),
     ("jit.request", "jit", "JIT Request Access", "Request temporary access (requires approval)"),

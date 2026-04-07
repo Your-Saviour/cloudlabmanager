@@ -14,6 +14,7 @@ Set in `docker-compose.yaml` or `.env`:
 | `SENDAMATIC_SENDER_EMAIL` | No | Sender email address for outgoing emails |
 | `SENDAMATIC_SENDER_NAME` | No | Sender display name (default: "CloudLab Manager") |
 | `ALLOWED_ORIGINS` | No | CORS allowed origins (default: `*`) |
+| `MCP_SERVICE_ACCOUNT_PASSWORD` | No | Password for the `mcp-service` account (enables MCP server) |
 
 ## Startup Configuration
 
@@ -51,6 +52,7 @@ Key data stored in the `app_metadata` key-value table:
 - `dns_id` — Cloudflare zone ID
 - `instances_cache` — Cached Vultr inventory data
 - `instances_cache_time` — When inventory was last refreshed
+- `mcp_config` — MCP server configuration (allowed services, plan limits, TTL, etc.)
 
 ## Persistent Storage
 

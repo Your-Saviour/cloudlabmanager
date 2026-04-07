@@ -37,6 +37,8 @@ cloudlabmanager/
 │   ├── actions.py              # Startup action engine (ENV, CLONE, RUN, RETURN)
 │   ├── plan_pricing.py          # Vultr plan cost lookup from cached data
 │   ├── dry_run.py               # Pre-deployment validation engine and preview builder
+│   ├── mcp_manager.py           # MCP subprocess lifecycle management
+│   ├── mcp_server/                     # MCP server package (FastMCP tools, CLM client, safeguards)
 │   ├── dns.py                  # Cloudflare DNS integration
 │   ├── data.py                 # Legacy JSON utilities (migration only)
 │   ├── reset_password.py       # CLI password reset script
@@ -54,6 +56,7 @@ cloudlabmanager/
 │   │   ├── notification_routes.py # /api/notifications/* endpoints
 │   │   ├── preference_routes.py # /api/users/me/preferences endpoints
 │   │   ├── snapshot_routes.py  # /api/snapshots/* endpoints
+│   │   ├── mcp_routes.py       # /api/mcp/* endpoints (MCP server management)
 │   │   └── audit_routes.py     # /api/audit/* endpoints
 │   └── static/
 │       ├── index.html          # SPA shell
@@ -108,6 +111,7 @@ cloudlabmanager/
 17. Starts background `DriftPoller` (compares desired vs actual infrastructure state every 5 minutes)
 18. Starts background `SnapshotPoller` (syncs pending snapshot status from Vultr every 60 seconds)
 19. Populates plans cache if empty (immediate `refresh_costs()`) and starts periodic plans/cost cache refresh (every 6 hours)
+20. Starts background `MCPProcessManager` (manages MCP server subprocess; auto-starts if enabled in `mcp_config`)
 
 ## Deployment Job Flow
 

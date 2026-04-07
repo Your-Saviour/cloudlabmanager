@@ -360,6 +360,79 @@ def backfill_credtype_tags():
         session.close()
 
 
+def seed_mcp_service_account():
+    """Create the MCP service account user with minimum required permissions.
+    Idempotent — skips if user already exists or env var not set."""
+    password = os.environ.get("MCP_SERVICE_ACCOUNT_PASSWORD", "")
+    if not password:
+        return
+
+    from database import SessionLocal, User, Role, Permission
+    from auth import hash_password
+
+    session = SessionLocal()
+    try:
+        required_perms = [
+            "personal_instances.create",
+            "personal_instances.destroy",
+            "personal_instances.view_all",
+            "services.view",
+            "services.plan_select",
+            "mcp.config.read",
+            "jobs.view_all",
+            "files.view",
+            "services.deploy",
+            "inventory.credential.view",
+            "instances.refresh",
+        ]
+
+        existing = session.query(User).filter_by(username="mcp-service").first()
+        if existing:
+            # Ensure role permissions are up-to-date
+            mcp_role = session.query(Role).filter_by(name="mcp-service").first()
+            if mcp_role:
+                perms = session.query(Permission).filter(
+                    Permission.codename.in_(required_perms)
+                ).all()
+                mcp_role.permissions = perms
+                session.commit()
+                print("  Updated MCP service account permissions")
+            return
+
+        user = User(
+            username="mcp-service",
+            password_hash=hash_password(password),
+            is_active=True,
+        )
+        session.add(user)
+        session.flush()
+
+        # Create a dedicated MCP role with minimum permissions
+        mcp_role = session.query(Role).filter_by(name="mcp-service").first()
+        if not mcp_role:
+            mcp_role = Role(
+                name="mcp-service",
+                description="MCP server service account role",
+                is_system=True,
+            )
+            session.add(mcp_role)
+            session.flush()
+
+        perms = session.query(Permission).filter(
+            Permission.codename.in_(required_perms)
+        ).all()
+        mcp_role.permissions = perms
+        user.roles.append(mcp_role)
+
+        session.commit()
+        print("  Seeded MCP service account 'mcp-service'")
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Could not seed MCP service account: {e}")
+    finally:
+        session.close()
+
+
 def load_inventory_types():
     """Load inventory type definitions from YAML and sync to DB.
     Returns the list of type configs for use by app.state."""
@@ -442,6 +515,9 @@ def init_database():
             print("Assigned super-admin role to user 'jake'")
     finally:
         session.close()
+
+    # Seed MCP service account (idempotent)
+    seed_mcp_service_account()
 
     # Seed default notification rules (idempotent — only if no rules exist)
     seed_default_notification_rules()
