@@ -378,6 +378,7 @@ def seed_mcp_service_account():
             "personal_instances.view_all",
             "services.view",
             "services.plan_select",
+            "services.exec",
             "mcp.config.read",
             "jobs.view_all",
             "files.view",
