@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
-from database import User, AppMetadata, InventoryType, InventoryObject
+from database import User, AppMetadata, InventoryType, InventoryObject, MCPToolCall
 from db_session import get_db_session
 from permissions import require_permission, has_permission
 from audit import log_action
@@ -312,3 +312,91 @@ async def destroy_mcp_instance(
     )
 
     return {"job_id": job.id, "hostname": hostname}
+
+
+# --- Tool Call History ---
+
+class MCPToolCallCreate(BaseModel):
+    tool_name: str
+    arguments: Optional[dict] = None
+    result_summary: Optional[str] = None
+    status: str  # success, error, safeguard_blocked
+    duration_ms: Optional[int] = None
+    job_id: Optional[str] = None
+    hostname: Optional[str] = None
+
+
+@router.get("/history")
+async def get_mcp_history(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    tool_name: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+):
+    """Get paginated MCP tool call history."""
+    if not (
+        has_permission(session, user.id, "mcp.manage")
+        or has_permission(session, user.id, "mcp.config.read")
+    ):
+        raise HTTPException(403, "Permission denied")
+
+    query = session.query(MCPToolCall)
+    if tool_name:
+        query = query.filter(MCPToolCall.tool_name == tool_name)
+
+    total = query.count()
+    items = (
+        query.order_by(MCPToolCall.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "items": [
+            {
+                "id": item.id,
+                "tool_name": item.tool_name,
+                "arguments": json.loads(item.arguments) if item.arguments else None,
+                "result_summary": item.result_summary,
+                "status": item.status,
+                "duration_ms": item.duration_ms,
+                "job_id": item.job_id,
+                "hostname": item.hostname,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in items
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/history")
+async def log_mcp_tool_call(
+    body: MCPToolCallCreate,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+):
+    """Log a tool call from the MCP server. Called by the MCP server process."""
+    # Only allow the mcp-service account to log tool calls
+    if user.username not in ("mcp-service", "admin"):
+        raise HTTPException(403, "Only the MCP service account can log tool calls")
+
+    entry = MCPToolCall(
+        tool_name=body.tool_name,
+        arguments=json.dumps(body.arguments) if body.arguments else None,
+        result_summary=body.result_summary[:500] if body.result_summary else None,
+        status=body.status,
+        duration_ms=body.duration_ms,
+        job_id=body.job_id,
+        hostname=body.hostname,
+    )
+    session.add(entry)
+    session.flush()
+
+    return {"id": entry.id}

@@ -5,6 +5,7 @@ Each tool enforces safeguards before making CLM API calls.
 """
 
 import logging
+import time
 from datetime import datetime, timezone, timedelta
 
 from mcp.server.fastmcp import FastMCP
@@ -44,19 +45,46 @@ def register_tools(
             except Exception as e:
                 logger.error("Initialization failed: %s", e)
 
+    async def _log_call(
+        tool_name: str, arguments: dict | None, result: str,
+        status: str, start_time: float,
+        job_id: str | None = None, hostname: str | None = None,
+    ):
+        """Log a tool call to the MCP history endpoint."""
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        # Truncate result for summary
+        summary = result[:500] if result else None
+        try:
+            await client.log_tool_call(
+                tool_name=tool_name,
+                arguments=arguments,
+                result_summary=summary,
+                status=status,
+                duration_ms=duration_ms,
+                job_id=job_id,
+                hostname=hostname,
+            )
+        except Exception as e:
+            logger.debug("Failed to log tool call: %s", e)
+
     @mcp.tool()
     async def list_available_services() -> str:
         """List the services you are allowed to create instances from, with their default settings."""
         await _init()
+        _t0 = time.monotonic()
         config = get_config()
         allowed = config.get("allowed_services", [])
         if not allowed:
-            return "No services are configured in the MCP allowlist."
+            result = "No services are configured in the MCP allowlist."
+            await _log_call("list_available_services", None, result, "success", _t0)
+            return result
 
         try:
             services = await client.list_personal_services()
         except CLMError as e:
-            return f"Error fetching services: {e}"
+            result = f"Error fetching services: {e}"
+            await _log_call("list_available_services", None, result, "error", _t0)
+            return result
 
         # Get available plans for reference
         plans_cache = get_plans_cache()
@@ -117,7 +145,9 @@ def register_tools(
                 ram_gb = ram // 1024 if ram >= 1024 else f"{ram}MB"
                 plan_lines.append(f"  - `{pid}` — {vcpu} vCPU, {ram_gb} GB RAM, {disk} GB disk, ${cost}/mo")
 
-        return header + "\n".join(results) + "\n".join(plan_lines)
+        result = header + "\n".join(results) + "\n".join(plan_lines)
+        await _log_call("list_available_services", None, result, "success", _t0)
+        return result
 
     @mcp.tool()
     async def create_instance(
@@ -139,6 +169,8 @@ def register_tools(
             name: Descriptive label appended to hostname (e.g., 'webserver' -> hostname-webserver). Auto-suffixed if taken.
         """
         await _init()
+        _t0 = time.monotonic()
+        _args = {"service": service, "region": region, "ttl_hours": ttl_hours, "plan": plan, "os_name": os_name, "name": name}
         config = get_config()
         plans_cache = get_plans_cache()
 
@@ -152,7 +184,9 @@ def register_tools(
 
             ttl = resolve_ttl(ttl_hours, config)
         except SafeguardError as e:
-            return f"**Safeguard blocked**: {e}"
+            result = f"**Safeguard blocked**: {e}"
+            await _log_call("create_instance", _args, result, "safeguard_blocked", _t0)
+            return result
 
         # Build inputs (pi_source is injected server-side for mcp-service user)
         inputs = {"ttl_hours": str(ttl)}
@@ -164,29 +198,40 @@ def register_tools(
             inputs["hostname_label"] = name
 
         try:
-            result = await client.create_instance(service, region, inputs)
+            api_result = await client.create_instance(service, region, inputs)
         except CLMError as e:
-            return f"**Error creating instance**: {e}"
+            result = f"**Error creating instance**: {e}"
+            await _log_call("create_instance", _args, result, "error", _t0)
+            return result
 
-        job_id = result.get("job_id")
-        hostname = result.get("hostname", "unknown")
+        job_id = api_result.get("job_id")
+        hostname = api_result.get("hostname", "unknown")
+
+        # Register immediately so the tracker knows about this instance
+        # even if the poll times out or the session ends
+        tracker.register(hostname, service)
+        tracker.add_pending_job(job_id, hostname)
 
         # Poll for job completion
         try:
             job = await client.poll_job(job_id)
         except CLMError as e:
-            return (
+            result = (
                 f"Instance creation started (job: {job_id}, hostname: {hostname}) "
                 f"but timed out waiting for completion: {e}\n"
                 f"Check status in CloudLabManager."
             )
+            await _log_call("create_instance", _args, result, "success", _t0, job_id=job_id, hostname=hostname)
+            return result
+
+        tracker.remove_pending_job(job_id)
 
         if job.get("status") == "failed":
+            tracker.unregister(hostname)
             output = "\n".join(job.get("output", [])[-10:])
-            return f"**Instance creation failed**\nHostname: {hostname}\n\nLast output:\n```\n{output}\n```"
-
-        # Success — register in tracker
-        tracker.register(hostname, service)
+            result = f"**Instance creation failed**\nHostname: {hostname}\n\nLast output:\n```\n{output}\n```"
+            await _log_call("create_instance", _args, result, "error", _t0, job_id=job_id, hostname=hostname)
+            return result
 
         # Trigger inventory refresh and wait for it so list/connection tools have fresh data
         try:
@@ -203,7 +248,7 @@ def register_tools(
             "%Y-%m-%d %H:%M UTC"
         )
 
-        return (
+        result = (
             f"**Instance created successfully**\n"
             f"- Hostname: `{hostname}`\n"
             f"- Service: {service}\n"
@@ -212,6 +257,8 @@ def register_tools(
             f"- Job ID: {job_id}\n\n"
             f"Use `get_connection_info` to get SSH details."
         )
+        await _log_call("create_instance", _args, result, "success", _t0, job_id=job_id, hostname=hostname)
+        return result
 
     @mcp.tool()
     async def destroy_instance(hostname: str) -> str:
@@ -221,44 +268,61 @@ def register_tools(
             hostname: The hostname of the instance to destroy
         """
         await _init()
+        _t0 = time.monotonic()
+        _args = {"hostname": hostname}
         try:
             check_ownership(hostname, tracker)
         except SafeguardError as e:
-            return f"**Safeguard blocked**: {e}"
+            result = f"**Safeguard blocked**: {e}"
+            await _log_call("destroy_instance", _args, result, "safeguard_blocked", _t0, hostname=hostname)
+            return result
 
         try:
-            result = await client.destroy_instance(hostname)
+            api_result = await client.destroy_instance(hostname)
         except CLMError as e:
-            return f"**Error destroying instance**: {e}"
+            result = f"**Error destroying instance**: {e}"
+            await _log_call("destroy_instance", _args, result, "error", _t0, hostname=hostname)
+            return result
 
-        job_id = result.get("job_id")
+        job_id = api_result.get("job_id")
 
         try:
             job = await client.poll_job(job_id)
         except CLMError as e:
             tracker.unregister(hostname)
-            return f"Destroy started (job: {job_id}) but timed out: {e}"
+            result = f"Destroy started (job: {job_id}) but timed out: {e}"
+            await _log_call("destroy_instance", _args, result, "success", _t0, job_id=job_id, hostname=hostname)
+            return result
 
         tracker.unregister(hostname)
 
         if job.get("status") == "failed":
             output = "\n".join(job.get("output", [])[-5:])
-            return f"**Destroy failed** for {hostname}\n```\n{output}\n```"
+            result = f"**Destroy failed** for {hostname}\n```\n{output}\n```"
+            await _log_call("destroy_instance", _args, result, "error", _t0, job_id=job_id, hostname=hostname)
+            return result
 
-        return f"**Instance destroyed**: `{hostname}`"
+        result = f"**Instance destroyed**: `{hostname}`"
+        await _log_call("destroy_instance", _args, result, "success", _t0, job_id=job_id, hostname=hostname)
+        return result
 
     @mcp.tool()
     async def list_instances() -> str:
         """List all instances created by this MCP server with their current status."""
         await _init()
+        _t0 = time.monotonic()
         hostnames = tracker.list_hostnames()
         if not hostnames:
-            return "No MCP-created instances are currently active."
+            result = "No MCP-created instances are currently active."
+            await _log_call("list_instances", None, result, "success", _t0)
+            return result
 
         try:
             all_instances = await client.list_instances()
         except CLMError as e:
-            return f"Error fetching instances: {e}"
+            result = f"Error fetching instances: {e}"
+            await _log_call("list_instances", None, result, "error", _t0)
+            return result
 
         # Match tracked hostnames against live data
         results = []
@@ -280,7 +344,9 @@ def register_tools(
 
         config = get_config()
         header = f"**MCP Instances** ({len(hostnames)}/{config.get('max_concurrent', 3)} max)\n\n"
-        return header + "\n".join(results)
+        result = header + "\n".join(results)
+        await _log_call("list_instances", None, result, "success", _t0)
+        return result
 
     @mcp.tool()
     async def get_connection_info(hostname: str) -> str:
@@ -290,19 +356,27 @@ def register_tools(
             hostname: The hostname of the instance
         """
         await _init()
+        _t0 = time.monotonic()
+        _args = {"hostname": hostname}
         try:
             check_ownership(hostname, tracker)
         except SafeguardError as e:
-            return f"**Safeguard blocked**: {e}"
+            result = f"**Safeguard blocked**: {e}"
+            await _log_call("get_connection_info", _args, result, "safeguard_blocked", _t0, hostname=hostname)
+            return result
 
         try:
             all_instances = await client.list_instances()
         except CLMError as e:
-            return f"Error fetching instances: {e}"
+            result = f"Error fetching instances: {e}"
+            await _log_call("get_connection_info", _args, result, "error", _t0, hostname=hostname)
+            return result
 
         instance = next((i for i in all_instances if i.get("hostname") == hostname), None)
         if not instance:
-            return f"Instance '{hostname}' not found in CLM."
+            result = f"Instance '{hostname}' not found in CLM."
+            await _log_call("get_connection_info", _args, result, "error", _t0, hostname=hostname)
+            return result
 
         ip = instance.get("ip_address", "unknown")
         service = instance.get("service", "unknown")
@@ -347,6 +421,7 @@ def register_tools(
         else:
             result += "\n*SSH key not found in credential inventory.*"
 
+        await _log_call("get_connection_info", _args, result, "success", _t0, hostname=hostname)
         return result
 
     @mcp.tool()
@@ -358,25 +433,33 @@ def register_tools(
             hours: New TTL in hours (defaults to max allowed)
         """
         await _init()
+        _t0 = time.monotonic()
+        _args = {"hostname": hostname, "hours": hours}
         config = get_config()
 
         try:
             check_ownership(hostname, tracker)
         except SafeguardError as e:
-            return f"**Safeguard blocked**: {e}"
+            result = f"**Safeguard blocked**: {e}"
+            await _log_call("extend_ttl", _args, result, "safeguard_blocked", _t0, hostname=hostname)
+            return result
 
         ttl = resolve_ttl(hours, config)
 
         try:
-            result = await client.extend_ttl(hostname, ttl)
+            api_result = await client.extend_ttl(hostname, ttl)
         except CLMError as e:
-            return f"**Error extending TTL**: {e}"
+            result = f"**Error extending TTL**: {e}"
+            await _log_call("extend_ttl", _args, result, "error", _t0, hostname=hostname)
+            return result
 
-        return (
+        result = (
             f"**TTL extended** for `{hostname}`\n"
-            f"- TTL: {result.get('ttl_hours', ttl)}h\n"
-            f"- Reset at: {result.get('extended_at', 'now')}"
+            f"- TTL: {api_result.get('ttl_hours', ttl)}h\n"
+            f"- Reset at: {api_result.get('extended_at', 'now')}"
         )
+        await _log_call("extend_ttl", _args, result, "success", _t0, hostname=hostname)
+        return result
 
     @mcp.tool()
     async def run_script(
@@ -394,37 +477,49 @@ def register_tools(
             inputs: Optional key-value inputs for the script
         """
         await _init()
+        _t0 = time.monotonic()
+        _args = {"hostname": hostname, "service": service, "script": script, "inputs": inputs}
         try:
             check_ownership(hostname, tracker)
         except SafeguardError as e:
-            return f"**Safeguard blocked**: {e}"
+            result = f"**Safeguard blocked**: {e}"
+            await _log_call("run_script", _args, result, "safeguard_blocked", _t0, hostname=hostname)
+            return result
 
         if any(script.startswith(prefix) for prefix in DENIED_SCRIPT_PREFIXES):
-            return f"**Denied**: Script '{script}' cannot be run via MCP. Use create_instance/destroy_instance instead."
+            result = f"**Denied**: Script '{script}' cannot be run via MCP. Use create_instance/destroy_instance instead."
+            await _log_call("run_script", _args, result, "safeguard_blocked", _t0, hostname=hostname)
+            return result
 
         # Inject hostname into inputs
         script_inputs = dict(inputs or {})
         script_inputs["hostname"] = hostname
 
         try:
-            result = await client.run_script(service, script, script_inputs)
+            api_result = await client.run_script(service, script, script_inputs)
         except CLMError as e:
-            return f"**Error running script**: {e}"
+            result = f"**Error running script**: {e}"
+            await _log_call("run_script", _args, result, "error", _t0, hostname=hostname)
+            return result
 
-        job_id = result.get("job_id")
+        job_id = api_result.get("job_id")
 
         try:
             job = await client.poll_job(job_id)
         except CLMError as e:
-            return f"Script started (job: {job_id}) but timed out: {e}"
+            result = f"Script started (job: {job_id}) but timed out: {e}"
+            await _log_call("run_script", _args, result, "success", _t0, job_id=job_id, hostname=hostname)
+            return result
 
         output = "\n".join(job.get("output", [])[-30:])
         status = job.get("status", "unknown")
 
-        return (
+        result = (
             f"**Script '{script}' {status}** on `{hostname}`\n\n"
             f"```\n{output}\n```"
         )
+        await _log_call("run_script", _args, result, "success" if status == "completed" else "error", _t0, job_id=job_id, hostname=hostname)
+        return result
 
     @mcp.tool()
     async def browse_files(hostname: str, path: str = "/") -> str:
@@ -435,23 +530,33 @@ def register_tools(
             path: Directory path to browse (default: /)
         """
         await _init()
+        _t0 = time.monotonic()
+        _args = {"hostname": hostname, "path": path}
         try:
             check_ownership(hostname, tracker)
         except SafeguardError as e:
-            return f"**Safeguard blocked**: {e}"
+            result = f"**Safeguard blocked**: {e}"
+            await _log_call("browse_files", _args, result, "safeguard_blocked", _t0, hostname=hostname)
+            return result
 
         service = tracker.get_service(hostname) or await _get_service_for_hostname(hostname)
         if not service:
-            return f"Could not determine service for '{hostname}'."
+            result = f"Could not determine service for '{hostname}'."
+            await _log_call("browse_files", _args, result, "error", _t0, hostname=hostname)
+            return result
 
         try:
-            result = await client.browse_files(service, hostname, path)
+            api_result = await client.browse_files(service, hostname, path)
         except CLMError as e:
-            return f"**Error browsing files**: {e}"
+            result = f"**Error browsing files**: {e}"
+            await _log_call("browse_files", _args, result, "error", _t0, hostname=hostname)
+            return result
 
-        entries = result.get("entries", [])
+        entries = api_result.get("entries", [])
         if not entries:
-            return f"Directory `{path}` is empty or not accessible."
+            result = f"Directory `{path}` is empty or not accessible."
+            await _log_call("browse_files", _args, result, "success", _t0, hostname=hostname)
+            return result
 
         lines = [f"**Contents of `{path}` on `{hostname}`**\n"]
         for entry in entries:
@@ -460,7 +565,9 @@ def register_tools(
             name = entry.get("name", "?")
             lines.append(f"`{kind}` {name}  {size}")
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        await _log_call("browse_files", _args, result, "success", _t0, hostname=hostname)
+        return result
 
     @mcp.tool()
     async def preview_file(hostname: str, path: str, lines: int = 50) -> str:
@@ -472,22 +579,32 @@ def register_tools(
             lines: Number of lines to preview (default: 50)
         """
         await _init()
+        _t0 = time.monotonic()
+        _args = {"hostname": hostname, "path": path, "lines": lines}
         try:
             check_ownership(hostname, tracker)
         except SafeguardError as e:
-            return f"**Safeguard blocked**: {e}"
+            result = f"**Safeguard blocked**: {e}"
+            await _log_call("preview_file", _args, result, "safeguard_blocked", _t0, hostname=hostname)
+            return result
 
         service = tracker.get_service(hostname) or await _get_service_for_hostname(hostname)
         if not service:
-            return f"Could not determine service for '{hostname}'."
+            result = f"Could not determine service for '{hostname}'."
+            await _log_call("preview_file", _args, result, "error", _t0, hostname=hostname)
+            return result
 
         try:
-            result = await client.file_preview(service, hostname, path, lines)
+            api_result = await client.file_preview(service, hostname, path, lines)
         except CLMError as e:
-            return f"**Error previewing file**: {e}"
+            result = f"**Error previewing file**: {e}"
+            await _log_call("preview_file", _args, result, "error", _t0, hostname=hostname)
+            return result
 
-        content = result.get("content", "")
-        return f"**`{path}` on `{hostname}`** (first {lines} lines)\n\n```\n{content}\n```"
+        content = api_result.get("content", "")
+        result = f"**`{path}` on `{hostname}`** (first {lines} lines)\n\n```\n{content}\n```"
+        await _log_call("preview_file", _args, result, "success", _t0, hostname=hostname)
+        return result
 
     async def _get_service_for_hostname(hostname: str) -> str | None:
         """Look up the service name for a hostname from CLM."""

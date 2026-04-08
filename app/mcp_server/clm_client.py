@@ -226,6 +226,29 @@ class CLMClient:
         data = await self._request("GET", "/api/mcp/instances")
         return data.get("instances", [])
 
+    # --- Tool Call History ---
+
+    async def log_tool_call(
+        self, tool_name: str, arguments: dict | None, result_summary: str | None,
+        status: str, duration_ms: int | None = None,
+        job_id: str | None = None, hostname: str | None = None,
+    ) -> dict:
+        """Log a tool call to the MCP history."""
+        body = {
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "result_summary": result_summary,
+            "status": status,
+            "duration_ms": duration_ms,
+            "job_id": job_id,
+            "hostname": hostname,
+        }
+        try:
+            return await self._request("POST", "/api/mcp/history", json=body)
+        except CLMError as e:
+            logger.warning("Failed to log tool call: %s", e)
+            return {}
+
     # --- Plans Cache ---
 
     async def get_plans_cache(self) -> list[dict]:

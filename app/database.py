@@ -775,6 +775,20 @@ class FileLibraryItem(Base):
     user = relationship("User", lazy="selectin")
 
 
+class MCPToolCall(Base):
+    __tablename__ = "mcp_tool_calls"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tool_name = Column(String(100), nullable=False, index=True)
+    arguments = Column(Text, nullable=True)          # JSON dict of arguments
+    result_summary = Column(Text, nullable=True)     # truncated result or status message
+    status = Column(String(20), nullable=False)      # success, error, safeguard_blocked
+    duration_ms = Column(Integer, nullable=True)
+    job_id = Column(String(20), nullable=True)       # linked job ID if applicable
+    hostname = Column(String(100), nullable=True)    # instance hostname if applicable
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+
 def create_tables():
     Base.metadata.create_all(bind=engine)
     # Migration: add new columns if missing (idempotent)

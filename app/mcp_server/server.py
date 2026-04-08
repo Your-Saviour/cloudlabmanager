@@ -116,7 +116,7 @@ class MCPServer:
             logger.warning("Could not refresh config: %s", e)
 
     async def _periodic_refresh(self):
-        """Refresh config and plans cache every 60 seconds."""
+        """Refresh config, plans cache, and recover pending jobs every 60 seconds."""
         while True:
             await asyncio.sleep(60)
             try:
@@ -124,6 +124,51 @@ class MCPServer:
                 self._plans_cache = await self.client.get_plans_cache()
             except Exception as e:
                 logger.warning("Periodic refresh failed: %s", e)
+
+            # Check pending jobs from create_instance calls that may have
+            # completed after the AI session ended or poll timed out
+            await self._recover_pending_jobs()
+
+            # Re-sync tracker to pick up any instances that completed
+            # deployment after the last sync
+            try:
+                mcp_instances = await self.client.get_mcp_instances()
+                self.tracker.sync_from_clm(mcp_instances)
+            except Exception as e:
+                logger.debug("Periodic tracker sync failed: %s", e)
+
+    async def _recover_pending_jobs(self):
+        """Check pending jobs and trigger inventory refresh for completed ones."""
+        pending = self.tracker.get_pending_jobs()
+        if not pending:
+            return
+
+        needs_refresh = False
+        for job_id, hostname in list(pending.items()):
+            try:
+                job = await self.client.get_job(job_id)
+                status = job.get("status")
+                if status == "completed":
+                    logger.info("Pending job %s completed for %s", job_id, hostname)
+                    self.tracker.remove_pending_job(job_id)
+                    needs_refresh = True
+                elif status == "failed":
+                    logger.warning("Pending job %s failed for %s", job_id, hostname)
+                    self.tracker.remove_pending_job(job_id)
+                    self.tracker.unregister(hostname)
+                # else still running — leave it pending
+            except Exception as e:
+                logger.debug("Could not check pending job %s: %s", job_id, e)
+
+        if needs_refresh:
+            try:
+                refresh_data = await self.client.refresh_instances()
+                refresh_job_id = refresh_data.get("job_id")
+                if refresh_job_id:
+                    await self.client.poll_job(refresh_job_id, interval=2.0, timeout=120.0)
+                    logger.info("Inventory refresh completed for recovered pending jobs")
+            except Exception as e:
+                logger.warning("Inventory refresh for pending jobs failed: %s", e)
 
     async def shutdown(self):
         """Clean up resources."""

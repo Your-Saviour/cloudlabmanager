@@ -17,6 +17,8 @@ class InstanceTracker:
     def __init__(self):
         # hostname -> service name
         self._created: dict[str, str] = {}
+        # job_id -> hostname (for in-flight deploys)
+        self._pending_jobs: dict[str, str] = {}
 
     def register(self, hostname: str, service: str = ""):
         """Track a newly created instance."""
@@ -42,6 +44,21 @@ class InstanceTracker:
 
     def count(self) -> int:
         return len(self._created)
+
+    # --- Pending job tracking ---
+
+    def add_pending_job(self, job_id: str, hostname: str):
+        """Track a job that is still in progress."""
+        self._pending_jobs[job_id] = hostname
+        logger.info("Tracking pending job: %s -> %s", job_id, hostname)
+
+    def remove_pending_job(self, job_id: str):
+        """Remove a completed/failed job from pending tracking."""
+        self._pending_jobs.pop(job_id, None)
+
+    def get_pending_jobs(self) -> dict[str, str]:
+        """Return all pending jobs (job_id -> hostname)."""
+        return dict(self._pending_jobs)
 
     def sync_from_clm(self, mcp_instances: list[dict]):
         """Populate tracker from the MCP instances endpoint.

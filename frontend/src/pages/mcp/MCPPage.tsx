@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Bot, Play, Square, RefreshCw, Loader2, Trash2, Clock, Server,
-  Settings, ScrollText, Shield, Plus, X, Copy, Check,
+  Settings, ScrollText, Shield, Plus, X, Copy, Check, History,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
@@ -35,6 +35,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface MCPConfig {
   enabled: boolean
@@ -114,6 +121,8 @@ function OverviewTab({ status, config }: { status: MCPStatus | undefined; config
     },
   })
 
+  const cliCommand = 'claude mcp add cloudlab -- docker compose exec cloudlabmanager python3 -m mcp_server --transport stdio'
+
   const claudeConfig = JSON.stringify({
     mcpServers: {
       cloudlab: {
@@ -123,10 +132,18 @@ function OverviewTab({ status, config }: { status: MCPStatus | undefined; config
     },
   }, null, 2)
 
+  const [copiedCli, setCopiedCli] = useState(false)
+
   const handleCopy = () => {
     navigator.clipboard.writeText(claudeConfig)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleCopyCli = () => {
+    navigator.clipboard.writeText(cliCommand)
+    setCopiedCli(true)
+    setTimeout(() => setCopiedCli(false), 2000)
   }
 
   return (
@@ -200,19 +217,38 @@ function OverviewTab({ status, config }: { status: MCPStatus | undefined; config
           </CardTitle>
           <CardDescription>Add this to your Claude Desktop config or use the CLI command</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="relative">
-            <pre className="bg-muted p-3 rounded-md text-xs font-mono overflow-x-auto max-h-48">
-              {claudeConfig}
-            </pre>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute top-2 right-2 h-6 w-6"
-              onClick={handleCopy}
-            >
-              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-            </Button>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Claude Code CLI</Label>
+            <div className="relative">
+              <pre className="bg-muted p-3 rounded-md text-xs font-mono overflow-x-auto">
+                {cliCommand}
+              </pre>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute top-2 right-2 h-6 w-6"
+                onClick={handleCopyCli}
+              >
+                {copiedCli ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </Button>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Claude Desktop JSON Config</Label>
+            <div className="relative">
+              <pre className="bg-muted p-3 rounded-md text-xs font-mono overflow-x-auto max-h-48">
+                {claudeConfig}
+              </pre>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute top-2 right-2 h-6 w-6"
+                onClick={handleCopy}
+              >
+                {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -570,6 +606,158 @@ function LogsTab() {
   )
 }
 
+// --- History Tab ---
+interface MCPToolCallEntry {
+  id: number
+  tool_name: string
+  arguments: Record<string, unknown> | null
+  result_summary: string | null
+  status: string
+  duration_ms: number | null
+  job_id: string | null
+  hostname: string | null
+  created_at: string | null
+}
+
+const TOOL_NAMES = [
+  'list_available_services',
+  'create_instance',
+  'destroy_instance',
+  'list_instances',
+  'get_connection_info',
+  'extend_ttl',
+  'run_script',
+  'browse_files',
+  'preview_file',
+]
+
+function HistoryTab() {
+  const [page, setPage] = useState(1)
+  const [toolFilter, setToolFilter] = useState<string>('all')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['mcp-history', page, toolFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams({ page: String(page), page_size: '50' })
+      if (toolFilter && toolFilter !== 'all') params.set('tool_name', toolFilter)
+      const { data } = await api.get(`/api/mcp/history?${params}`)
+      return data as { items: MCPToolCallEntry[]; total: number; page: number; page_size: number }
+    },
+    refetchInterval: 10000,
+  })
+
+  const totalPages = data ? Math.ceil(data.total / data.page_size) : 0
+
+  const statusVariant = (status: string) => {
+    if (status === 'success') return 'default' as const
+    if (status === 'error') return 'destructive' as const
+    return 'secondary' as const
+  }
+
+  const formatArgs = (args: Record<string, unknown> | null) => {
+    if (!args) return '-'
+    const entries = Object.entries(args).filter(([, v]) => v != null)
+    if (entries.length === 0) return '-'
+    return entries.map(([k, v]) => `${k}=${v}`).join(', ')
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Select value={toolFilter} onValueChange={(v) => { setToolFilter(v); setPage(1) }}>
+          <SelectTrigger className="w-[220px]">
+            <SelectValue placeholder="All tools" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All tools</SelectItem>
+            {TOOL_NAMES.map((t) => (
+              <SelectItem key={t} value={t}>{t}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {data && (
+          <span className="text-sm text-muted-foreground">
+            {data.total} total call{data.total !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div>
+      ) : !data?.items?.length ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            No tool calls recorded yet.
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>Tool</TableHead>
+                <TableHead>Arguments</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Hostname</TableHead>
+                <TableHead>Job</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((entry) => (
+                <TableRow key={entry.id}>
+                  <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                    {entry.created_at ? formatTimeAgo(entry.created_at) : '-'}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm">{entry.tool_name}</TableCell>
+                  <TableCell className="text-sm max-w-[300px] truncate" title={formatArgs(entry.arguments)}>
+                    {formatArgs(entry.arguments)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant(entry.status)}>
+                      {entry.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {entry.duration_ms != null ? `${(entry.duration_ms / 1000).toFixed(1)}s` : '-'}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm">{entry.hostname || '-'}</TableCell>
+                  <TableCell className="font-mono text-sm">{entry.job_id || '-'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // --- Main Page ---
 export default function MCPPage() {
   const canManage = useHasPermission('mcp.manage')
@@ -626,6 +814,10 @@ export default function MCPPage() {
             <Shield className="h-3.5 w-3.5" />
             Instances
           </TabsTrigger>
+          <TabsTrigger value="history" className="gap-1.5">
+            <History className="h-3.5 w-3.5" />
+            History
+          </TabsTrigger>
           <TabsTrigger value="logs" className="gap-1.5">
             <ScrollText className="h-3.5 w-3.5" />
             Logs
@@ -640,6 +832,9 @@ export default function MCPPage() {
         </TabsContent>
         <TabsContent value="instances">
           <InstancesTab />
+        </TabsContent>
+        <TabsContent value="history">
+          <HistoryTab />
         </TabsContent>
         <TabsContent value="logs">
           <LogsTab />
