@@ -414,7 +414,12 @@ async def get_credential_key_content(obj_id: int, request: Request,
         private_key_path = key_path
 
     private_key_path = os.path.realpath(private_key_path)
-    if not private_key_path.startswith(os.path.realpath(SERVICES_DIR) + "/"):
+    allowed_dirs = [
+        os.path.realpath(SERVICES_DIR) + "/",
+        os.path.realpath("/services") + "/",
+        os.path.realpath("/data") + "/",
+    ]
+    if not any(private_key_path.startswith(d) for d in allowed_dirs):
         raise HTTPException(status_code=400, detail="Invalid key path")
 
     private_key = ""
@@ -1136,6 +1141,376 @@ async def _handle_ssh_websocket(websocket: WebSocket, hostname: str, user_info: 
             ssh_process.close()
         if ssh_conn:
             ssh_conn.close()
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+# --- RDP WebSocket (guacd proxy) ---
+
+import os as _os
+
+def _authenticate_ws_rdp_token(token: str) -> dict:
+    """Validate JWT token and return user info for RDP access."""
+    try:
+        payload = jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        user_id = payload.get("uid")
+        if not username:
+            raise ValueError("Invalid token")
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter_by(id=user_id, is_active=True).first()
+            if not user:
+                user = session.query(User).filter_by(username=username, is_active=True).first()
+            if not user:
+                raise ValueError("User not found")
+            if not has_permission(session, user.id, "inventory.server.rdp"):
+                raise ValueError("Permission denied: RDP access")
+            return {"user_id": user.id, "username": user.username}
+        finally:
+            session.close()
+    except JWTError:
+        raise ValueError("Invalid token")
+
+
+def _resolve_rdp_credentials(session, user, hostname: str) -> dict | None:
+    """Resolve RDP credentials for a hostname.
+
+    Priority:
+    1. Credential inventory objects tagged instance:{hostname} with credential_type=password
+    2. Service outputs fallback (admin_password / local_admin_password)
+    3. Vultr default password (Administrator + server's default_password field)
+    """
+    # 1. Credential inventory
+    cred_type = session.query(InventoryType).filter_by(slug="credential").first()
+    if cred_type:
+        from credential_access import user_can_view_credential
+        tag_name = f"instance:{hostname}"
+        cred_objects = (
+            session.query(InventoryObject)
+            .filter_by(type_id=cred_type.id)
+            .join(object_tags)
+            .join(InventoryTag)
+            .filter(InventoryTag.name == tag_name)
+            .all()
+        )
+        for obj in cred_objects:
+            if not user_can_view_credential(session, user, obj):
+                continue
+            data = json.loads(obj.data) if isinstance(obj.data, str) else obj.data
+            if data.get("credential_type") == "password" and data.get("username") and data.get("password"):
+                return {
+                    "username": data["username"],
+                    "password": data["password"],
+                    "domain": data.get("domain", ""),
+                }
+
+    # 2. Service outputs fallback — find which service owns this hostname
+    from routes.portal_routes import _load_instance_configs
+    from service_outputs import get_service_outputs
+    instance_configs = _load_instance_configs()
+    for svc_name, ic in instance_configs.items():
+        instances = ic.get("instances", [])
+        for inst in instances:
+            if inst.get("hostname") == hostname:
+                outputs = get_service_outputs(svc_name)
+                password = None
+                domain = ""
+                for out in outputs:
+                    if out.get("name") == "admin_password" and out.get("value"):
+                        password = out["value"]
+                    elif out.get("name") == "local_admin_password" and out.get("value"):
+                        password = out["value"]
+                    elif out.get("name") == "domain_name_ad" and out.get("value"):
+                        domain = out["value"]
+                if password:
+                    return {
+                        "username": "Administrator",
+                        "password": password,
+                        "domain": domain,
+                    }
+                break
+
+    # 3. Vultr default password
+    server_type = session.query(InventoryType).filter_by(slug="server").first()
+    if server_type:
+        server_objects = (
+            session.query(InventoryObject)
+            .filter_by(type_id=server_type.id)
+            .all()
+        )
+        for obj in server_objects:
+            data = json.loads(obj.data) if isinstance(obj.data, str) else obj.data
+            if data.get("hostname") == hostname and data.get("default_password"):
+                return {
+                    "username": "Administrator",
+                    "password": data["default_password"],
+                    "domain": "",
+                }
+
+    return None
+
+
+@router.websocket("/server/{obj_id}/rdp")
+async def websocket_rdp_by_id(websocket: WebSocket, obj_id: int):
+    """RDP via inventory object ID."""
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="Missing token")
+        return
+    try:
+        user_info = _authenticate_ws_rdp_token(token)
+    except ValueError as e:
+        await websocket.close(code=4001, reason=str(e))
+        return
+
+    session = SessionLocal()
+    try:
+        obj = session.query(InventoryObject).filter_by(id=obj_id).first()
+        if not obj:
+            await websocket.close(code=4004, reason="Object not found")
+            return
+        obj_data = json.loads(obj.data)
+        hostname = obj_data.get("hostname", "")
+    finally:
+        session.close()
+
+    if not hostname:
+        await websocket.close(code=4004, reason="No hostname for this object")
+        return
+
+    await _handle_rdp_websocket(websocket, hostname, user_info)
+
+
+@router.websocket("/server/rdp/{hostname}")
+async def websocket_rdp_by_hostname(websocket: WebSocket, hostname: str):
+    """RDP via hostname."""
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="Missing token")
+        return
+    try:
+        user_info = _authenticate_ws_rdp_token(token)
+    except ValueError as e:
+        await websocket.close(code=4001, reason=str(e))
+        return
+
+    await _handle_rdp_websocket(websocket, hostname, user_info)
+
+
+@router.get("/server/{hostname}/rdp-users")
+async def get_rdp_users(
+    hostname: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+):
+    """Get available RDP usernames for a server hostname."""
+    if not has_permission(session, user.id, "inventory.server.rdp"):
+        raise HTTPException(status_code=403, detail="Permission denied: RDP access")
+
+    users = []
+    seen = set()
+
+    # Credential inventory objects tagged with instance:{hostname}
+    cred_type = session.query(InventoryType).filter_by(slug="credential").first()
+    if cred_type:
+        from credential_access import user_can_view_credential
+        tag_name = f"instance:{hostname}"
+        cred_objects = (
+            session.query(InventoryObject)
+            .filter_by(type_id=cred_type.id)
+            .join(object_tags)
+            .join(InventoryTag)
+            .filter(InventoryTag.name == tag_name)
+            .all()
+        )
+        for obj in cred_objects:
+            if not user_can_view_credential(session, user, obj):
+                continue
+            data = json.loads(obj.data) if isinstance(obj.data, str) else obj.data
+            username = data.get("username", "")
+            if username and username not in seen:
+                users.append({
+                    "username": username,
+                    "source": data.get("credential_type", "password"),
+                    "domain": data.get("domain", ""),
+                })
+                seen.add(username)
+
+    # Always include Administrator as fallback
+    if "Administrator" not in seen:
+        users.append({"username": "Administrator", "source": "password", "domain": ""})
+
+    return {"hostname": hostname, "users": users}
+
+
+async def _handle_rdp_websocket(websocket: WebSocket, hostname: str, user_info: dict):
+    """Shared RDP WebSocket handler — bridges guacamole-common-js to guacd."""
+    from guacamole_protocol import (
+        encode_instruction, read_instruction, build_connect_instruction,
+    )
+
+    rdp_user_param = websocket.query_params.get("user")
+
+    # Audit log
+    session = SessionLocal()
+    try:
+        user_obj = session.query(User).filter_by(id=user_info["user_id"]).first()
+        creds = _resolve_rdp_credentials(session, user_obj, hostname) if user_obj else None
+        log_action(session, user_info["user_id"], user_info["username"],
+                   "inventory.server.rdp", f"inventory/server/{hostname}",
+                   details={"rdp_user": rdp_user_param or (creds or {}).get("username", "")})
+        session.commit()
+    finally:
+        session.close()
+
+    await websocket.accept()
+
+    if not creds:
+        await websocket.send_text(encode_instruction("error", "", "No RDP credentials found"))
+        await websocket.close(code=1008)
+        return
+
+    # Override username if specified
+    if rdp_user_param:
+        creds["username"] = rdp_user_param
+
+    # Resolve server IP
+    session = SessionLocal()
+    try:
+        server_type = session.query(InventoryType).filter_by(slug="server").first()
+        server_ip = None
+        if server_type:
+            for obj in session.query(InventoryObject).filter_by(type_id=server_type.id).all():
+                data = json.loads(obj.data) if isinstance(obj.data, str) else obj.data
+                if data.get("hostname") == hostname:
+                    server_ip = data.get("ip_address", data.get("ip", data.get("main_ip", "")))
+                    break
+    finally:
+        session.close()
+
+    if not server_ip:
+        await websocket.send_text(encode_instruction("error", "", f"No IP found for {hostname}"))
+        await websocket.close(code=1008)
+        return
+
+    # Get display params from query string (sent by guacamole-common-js connect())
+    width = websocket.query_params.get("width", "1024")
+    height = websocket.query_params.get("height", "768")
+    dpi = websocket.query_params.get("dpi", "96")
+
+    guacd_host = _os.environ.get("GUACD_HOST", "guacd")
+    guacd_port = int(_os.environ.get("GUACD_PORT", "4822"))
+
+    reader = None
+    writer = None
+    try:
+        reader, writer = await asyncio.open_connection(guacd_host, guacd_port)
+
+        # Guacamole handshake: select RDP
+        writer.write(encode_instruction("select", "rdp").encode("utf-8"))
+        await writer.drain()
+
+        # Read args instruction from guacd
+        opcode, guacd_args = await read_instruction(reader)
+        if opcode != "args":
+            await websocket.send_text(encode_instruction("error", "", f"Expected args, got {opcode}"))
+            await websocket.close(code=1011)
+            return
+
+        # Build connect params
+        params = {
+            "hostname": server_ip,
+            "port": "3389",
+            "username": creds["username"],
+            "password": creds["password"],
+            "domain": creds.get("domain", ""),
+            "width": width,
+            "height": height,
+            "dpi": dpi,
+            "security": "any",
+            "ignore-cert": "true",
+            "resize-method": "display-update",
+            "enable-wallpaper": "false",
+            "enable-font-smoothing": "true",
+            "disable-audio": "true",
+        }
+
+        # Send size, audio, video, image instructions
+        writer.write(encode_instruction("size", width, height, dpi).encode("utf-8"))
+        writer.write(encode_instruction("audio").encode("utf-8"))
+        writer.write(encode_instruction("video").encode("utf-8"))
+        writer.write(encode_instruction("image", "image/png", "image/jpeg").encode("utf-8"))
+        await writer.drain()
+
+        # Send connect with resolved params
+        connect_instr = build_connect_instruction(guacd_args, params)
+        writer.write(connect_instr.encode("utf-8"))
+        await writer.drain()
+
+        # Read the ready instruction
+        opcode, ready_args = await read_instruction(reader)
+        if opcode == "error":
+            error_msg = ready_args[0] if ready_args else "Unknown error"
+            await websocket.send_text(encode_instruction("error", "", error_msg))
+            await websocket.close(code=1011)
+            return
+
+        # Forward the ready instruction to the client
+        await websocket.send_text(encode_instruction(opcode, *ready_args))
+
+        # Bridge loop: guacd TCP <-> WebSocket
+        async def guacd_to_ws():
+            try:
+                buf = b""
+                while True:
+                    data = await reader.read(65536)
+                    if not data:
+                        break
+                    buf += data
+                    # Forward complete instructions (ending with ;)
+                    while b";" in buf:
+                        idx = buf.index(b";") + 1
+                        instruction = buf[:idx].decode("utf-8", errors="replace")
+                        buf = buf[idx:]
+                        await websocket.send_text(instruction)
+            except (ConnectionError, asyncio.IncompleteReadError):
+                pass
+            except Exception:
+                pass
+
+        async def ws_to_guacd():
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    writer.write(data.encode("utf-8"))
+                    await writer.drain()
+            except (WebSocketDisconnect, Exception):
+                pass
+
+        done, pending = await asyncio.wait(
+            [asyncio.create_task(guacd_to_ws()), asyncio.create_task(ws_to_guacd())],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+
+    except ConnectionRefusedError:
+        try:
+            await websocket.send_text(encode_instruction("error", "", "Cannot connect to guacd — is it running?"))
+        except Exception:
+            pass
+    except Exception as e:
+        try:
+            await websocket.send_text(encode_instruction("error", "", f"RDP connection failed: {e}"))
+        except Exception:
+            pass
+    finally:
+        if writer:
+            writer.close()
         try:
             await websocket.close()
         except Exception:

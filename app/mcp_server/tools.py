@@ -317,12 +317,25 @@ def register_tools(
         # Get outputs for additional info
         outputs = instance.get("outputs", [])
 
-        result = (
-            f"**Connection Info for `{hostname}`**\n"
-            f"- IP: `{ip}`\n"
-            f"- Service: {service}\n"
-            f"- SSH command: `ssh -i <keyfile> root@{ip}`\n"
-        )
+        # Extract DNS name from service outputs if available
+        dns_name = None
+        if outputs:
+            for out in outputs:
+                name = out.get("name", "")
+                val = out.get("value", "")
+                if name in ("ssh_host", "dns_name", "hostname_fqdn") and val:
+                    dns_name = val
+                    break
+
+        result = f"**Connection Info for `{hostname}`**\n"
+        result += f"- IP: `{ip}`\n"
+        if dns_name:
+            result += f"- DNS: `{dns_name}`\n"
+        result += f"- Service: {service}\n"
+        if dns_name:
+            result += f"- SSH command: `ssh root@{dns_name}`\n"
+        else:
+            result += f"- SSH command: `ssh root@{ip}`\n"
 
         if outputs:
             result += "\n**Service Outputs:**\n"

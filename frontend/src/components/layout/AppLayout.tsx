@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
 import { usePreferencesStore } from '@/stores/preferencesStore'
@@ -15,6 +15,7 @@ export function AppLayout() {
   const setReportBugOpen = useUIStore((s) => s.setReportBugOpen)
   const loadPreferences = usePreferencesStore((s) => s.loadPreferences)
   const prefsLoaded = usePreferencesStore((s) => s.loaded)
+  const location = useLocation()
   useKeyboardShortcuts()
 
   useEffect(() => {
@@ -27,7 +28,9 @@ export function AppLayout() {
       <div className={cn('transition-all duration-300', collapsed ? 'ml-16' : 'ml-60')}>
         <Header />
         <main className="p-6">
-          <Outlet />
+          <div key={location.pathname} className="animate-page-enter">
+            <Outlet />
+          </div>
         </main>
       </div>
       <CommandPalette />

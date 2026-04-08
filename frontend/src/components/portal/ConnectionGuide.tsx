@@ -8,6 +8,7 @@ interface ConnectionGuideProps {
     ssh: string | null
     web_url: string | null
     fqdn: string | null
+    rdp?: string | null
   }
   serviceName: string
 }
@@ -32,7 +33,7 @@ function CopyButton({ text }: { text: string }) {
 export function ConnectionGuide({ guide, serviceName }: ConnectionGuideProps) {
   const [expanded, setExpanded] = useState(false)
 
-  const hasContent = guide.ssh || guide.web_url || guide.fqdn
+  const hasContent = guide.ssh || guide.web_url || guide.fqdn || guide.rdp
   if (!hasContent) return null
 
   return (
@@ -80,6 +81,19 @@ export function ConnectionGuide({ guide, serviceName }: ConnectionGuideProps) {
                   {guide.web_url}
                 </a>
                 <CopyButton text={guide.web_url} />
+              </div>
+            </div>
+          )}
+          {guide.rdp && (
+            <div>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                RDP
+              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="bg-muted/50 rounded px-3 py-1.5 font-mono text-xs flex-1 truncate">
+                  {guide.rdp}
+                </code>
+                <CopyButton text={guide.rdp} />
               </div>
             </div>
           )}

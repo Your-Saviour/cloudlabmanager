@@ -144,7 +144,7 @@ def _get_inventory_servers(session: Session) -> dict[str, dict]:
     return servers
 
 
-def _build_connection_guide(ip: str, fqdn: str, outputs: list[dict]) -> dict:
+def _build_connection_guide(ip: str, fqdn: str, outputs: list[dict], tags: list[str] | None = None) -> dict:
     guide = {}
     if ip:
         guide["ssh"] = f"ssh root@{ip}"
@@ -155,6 +155,9 @@ def _build_connection_guide(ip: str, fqdn: str, outputs: list[dict]) -> dict:
         if out.get("type") == "url" and out.get("value"):
             guide["web_url"] = out["value"]
             break
+    # RDP guide for rdp-enabled services
+    if tags and "rdp-enabled" in tags and ip:
+        guide["rdp"] = f"rdp://{fqdn or ip}:3389"
     return guide
 
 
@@ -268,7 +271,8 @@ async def get_portal_services(
             from credential_access import filter_portal_credentials
             outputs = filter_portal_credentials(session, user, outputs, name, hostname)
         health = health_data.get(name)
-        connection_guide = _build_connection_guide(ip, fqdn, outputs) if is_deployed else {}
+        svc_tags = first_instance.get("tags", server.get("tags", []))
+        connection_guide = _build_connection_guide(ip, fqdn, outputs, svc_tags) if is_deployed else {}
 
         # Skip services that have no live server, no health config, and no bookmarks
         has_bookmarks = name in bookmarks_by_service
@@ -285,7 +289,7 @@ async def get_portal_services(
             "fqdn": fqdn if is_deployed else "",
             "region": first_instance.get("region", server.get("region", "")),
             "plan": first_instance.get("plan", ""),
-            "tags": first_instance.get("tags", server.get("tags", [])),
+            "tags": svc_tags,
             "health": health,
             "outputs": outputs,
             "connection_guide": connection_guide,

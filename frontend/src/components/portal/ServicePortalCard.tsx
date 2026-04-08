@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ExternalLink,
   Globe,
@@ -6,6 +7,7 @@ import {
   Terminal,
   Copy,
   FolderOpen,
+  Monitor,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useHasPermission } from '@/lib/permissions'
@@ -50,6 +52,7 @@ interface ServicePortalCardProps {
 }
 
 export function ServicePortalCard({ service, index, userHasPersonalKey, onBrowseFiles }: ServicePortalCardProps) {
+  const navigate = useNavigate()
   const isRunning = service.power_status === 'running'
   const isSuspended = service.power_status === 'suspended'
   const canEditBookmarks = useHasPermission('portal.bookmarks.edit')
@@ -272,6 +275,18 @@ export function ServicePortalCard({ service, index, userHasPersonalKey, onBrowse
               aria-label={`Open SSH terminal for ${service.display_name}`}
             >
               <Terminal className="mr-1.5 h-3.5 w-3.5" /> SSH
+            </Button>
+          )}
+          {isRunning && service.ip && service.hostname && service.tags?.includes('rdp-enabled') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-7"
+              onClick={() => navigate(`/rdp/${service.hostname}/${service.ip}`)}
+              title="RDP Desktop"
+              aria-label={`Open RDP for ${service.display_name}`}
+            >
+              <Monitor className="mr-1.5 h-3.5 w-3.5" /> RDP
             </Button>
           )}
           {canRun && isRunning && service.hostname && onBrowseFiles && (

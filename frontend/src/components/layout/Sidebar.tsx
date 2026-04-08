@@ -65,7 +65,7 @@ export function Sidebar() {
             <Hexagon className="h-6 w-6 text-primary shrink-0" />
             {!collapsed && (
               <div className="flex flex-col leading-none">
-                <span className="text-sm font-bold tracking-wider text-foreground">CLOUDLAB</span>
+                <span className="text-sm font-bold tracking-wider brand-gradient">CLOUDLAB</span>
                 <span className="text-[10px] font-medium tracking-widest text-muted-foreground">MANAGER</span>
               </div>
             )}
@@ -162,9 +162,9 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed: boolean })
       to={item.href}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200',
           'text-sidebar-foreground hover:bg-sidebar-accent/10 hover:text-sidebar-accent-foreground',
-          isActive && 'bg-sidebar-accent/15 text-primary',
+          isActive && 'bg-sidebar-accent/15 text-primary sidebar-active-indicator',
           collapsed && 'justify-center px-0'
         )
       }

@@ -27,6 +27,7 @@ export interface PortalService {
     ssh: string | null
     web_url: string | null
     fqdn: string | null
+    rdp?: string | null
   }
   bookmarks: PortalBookmark[]
 }

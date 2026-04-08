@@ -61,7 +61,7 @@ export default function SSHTerminalPage() {
       })
   }, [hostname, token, routeUser])
 
-  const connect = useCallback(async (user: string) => {
+  const connect = useCallback(async (user: string, signal: { aborted: boolean }) => {
     if (!terminalRef.current || !hostname || !token) return
 
     // Clean up existing connection
@@ -76,6 +76,9 @@ export default function SSHTerminalPage() {
     const { WebLinksAddon } = await import('@xterm/addon-web-links')
     const { Unicode11Addon } = await import('@xterm/addon-unicode11')
     await import('@xterm/xterm/css/xterm.css')
+
+    // If the effect was cleaned up while we were awaiting imports, bail out
+    if (signal.aborted) return
 
     const term = new Terminal({
       cursorBlink: true,
@@ -169,7 +172,8 @@ export default function SSHTerminalPage() {
   }, [hostname, ip, token])
 
   useEffect(() => {
-    connect(activeUser)
+    const signal = { aborted: false }
+    connect(activeUser, signal)
 
     const handleResize = () => {
       fitAddonRef.current?.fit()
@@ -177,6 +181,7 @@ export default function SSHTerminalPage() {
     window.addEventListener('resize', handleResize)
 
     return () => {
+      signal.aborted = true
       window.removeEventListener('resize', handleResize)
       wsRef.current?.close()
       termRef.current?.dispose()

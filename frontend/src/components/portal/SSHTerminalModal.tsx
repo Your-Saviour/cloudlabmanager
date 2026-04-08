@@ -24,7 +24,7 @@ export function SSHTerminalModal({ open, onOpenChange, hostname, ip, user = 'roo
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [connectKey, setConnectKey] = useState(0)
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (signal: { aborted: boolean }) => {
     if (!termRef.current || !hostname || !token) return
 
     // Clean up existing connection
@@ -39,6 +39,8 @@ export function SSHTerminalModal({ open, onOpenChange, hostname, ip, user = 'roo
     const { WebLinksAddon } = await import('@xterm/addon-web-links')
     const { Unicode11Addon } = await import('@xterm/addon-unicode11')
     await import('@xterm/xterm/css/xterm.css')
+
+    if (signal.aborted) return
 
     const term = new Terminal({
       cursorBlink: true,
@@ -130,10 +132,12 @@ export function SSHTerminalModal({ open, onOpenChange, hostname, ip, user = 'roo
   useEffect(() => {
     if (!open) return
 
+    const signal = { aborted: false }
     // Small delay to ensure the dialog DOM is rendered before opening terminal
-    const timer = setTimeout(() => connect(), 50)
+    const timer = setTimeout(() => connect(signal), 50)
 
     return () => {
+      signal.aborted = true
       clearTimeout(timer)
       wsRef.current?.close()
       if (terminalRef.current) {

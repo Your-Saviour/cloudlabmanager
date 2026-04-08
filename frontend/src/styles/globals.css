@@ -30,7 +30,7 @@
     --card-foreground: 210 20% 92%;
     --popover: 240 12% 8%;
     --popover-foreground: 210 20% 92%;
-    --primary: 262 83% 58%;
+    --primary: 252 85% 60%;
     --primary-foreground: 0 0% 100%;
     --secondary: 240 10% 14%;
     --secondary-foreground: 210 20% 92%;
@@ -42,12 +42,14 @@
     --destructive-foreground: 0 0% 100%;
     --border: 240 8% 16%;
     --input: 240 8% 16%;
-    --ring: 262 83% 58%;
+    --ring: 252 85% 60%;
     --sidebar: 240 14% 6%;
     --sidebar-foreground: 215 14% 65%;
     --sidebar-border: 240 8% 14%;
-    --sidebar-accent: 262 83% 58%;
+    --sidebar-accent: 252 85% 60%;
     --sidebar-accent-foreground: 0 0% 100%;
+    --gradient-from: 252 85% 60%;
+    --gradient-to: 200 95% 55%;
   }
 }
 
@@ -58,6 +60,8 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.015'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
   }
 }
 
@@ -108,6 +112,91 @@
 /* Glow for running status strip */
 .glow-emerald {
   box-shadow: 0 0 8px rgba(16, 185, 129, 0.3), 0 0 2px rgba(16, 185, 129, 0.5);
+}
+
+/* Shimmer for loading skeletons */
+.animate-shimmer {
+  background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.08) 50%, hsl(var(--muted)) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Header gradient border */
+.header-gradient-border {
+  position: relative;
+}
+.header-gradient-border::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.3), hsl(var(--gradient-to) / 0.2), transparent);
+}
+
+/* Running status strip gradient */
+@keyframes statusGradient {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.status-strip-running {
+  background: linear-gradient(90deg, #10b981, #34d399, #10b981);
+  background-size: 200% 100%;
+  animation: statusGradient 3s linear infinite;
+}
+
+/* Login page animated gradient background */
+.login-gradient-bg {
+  background: linear-gradient(-45deg, hsl(240 15% 5%), hsl(252 30% 12%), hsl(200 30% 10%), hsl(240 15% 5%));
+  background-size: 400% 400%;
+  animation: gradient-shift 8s ease infinite;
+}
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Brand text gradient */
+.brand-gradient {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--gradient-to)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Sidebar active indicator */
+.sidebar-active-indicator {
+  position: relative;
+}
+.sidebar-active-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(180deg, hsl(var(--primary)), hsl(var(--gradient-to)));
+  animation: indicatorSlide 0.25s ease-out;
+  transform-origin: center;
+}
+@keyframes indicatorSlide {
+  from { transform: scaleY(0); opacity: 0; }
+  to { transform: scaleY(1); opacity: 1; }
+}
+
+/* Login icon pulse */
+@keyframes iconPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+}
+.animate-icon-pulse {
+  animation: iconPulse 2.5s ease-in-out infinite;
 }
 
 /* react-grid-layout resize handle styling */

@@ -81,7 +81,7 @@ export function ServiceCard({
     <div
       className={cn(
         'relative overflow-hidden rounded-xl border border-border/50',
-        'bg-card hover:border-border hover:shadow-lg hover:shadow-primary/5',
+        'bg-card hover:border-border hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-0.5',
         'transition-all duration-300 animate-card-in flex flex-col',
         isRunning && 'border-l-2 border-l-emerald-500/40',
       )}
@@ -90,8 +90,8 @@ export function ServiceCard({
       {/* Status Strip */}
       <div
         className={cn(
-          'absolute top-0 left-0 right-0 h-[3px]',
-          isRunning ? 'bg-emerald-500 glow-emerald' : isSuspended ? 'bg-amber-500' : 'bg-zinc-600',
+          'absolute top-0 left-0 right-0 h-1',
+          isRunning ? 'status-strip-running glow-emerald' : isSuspended ? 'bg-amber-500' : 'bg-zinc-600',
         )}
       />
 

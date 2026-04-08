@@ -89,11 +89,11 @@ export default function LoginPage() {
   // MFA Verification Step
   if (mfaRequired) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-sm">
+      <div className="min-h-screen flex items-center justify-center login-gradient-bg p-4">
+        <Card className="w-full max-w-sm bg-card/80 backdrop-blur-xl border-border/50">
           <CardHeader className="text-center">
             <div className="flex justify-center mb-4">
-              <ShieldCheck className="h-10 w-10 text-primary" />
+              <ShieldCheck className="h-10 w-10 text-primary animate-icon-pulse" />
             </div>
             <CardTitle className="text-xl">Two-Factor Authentication</CardTitle>
             <CardDescription>
@@ -137,11 +137,11 @@ export default function LoginPage() {
 
   // Login Step
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-sm">
+    <div className="min-h-screen flex items-center justify-center login-gradient-bg p-4">
+      <Card className="w-full max-w-sm bg-card/80 backdrop-blur-xl border-border/50">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <Hexagon className="h-10 w-10 text-primary" />
+            <Hexagon className="h-10 w-10 text-primary animate-icon-pulse" />
           </div>
           <CardTitle className="text-xl">Welcome back</CardTitle>
           <CardDescription>Sign in to CloudLab Manager</CardDescription>

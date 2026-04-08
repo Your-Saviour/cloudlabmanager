@@ -27,7 +27,7 @@ export function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/80 backdrop-blur-sm px-6">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border/50 bg-background/70 backdrop-blur-xl px-6 header-gradient-border">
       <Button
         variant="outline"
         size="sm"

@@ -560,6 +560,23 @@ export default function InventoryDetailPage() {
                           </Button>
                         )
                       }
+                      // RDP builtin action navigates to RDP viewer
+                      if (action.type === 'builtin' && action.name === 'rdp') {
+                        const hostname = obj?.data.hostname as string | undefined
+                        const ip = obj?.data.ip_address as string | undefined
+                        const isRunning = obj?.data.power_status === 'running'
+                        if (!isRunning || !hostname) return null
+                        return (
+                          <Button
+                            key={action.name}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate(`/rdp/${hostname}/${ip || hostname}`)}
+                          >
+                            <Monitor className="mr-2 h-3 w-3" /> {action.label}
+                          </Button>
+                        )
+                      }
                       // Console builtin action opens KVM/noVNC URL in new tab
                       if (action.type === 'builtin' && action.name === 'console') {
                         const kvmUrl = obj?.data.kvm_url as string | undefined

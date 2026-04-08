@@ -165,25 +165,22 @@ class CLMClient:
         return data
 
     async def get_ssh_key_for_hostname(self, hostname: str) -> dict | None:
-        """Find SSH key credential for a hostname via inventory and read key content."""
-        # Search credentials by hostname
+        """Find SSH key credential for a hostname via inventory tag and read key content."""
+        # Search credentials by instance:{hostname} tag
         data = await self._request(
-            "GET", f"/api/inventory/credential",
-            params={"search": hostname},
+            "GET", "/api/inventory/credential",
+            params={"tag": f"instance:{hostname}"},
         )
         objects = data.get("objects", [])
 
-        # Find the SSH key credential matching this hostname
+        # Find the SSH key credential
         cred_id = None
         for obj in objects:
             obj_data = obj.get("data", {})
             if isinstance(obj_data, str):
                 import json as _json
                 obj_data = _json.loads(obj_data)
-            if (
-                obj_data.get("credential_type") == "ssh_key"
-                and obj_data.get("instance_hostname") == hostname
-            ):
+            if obj_data.get("credential_type") == "ssh_key":
                 cred_id = obj.get("id")
                 break
 
