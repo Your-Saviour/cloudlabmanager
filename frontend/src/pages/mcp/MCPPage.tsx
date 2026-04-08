@@ -121,13 +121,16 @@ function OverviewTab({ status, config }: { status: MCPStatus | undefined; config
     },
   })
 
-  const cliCommand = 'claude mcp add cloudlab -- docker compose exec cloudlabmanager python3 -m mcp_server --transport stdio'
+  const ssePort = config?.sse_port ?? 8765
+  const sseUrl = `http://localhost:${ssePort}/sse`
+
+  const cliCommand = `claude mcp add cloudlab --transport sse ${sseUrl}`
 
   const claudeConfig = JSON.stringify({
     mcpServers: {
       cloudlab: {
-        command: 'docker',
-        args: ['compose', 'exec', 'cloudlabmanager', 'python3', '-m', 'mcp_server', '--transport', 'stdio'],
+        type: 'sse',
+        url: sseUrl,
       },
     },
   }, null, 2)
