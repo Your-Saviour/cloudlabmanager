@@ -33,6 +33,12 @@ class PreviewRequest(BaseModel):
     lines: int = Field(default=200, ge=1, le=1000)
 
 
+class RunCommandRequest(BaseModel):
+    hostname: str
+    command: str = Field(description="Shell command to execute on the remote host")
+    timeout: int = Field(default=60, ge=1, le=300, description="Timeout in seconds (max 300)")
+
+
 def _validate_path(path: str) -> str:
     """Validate and normalize a remote path."""
     if not path or not path.startswith("/"):
@@ -50,9 +56,13 @@ def _validate_path(path: str) -> str:
     return normalized
 
 
-async def _run_ssh_command(runner, hostname: str, command: str, timeout: int = 15) -> str:
+async def _run_ssh_command(runner, hostname: str, command: str, timeout: int = 15,
+                           raise_on_error: bool = True) -> str | dict:
     """Run a command on a remote host via direct SSH. Uses resolve_ssh_credentials()
-    from AnsibleRunner to find the SSH key and connection info."""
+    from AnsibleRunner to find the SSH key and connection info.
+
+    When raise_on_error=True (default), raises HTTPException on non-zero exit and returns stdout string.
+    When raise_on_error=False, returns a dict with stdout, stderr, exit_code, timed_out."""
     creds = runner.resolve_ssh_credentials(hostname)
     if not creds:
         raise HTTPException(404, f"Cannot resolve SSH credentials for host: {hostname}")
@@ -72,6 +82,7 @@ async def _run_ssh_command(runner, hostname: str, command: str, timeout: int = 1
         cmd.extend(["-i", ssh_key])
     cmd.extend([f"{ssh_user}@{ssh_host}", command])
 
+    timed_out = False
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -80,15 +91,31 @@ async def _run_ssh_command(runner, hostname: str, command: str, timeout: int = 1
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
-        raise HTTPException(504, f"SSH command timed out after {timeout}s")
+        if raise_on_error:
+            raise HTTPException(504, f"SSH command timed out after {timeout}s")
+        try:
+            proc.kill()
+            stdout, stderr = await proc.communicate()
+        except Exception:
+            stdout, stderr = b"", b""
+        timed_out = True
     except Exception as e:
-        raise HTTPException(502, f"SSH connection failed: {str(e)}")
+        if raise_on_error:
+            raise HTTPException(502, f"SSH connection failed: {str(e)}")
+        return {"stdout": "", "stderr": str(e), "exit_code": -1, "timed_out": False}
 
-    if proc.returncode != 0:
-        err = stderr.decode(errors="replace").strip()
-        raise HTTPException(502, f"Remote command failed: {err}")
+    if raise_on_error:
+        if proc.returncode != 0:
+            err = stderr.decode(errors="replace").strip()
+            raise HTTPException(502, f"Remote command failed: {err}")
+        return stdout.decode(errors="replace")
 
-    return stdout.decode(errors="replace")
+    return {
+        "stdout": stdout.decode(errors="replace"),
+        "stderr": stderr.decode(errors="replace"),
+        "exit_code": proc.returncode if not timed_out else -1,
+        "timed_out": timed_out,
+    }
 
 
 def _parse_ls_output(raw_output: str) -> list[dict]:
@@ -254,4 +281,44 @@ async def file_preview(
         "path": path, "hostname": body.hostname,
         "is_binary": False, "size": size, "mime_type": mime_type,
         "content": content, "lines_returned": min(body.lines, content.count("\n") + 1),
+    }
+
+
+@router.post("/{name}/run-command")
+async def run_command(
+    name: str,
+    body: RunCommandRequest,
+    request: Request,
+    user: User = Depends(require_service_permission("exec")),
+    session: Session = Depends(get_db_session),
+):
+    """Run an ad-hoc shell command on a remote instance.
+    Permission: services.exec for the target service."""
+    runner = request.app.state.ansible_runner
+
+    result = await _run_ssh_command(
+        runner, body.hostname, body.command,
+        timeout=body.timeout, raise_on_error=False,
+    )
+
+    # Truncate large outputs to prevent memory issues (512KB limit)
+    max_output = 512 * 1024
+    for key in ("stdout", "stderr"):
+        if len(result[key]) > max_output:
+            result[key] = result[key][:max_output] + f"\n\n... (truncated, {len(result[key])} bytes total)"
+
+    log_action(
+        session, user.id, user.username, "service.run_command",
+        f"service/{name}/run-command",
+        details={"hostname": body.hostname, "command": body.command[:200], "exit_code": result["exit_code"]},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {
+        "hostname": body.hostname,
+        "command": body.command,
+        "stdout": result["stdout"],
+        "stderr": result["stderr"],
+        "exit_code": result["exit_code"],
+        "timed_out": result["timed_out"],
     }

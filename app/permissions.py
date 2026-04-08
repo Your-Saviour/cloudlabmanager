@@ -14,6 +14,7 @@ STATIC_PERMISSION_DEFS = [
     # Legacy services (kept for migration compatibility, mapped to inventory.service.*)
     ("services.view", "services", "View Services", "View available services and scripts"),
     ("services.deploy", "services", "Deploy Services", "Deploy or run service scripts"),
+    ("services.exec", "services", "Execute Commands", "Run ad-hoc commands on service instances"),
     ("services.stop", "services", "Stop Services", "Stop service instances"),
     ("services.config.view", "services", "View Configs", "View service configuration files"),
     ("services.config.edit", "services", "Edit Configs", "Edit service configuration files"),
@@ -251,6 +252,7 @@ _LEGACY_TO_INVENTORY = {
     "services.files.view": "inventory.service.files",
     "services.files.edit": "inventory.service.edit",
     "services.plan_select": "inventory.service.plan_select",
+    "services.exec": "inventory.service.exec",
 }
 
 

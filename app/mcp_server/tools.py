@@ -522,6 +522,68 @@ def register_tools(
         return result
 
     @mcp.tool()
+    async def run_command(
+        hostname: str,
+        command: str,
+        timeout: int = 60,
+    ) -> str:
+        """Run a shell command on an MCP-created instance and return the output.
+
+        Args:
+            hostname: The hostname of the instance to run the command on
+            command: The shell command to execute (e.g., 'whoami', 'ls -la /var/log', 'apt list --installed')
+            timeout: Command timeout in seconds (default: 60, max: 300)
+        """
+        await _init()
+        _t0 = time.monotonic()
+        _args = {"hostname": hostname, "command": command, "timeout": timeout}
+        try:
+            check_ownership(hostname, tracker)
+        except SafeguardError as e:
+            result = f"**Safeguard blocked**: {e}"
+            await _log_call("run_command", _args, result, "safeguard_blocked", _t0, hostname=hostname)
+            return result
+
+        # Clamp timeout
+        timeout = max(1, min(timeout, 300))
+
+        service = tracker.get_service(hostname) or await _get_service_for_hostname(hostname)
+        if not service:
+            result = f"Could not determine service for '{hostname}'."
+            await _log_call("run_command", _args, result, "error", _t0, hostname=hostname)
+            return result
+
+        try:
+            api_result = await client.run_command(service, hostname, command, timeout)
+        except CLMError as e:
+            result = f"**Error running command**: {e}"
+            await _log_call("run_command", _args, result, "error", _t0, hostname=hostname)
+            return result
+
+        stdout = api_result.get("stdout", "").strip()
+        stderr = api_result.get("stderr", "").strip()
+        exit_code = api_result.get("exit_code", -1)
+        timed_out = api_result.get("timed_out", False)
+
+        if timed_out:
+            result = f"**Command timed out** after {timeout}s on `{hostname}`\n"
+        elif exit_code == 0:
+            result = f"**Command succeeded** on `{hostname}` (exit code 0)\n"
+        else:
+            result = f"**Command failed** on `{hostname}` (exit code {exit_code})\n"
+
+        if stdout:
+            result += f"\n**stdout:**\n```\n{stdout}\n```"
+        if stderr:
+            result += f"\n**stderr:**\n```\n{stderr}\n```"
+        if not stdout and not stderr:
+            result += "\n*(no output)*"
+
+        status = "success" if exit_code == 0 else ("timeout" if timed_out else "error")
+        await _log_call("run_command", _args, result, status, _t0, hostname=hostname)
+        return result
+
+    @mcp.tool()
     async def browse_files(hostname: str, path: str = "/") -> str:
         """List directory contents on an MCP-created instance.
 

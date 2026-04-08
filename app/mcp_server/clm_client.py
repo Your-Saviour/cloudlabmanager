@@ -196,6 +196,13 @@ class CLMClient:
             body["inputs"] = inputs
         return await self._request("POST", f"/api/services/{service}/run", json=body)
 
+    async def run_command(self, service: str, hostname: str, command: str, timeout: int = 60) -> dict:
+        return await self._request(
+            "POST", f"/api/services/{service}/run-command",
+            json={"hostname": hostname, "command": command, "timeout": timeout},
+            timeout=timeout + 15,  # HTTP timeout slightly longer than SSH timeout
+        )
+
     # --- File Browser ---
 
     async def browse_files(self, service: str, hostname: str, path: str) -> dict:

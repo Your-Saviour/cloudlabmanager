@@ -15,13 +15,14 @@ from sqlalchemy.orm import Session
 from database import ServiceACL, User
 from permissions import get_user_permissions, has_permission
 
-SERVICE_PERMISSIONS = {"view", "deploy", "stop", "config"}
+SERVICE_PERMISSIONS = {"view", "deploy", "stop", "config", "exec"}
 
 # Map service ACL permission suffixes to global RBAC codenames
 _GLOBAL_PERM_MAP = {
     "view": "services.view",
     "deploy": "services.deploy",
     "run": "services.deploy",
+    "exec": "services.exec",
     "stop": "services.stop",
     "config": "services.config.view",
 }
