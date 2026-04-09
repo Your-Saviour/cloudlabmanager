@@ -451,6 +451,9 @@ async def create_personal_instance(
     # Inject pi_source for MCP service account (server-side, cannot be spoofed)
     if user.username == _MCP_SERVICE_USERNAME:
         inputs["pi_source"] = "mcp"
+        # Pass through ttl_hours from MCP (already clamped to max by MCP safeguards)
+        if "ttl_hours" in user_inputs_raw:
+            inputs["ttl_hours"] = user_inputs_raw["ttl_hours"]
 
     deploy_script = config.get("deploy_script", "deploy.sh").replace(".sh", "")
 
