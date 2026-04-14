@@ -331,14 +331,29 @@ def register_tools(
             if live:
                 ttl = live.get("ttl_hours", "?")
                 created = live.get("created_at", "?")
-                results.append(
+
+                # Extract DNS name from service outputs
+                dns_name = None
+                for out in live.get("outputs", []):
+                    name = out.get("name", "")
+                    val = out.get("value", "")
+                    if name in ("ssh_host", "dns_name", "hostname_fqdn") and val:
+                        dns_name = val
+                        break
+
+                line = (
                     f"- `{hostname}` — {live.get('power_status', '?')} | "
                     f"service: {live.get('service', '?')} | "
                     f"region: {live.get('region', '?')} | "
                     f"plan: {live.get('plan', '?')} | "
+                )
+                if dns_name:
+                    line += f"DNS: {dns_name} | "
+                line += (
                     f"IP: {live.get('ip_address', '?')} | "
                     f"TTL: {ttl}h | created: {created}"
                 )
+                results.append(line)
             else:
                 results.append(f"- `{hostname}` — not found in CLM (may be destroying)")
 

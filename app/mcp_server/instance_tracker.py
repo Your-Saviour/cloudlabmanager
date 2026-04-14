@@ -65,6 +65,10 @@ class InstanceTracker:
 
         Expects the response from GET /api/mcp/instances which already
         filters for pi-source:mcp. Called on startup to recover state.
+
+        Replaces the tracked set with what CLM reports as authoritative,
+        preserving only in-flight instances that have a pending job (not
+        yet visible in CLM inventory).
         """
         recovered: dict[str, str] = {}
         for inst in mcp_instances:
@@ -72,15 +76,28 @@ class InstanceTracker:
             if hostname:
                 recovered[hostname] = inst.get("service", "")
 
-        # Merge with existing tracked hostnames (preserves in-flight deploys)
-        merged = {**recovered, **self._created}
         if recovered:
             logger.info(
                 "Recovered %d MCP instance(s) from CLM: %s",
                 len(recovered), ", ".join(sorted(recovered)),
             )
+        else:
+            logger.info("No existing MCP instances found in CLM")
+
+        # Keep in-flight instances (pending jobs not yet visible in CLM inventory)
+        in_flight_hostnames = set(self._pending_jobs.values())
+        in_flight = {
+            h: s for h, s in self._created.items() if h in in_flight_hostnames
+        }
+
+        # CLM is authoritative — replace tracked set, preserving in-flight only
+        merged = {**recovered, **in_flight}
         if merged != self._created:
+            dropped = set(self._created) - set(merged)
+            if dropped:
+                logger.info(
+                    "Dropping %d stale instance(s) no longer in CLM: %s",
+                    len(dropped), ", ".join(sorted(dropped)),
+                )
             self._created = merged
             logger.info("Tracker now has %d instance(s)", len(merged))
-        elif not recovered:
-            logger.info("No existing MCP instances found in CLM")
