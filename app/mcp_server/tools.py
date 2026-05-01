@@ -45,6 +45,25 @@ def register_tools(
             except Exception as e:
                 logger.error("Initialization failed: %s", e)
 
+    async def _check_ownership(hostname: str):
+        """Check ownership, re-syncing from CLM if the tracker doesn't recognise the hostname.
+
+        When the MCP stdio process restarts (e.g. after Claude Code context compaction)
+        the in-memory tracker may be empty if the initial sync failed or hadn't run yet.
+        Before blocking the call we do one live re-sync so a valid MCP-created instance
+        isn't incorrectly rejected just because of transient tracker state loss.
+        """
+        if tracker.is_mine(hostname):
+            return
+        # Not in tracker — attempt a live re-sync then recheck.
+        try:
+            mcp_instances = await client.get_mcp_instances()
+            tracker.sync_from_clm(mcp_instances)
+            logger.info("Ownership fallback: re-synced %d instance(s) from CLM", len(mcp_instances))
+        except Exception as e:
+            logger.warning("Ownership fallback sync failed: %s", e)
+        check_ownership(hostname, tracker)
+
     async def _log_call(
         tool_name: str, arguments: dict | None, result: str,
         status: str, start_time: float,
@@ -271,7 +290,7 @@ def register_tools(
         _t0 = time.monotonic()
         _args = {"hostname": hostname}
         try:
-            check_ownership(hostname, tracker)
+            await _check_ownership(hostname)
         except SafeguardError as e:
             result = f"**Safeguard blocked**: {e}"
             await _log_call("destroy_instance", _args, result, "safeguard_blocked", _t0, hostname=hostname)
@@ -374,7 +393,7 @@ def register_tools(
         _t0 = time.monotonic()
         _args = {"hostname": hostname}
         try:
-            check_ownership(hostname, tracker)
+            await _check_ownership(hostname)
         except SafeguardError as e:
             result = f"**Safeguard blocked**: {e}"
             await _log_call("get_connection_info", _args, result, "safeguard_blocked", _t0, hostname=hostname)
@@ -453,7 +472,7 @@ def register_tools(
         config = get_config()
 
         try:
-            check_ownership(hostname, tracker)
+            await _check_ownership(hostname)
         except SafeguardError as e:
             result = f"**Safeguard blocked**: {e}"
             await _log_call("extend_ttl", _args, result, "safeguard_blocked", _t0, hostname=hostname)
@@ -495,7 +514,7 @@ def register_tools(
         _t0 = time.monotonic()
         _args = {"hostname": hostname, "service": service, "script": script, "inputs": inputs}
         try:
-            check_ownership(hostname, tracker)
+            await _check_ownership(hostname)
         except SafeguardError as e:
             result = f"**Safeguard blocked**: {e}"
             await _log_call("run_script", _args, result, "safeguard_blocked", _t0, hostname=hostname)
@@ -553,7 +572,7 @@ def register_tools(
         _t0 = time.monotonic()
         _args = {"hostname": hostname, "command": command, "timeout": timeout}
         try:
-            check_ownership(hostname, tracker)
+            await _check_ownership(hostname)
         except SafeguardError as e:
             result = f"**Safeguard blocked**: {e}"
             await _log_call("run_command", _args, result, "safeguard_blocked", _t0, hostname=hostname)
@@ -610,7 +629,7 @@ def register_tools(
         _t0 = time.monotonic()
         _args = {"hostname": hostname, "path": path}
         try:
-            check_ownership(hostname, tracker)
+            await _check_ownership(hostname)
         except SafeguardError as e:
             result = f"**Safeguard blocked**: {e}"
             await _log_call("browse_files", _args, result, "safeguard_blocked", _t0, hostname=hostname)
@@ -659,7 +678,7 @@ def register_tools(
         _t0 = time.monotonic()
         _args = {"hostname": hostname, "path": path, "lines": lines}
         try:
-            check_ownership(hostname, tracker)
+            await _check_ownership(hostname)
         except SafeguardError as e:
             result = f"**Safeguard blocked**: {e}"
             await _log_call("preview_file", _args, result, "safeguard_blocked", _t0, hostname=hostname)
