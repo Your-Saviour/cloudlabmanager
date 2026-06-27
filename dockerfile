@@ -57,8 +57,11 @@ RUN ansible-galaxy collection install vultr.cloud community.general community.do
 # application/x-www-form-urlencoded and Vultr rejects it ("Invalid form-encoded
 # data" / "Missing name field"). Inject the missing header.
 RUN python3 - <<'PY'
-import glob, sys
-paths = glob.glob("/**/ansible_collections/vultr/cloud/plugins/module_utils/vultr_v2.py", recursive=True)
+import glob, os, sys
+import ansible_collections
+paths = []
+for base in ansible_collections.__path__:
+    paths += glob.glob(os.path.join(base, "vultr/cloud/plugins/module_utils/vultr_v2.py"))
 if not paths:
     sys.exit("vultr_v2.py not found")
 for f in paths:
