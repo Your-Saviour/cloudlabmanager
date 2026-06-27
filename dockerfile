@@ -52,6 +52,27 @@ COPY --from=frontend-build /frontend/dist/ ./static/
 # Install ansible collections
 RUN ansible-galaxy collection install vultr.cloud community.general community.docker community.crypto community.dns ansible.windows community.windows microsoft.ad
 
+# Patch vultr.cloud 1.14.0 for ansible-core 2.21+: the module JSON-encodes its
+# request body but never sets Content-Type, so fetch_url now labels it
+# application/x-www-form-urlencoded and Vultr rejects it ("Invalid form-encoded
+# data" / "Missing name field"). Inject the missing header.
+RUN python3 - <<'PY'
+import glob, sys
+paths = glob.glob("/**/ansible_collections/vultr/cloud/plugins/module_utils/vultr_v2.py", recursive=True)
+if not paths:
+    sys.exit("vultr_v2.py not found")
+for f in paths:
+    s = open(f).read()
+    if '"Content-Type"' in s:
+        continue
+    needle = '            "Accept": "application/json",\n        }'
+    add = '            "Accept": "application/json",\n            "Content-Type": "application/json",\n        }'
+    if needle not in s:
+        sys.exit("header block not found in %s" % f)
+    open(f, "w").write(s.replace(needle, add, 1))
+    print("patched", f)
+PY
+
 # Write build info
 RUN echo "{\"commit\": \"${BUILD_COMMIT}\", \"built_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /app/BUILD_INFO
 
