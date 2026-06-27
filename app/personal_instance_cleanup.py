@@ -10,7 +10,8 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 
-from database import SessionLocal, InventoryType, InventoryObject, JobRecord
+from database import SessionLocal, InventoryType, InventoryObject, JobRecord, AppMetadata
+from env_filter import filter_instances_cache
 import yaml
 
 logger = logging.getLogger("personal_instance_cleanup")
@@ -33,6 +34,12 @@ async def check_and_cleanup_expired(runner) -> list[str]:
     try:
         session = SessionLocal()
         try:
+            orphans_removed = _purge_orphaned_personal_instances(session)
+            if orphans_removed:
+                logger.info(
+                    "Purged %d personal instance row(s) whose VMs no longer exist in Vultr",
+                    orphans_removed,
+                )
             expired = _find_expired_hosts(session, runner)
             if not expired:
                 logger.debug("No expired personal instances found")
@@ -96,12 +103,75 @@ def _load_personal_config(service_name: str) -> dict | None:
         return None
 
 
+def _live_hostnames_from_cache(session) -> set[str] | None:
+    """
+    Return the set of hostnames currently present in the Vultr inventory cache,
+    or None if no cache is available (caller should fall back to default behavior).
+    """
+    cache = filter_instances_cache(AppMetadata.get(session, "instances_cache"))
+    if not cache:
+        return None
+    hosts = (cache.get("all", {}) or {}).get("hosts") or {}
+    return set(hosts.keys())
+
+
+def _purge_orphaned_personal_instances(session) -> int:
+    """
+    Remove inventory rows for personal instances whose VMs no longer exist in Vultr.
+
+    Out-of-band VM destruction (e.g., via the Vultr console) leaves stale rows in
+    inventory_objects. The TTL cleanup would otherwise repeatedly queue destroy
+    jobs for VMs that no longer exist, contending on SQLite and triggering
+    notification email storms. This pre-flight purge avoids that.
+    """
+    live = _live_hostnames_from_cache(session)
+    if live is None:
+        # No cache available — don't risk deleting rows we can't verify
+        return 0
+
+    inv_type = session.query(InventoryType).filter_by(slug="server").first()
+    if not inv_type:
+        return 0
+
+    cred_type = session.query(InventoryType).filter_by(slug="credential").first()
+    removed = 0
+    for obj in session.query(InventoryObject).filter_by(type_id=inv_type.id).all():
+        try:
+            data = json.loads(obj.data)
+        except (TypeError, ValueError):
+            continue
+        if "personal-instance" not in (data.get("vultr_tags") or []):
+            continue
+        hostname = data.get("hostname", "")
+        if not hostname or hostname in live:
+            continue
+
+        # Cascade-clean credentials tagged with this instance's hostname
+        if cred_type:
+            tag_name = f"instance:{hostname}"
+            for cred in (
+                session.query(InventoryObject)
+                .filter_by(type_id=cred_type.id)
+                .all()
+            ):
+                if any(t.name == tag_name for t in cred.tags):
+                    session.delete(cred)
+
+        session.delete(obj)
+        removed += 1
+
+    if removed:
+        session.commit()
+    return removed
+
+
 def _find_expired_hosts(session, runner) -> list[dict]:
     """Find all personal instances whose TTL has expired."""
     inv_type = session.query(InventoryType).filter_by(slug="server").first()
     if not inv_type:
         return []
 
+    live_hostnames = _live_hostnames_from_cache(session)
     now = datetime.now(timezone.utc)
     expired = []
 
@@ -144,6 +214,16 @@ def _find_expired_hosts(session, runner) -> list[dict]:
         if now >= expires_at:
             hostname = data.get("hostname", "")
             if not hostname or not service:
+                continue
+
+            # If the Vultr cache says this host is gone, do not run destroy.sh.
+            # The pre-flight purge above will have removed the row, but this is
+            # a defensive guard for races and for stale rows we couldn't purge.
+            if live_hostnames is not None and hostname not in live_hostnames:
+                logger.debug(
+                    "Skipping %s — not present in Vultr cache (out-of-band destruction)",
+                    hostname,
+                )
                 continue
 
             # Skip if there's already a running destroy job for this host
