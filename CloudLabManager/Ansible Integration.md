@@ -12,7 +12,8 @@ The `AnsibleRunner` class (`app/ansible_runner.py`) handles:
 - **Deployment** — runs the standard deploy flow via `deploy.sh`
 - **Multi-script support** — runs named scripts from `scripts.yaml` with input parameters
 - **Stopping** — generates inventory then runs stop-instances
-- **Inventory refresh** — runs generate-inventory and caches results
+- **Inventory refresh** — runs generate-inventory and caches results. Only one refresh runs at a time (`get_running_refresh` dedupe); callers requesting a refresh while one is running get the existing job back
+- **Auto-refresh after deploy** — successful deploys automatically start an inventory refresh so new instances appear in inventory, health checks, and cost tracking without a manual refresh. Bulk deploys fire a single refresh from the parent job after all children finish; the deploy job's output logs `[Inventory refresh started: job {id}]`
 - **Job tracking** — each operation creates a Job with unique ID, persisted to SQLite
 - **Config management** — read/write service config files (instance.yaml, config.yaml, scripts.yaml)
 - **File management** — list, upload, download, edit, delete files in service inputs/outputs directories

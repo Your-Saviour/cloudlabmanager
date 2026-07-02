@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Trash2, Play, Plus, X, Terminal, Monitor, Camera, MoreHorizontal, RotateCcw, FolderOpen } from 'lucide-react'
 import api from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useHasPermission } from '@/lib/permissions'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -141,7 +142,7 @@ export default function InventoryDetailPage() {
       setSnapshotDescription('')
       if (data.job_id) navigate(`/jobs/${data.job_id}`)
     },
-    onError: () => toast.error('Failed to create snapshot'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to create snapshot')),
   })
 
   const deleteSnapshotMutation = useMutation({
@@ -155,7 +156,7 @@ export default function InventoryDetailPage() {
       setDeleteSnapshotTarget(null)
       if (data.job_id) navigate(`/jobs/${data.job_id}`)
     },
-    onError: () => toast.error('Failed to delete snapshot'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to delete snapshot')),
   })
 
   const restoreSnapshotMutation = useMutation({
@@ -174,7 +175,7 @@ export default function InventoryDetailPage() {
       setRestoreSnapshot(null)
       if (data.job_id) navigate(`/jobs/${data.job_id}`)
     },
-    onError: () => toast.error('Failed to restore snapshot'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to restore snapshot')),
   })
 
   const openRestore = (snap: Snapshot) => {
@@ -322,7 +323,7 @@ export default function InventoryDetailPage() {
       setEditing(false)
       toast.success('Updated successfully')
     },
-    onError: () => toast.error('Update failed'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Update failed')),
   })
 
   const deleteMutation = useMutation({
@@ -331,7 +332,7 @@ export default function InventoryDetailPage() {
       toast.success('Deleted')
       navigate(`/inventory/${typeSlug}`)
     },
-    onError: () => toast.error('Delete failed'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Delete failed')),
   })
 
   const addTagMutation = useMutation({
@@ -355,9 +356,11 @@ export default function InventoryDetailPage() {
         navigate(`/jobs/${res.data.job_id}`)
       } else {
         toast.success('Action completed')
+        queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug, objId] })
+        queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
       }
     },
-    onError: () => toast.error('Action failed'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Action failed')),
   })
 
   if (isLoading) {

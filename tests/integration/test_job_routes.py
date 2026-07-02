@@ -307,3 +307,51 @@ class TestObjectIdResponseFields:
         data = resp.json()
         assert data["object_id"] is None
         assert data["type_slug"] is None
+
+
+class TestStatusAndLiteFilters:
+    """Tests for the status and lite query parameters on GET /api/jobs."""
+
+    def _add_jobs(self, test_app):
+        running = Job(
+            id="run1", service="svc-a", action="deploy", status="running",
+            started_at="2024-01-01T00:00:00", user_id=1, username="admin",
+            output=["line1"],
+        )
+        done = Job(
+            id="done1", service="svc-b", action="deploy", status="completed",
+            started_at="2024-01-01T00:00:00", user_id=1, username="admin",
+            output=["line1", "line2"],
+        )
+        test_app.state.ansible_runner.jobs["run1"] = running
+        test_app.state.ansible_runner.jobs["done1"] = done
+
+    async def test_status_filter_returns_only_matching(self, client, auth_headers, test_app):
+        self._add_jobs(test_app)
+        resp = await client.get("/api/jobs?status=running", headers=auth_headers)
+        assert resp.status_code == 200
+        jobs = resp.json()["jobs"]
+        assert [j["id"] for j in jobs] == ["run1"]
+
+    async def test_lite_returns_empty_output(self, client, auth_headers, test_app):
+        self._add_jobs(test_app)
+        resp = await client.get("/api/jobs?lite=true", headers=auth_headers)
+        assert resp.status_code == 200
+        jobs = resp.json()["jobs"]
+        assert len(jobs) == 2
+        assert all(j["output"] == [] for j in jobs)
+
+    async def test_status_and_lite_combined(self, client, auth_headers, test_app):
+        self._add_jobs(test_app)
+        resp = await client.get("/api/jobs?status=running&lite=true", headers=auth_headers)
+        assert resp.status_code == 200
+        jobs = resp.json()["jobs"]
+        assert [j["id"] for j in jobs] == ["run1"]
+        assert jobs[0]["output"] == []
+
+    async def test_no_filters_keep_output(self, client, auth_headers, test_app):
+        self._add_jobs(test_app)
+        resp = await client.get("/api/jobs", headers=auth_headers)
+        assert resp.status_code == 200
+        jobs = {j["id"]: j for j in resp.json()["jobs"]}
+        assert jobs["done1"]["output"] == ["line1", "line2"]

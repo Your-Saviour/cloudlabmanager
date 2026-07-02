@@ -10,6 +10,7 @@ import {
   Compass,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { useHasPermission } from '@/lib/permissions'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -96,6 +97,7 @@ export default function ServicesPage() {
       const { data } = await api.get('/api/inventory/service')
       return (data.objects || []) as InventoryObject[]
     },
+    refetchInterval: 15000,
   })
 
   const toggleSelect = (id: number) => {
@@ -236,6 +238,8 @@ export default function ServicesPage() {
       } else {
         toast.success('Action completed')
         queryClient.invalidateQueries({ queryKey: ['active-deployments'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory', 'service'] })
+        queryClient.invalidateQueries({ queryKey: ['service-summaries'] })
       }
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Action failed'),
@@ -247,7 +251,7 @@ export default function ServicesPage() {
       setStopAllOpen(false)
       if (res.data.job_id) navigate(`/jobs/${res.data.job_id}`)
     },
-    onError: () => toast.error('Stop all failed'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Stop all failed')),
   })
 
   const bulkStopMutation = useMutation({

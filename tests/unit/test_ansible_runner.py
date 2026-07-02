@@ -326,3 +326,82 @@ class TestGetAllInstanceConfigs:
 
         runner = AnsibleRunner()
         assert runner.get_all_instance_configs() == {}
+
+
+class TestRefreshDedupe:
+    def test_get_running_refresh_finds_inventory_refresh(self):
+        from models import Job
+        runner = AnsibleRunner()
+        runner.jobs["r1"] = Job(id="r1", service="inventory", action="refresh", status="running")
+        found = runner.get_running_refresh()
+        assert found is not None
+        assert found.id == "r1"
+
+    def test_get_running_refresh_ignores_cost_refresh_and_finished(self):
+        from models import Job
+        runner = AnsibleRunner()
+        runner.jobs["c1"] = Job(id="c1", service="costs", action="refresh", status="running")
+        runner.jobs["r2"] = Job(id="r2", service="inventory", action="refresh", status="completed")
+        assert runner.get_running_refresh() is None
+
+    @pytest.mark.asyncio
+    async def test_refresh_instances_returns_existing_running_job(self):
+        from models import Job
+        runner = AnsibleRunner()
+        existing = Job(id="r1", service="inventory", action="refresh", status="running")
+        runner.jobs["r1"] = existing
+        job = await runner.refresh_instances()
+        assert job is existing
+        assert len(runner.jobs) == 1
+
+
+class TestDeployAutoRefresh:
+    def _prepare_runner(self, mock_services_dir, monkeypatch, deploy_ok=True):
+        import sys
+        import types
+        from unittest.mock import AsyncMock
+        import ansible_runner
+        from models import Job
+
+        monkeypatch.setattr(ansible_runner, "SERVICES_DIR", str(mock_services_dir))
+        monkeypatch.setitem(sys.modules, "inventory_sync",
+                            types.SimpleNamespace(run_sync_for_source=lambda source: None))
+
+        runner = AnsibleRunner()
+        monkeypatch.setattr(runner, "_run_command", AsyncMock(return_value=deploy_ok))
+        monkeypatch.setattr(runner, "_sync_service_outputs", lambda job, name: None)
+        monkeypatch.setattr(runner, "_persist_job", lambda job: None)
+        monkeypatch.setattr(runner, "_notify_job", AsyncMock())
+        refresh_job = Job(id="rf", service="inventory", action="refresh", status="running")
+        refresh_mock = AsyncMock(return_value=refresh_job)
+        monkeypatch.setattr(runner, "refresh_instances", refresh_mock)
+        return runner, refresh_mock
+
+    @pytest.mark.asyncio
+    async def test_successful_deploy_starts_inventory_refresh(self, mock_services_dir, monkeypatch):
+        from models import Job
+        runner, refresh_mock = self._prepare_runner(mock_services_dir, monkeypatch)
+        job = Job(id="d1", service="test-service", action="deploy", status="running")
+        await runner._run_deploy(job)
+        assert job.status == "completed"
+        refresh_mock.assert_awaited_once()
+        assert any("Inventory refresh started" in line for line in job.output)
+
+    @pytest.mark.asyncio
+    async def test_bulk_child_deploy_skips_refresh(self, mock_services_dir, monkeypatch):
+        from models import Job
+        runner, refresh_mock = self._prepare_runner(mock_services_dir, monkeypatch)
+        job = Job(id="d2", service="test-service", action="deploy", status="running",
+                  parent_job_id="parent1")
+        await runner._run_deploy(job)
+        assert job.status == "completed"
+        refresh_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_failed_deploy_skips_refresh(self, mock_services_dir, monkeypatch):
+        from models import Job
+        runner, refresh_mock = self._prepare_runner(mock_services_dir, monkeypatch, deploy_ok=False)
+        job = Job(id="d3", service="test-service", action="deploy", status="running")
+        await runner._run_deploy(job)
+        assert job.status == "failed"
+        refresh_mock.assert_not_awaited()

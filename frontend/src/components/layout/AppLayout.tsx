@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useJobCompletionWatcher } from '@/hooks/useJobCompletionWatcher'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { CommandPalette } from './CommandPalette'
@@ -17,6 +18,7 @@ export function AppLayout() {
   const prefsLoaded = usePreferencesStore((s) => s.loaded)
   const location = useLocation()
   useKeyboardShortcuts()
+  useJobCompletionWatcher()
 
   useEffect(() => {
     if (!prefsLoaded) loadPreferences()

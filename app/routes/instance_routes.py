@@ -60,12 +60,16 @@ async def refresh_instances(request: Request,
                             user: User = Depends(require_permission("instances.refresh")),
                             session: Session = Depends(get_db_session)):
     runner = request.app.state.ansible_runner
+    existing = runner.get_running_refresh()
+    if existing:
+        return {"job_id": existing.id, "status": existing.status, "already_running": True}
+
     job = await runner.refresh_instances(user_id=user.id, username=user.username)
 
     log_action(session, user.id, user.username, "instance.refresh", "instances",
                ip_address=request.client.host if request.client else None)
 
-    return {"job_id": job.id, "status": job.status}
+    return {"job_id": job.id, "status": job.status, "already_running": False}
 
 
 def _authenticate_ws_token(token: str) -> dict:

@@ -123,6 +123,8 @@ def _get_all_jobs(runner, session: Session, user: User) -> list[dict]:
 async def list_jobs(request: Request,
                     parent_job_id: str | None = None,
                     object_id: int | None = None,
+                    status: str | None = None,
+                    lite: bool = False,
                     user: User = Depends(get_current_user)):
     runner = request.app.state.ansible_runner
     session = SessionLocal()
@@ -132,6 +134,10 @@ async def list_jobs(request: Request,
             jobs = [j for j in jobs if j.get("parent_job_id") == parent_job_id]
         if object_id is not None:
             jobs = [j for j in jobs if j.get("object_id") == object_id]
+        if status:
+            jobs = [j for j in jobs if j.get("status") == status]
+        if lite:
+            jobs = [{**j, "output": []} for j in jobs]
         return {"jobs": jobs}
     finally:
         session.close()

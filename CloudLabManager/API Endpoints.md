@@ -188,7 +188,7 @@ The personal SSH key is returned in the `GET /api/auth/me` response as `personal
 | Method | Endpoint | Permission | Description |
 |--------|----------|------------|-------------|
 | GET | `/api/instances` | `instances.view` | List cached Vultr instances |
-| GET | `/api/instances/refresh` | `instances.refresh` | Re-query Vultr API via generate-inventory |
+| POST | `/api/instances/refresh` | `instances.refresh` | Re-query Vultr API via generate-inventory. Returns `{job_id, status, already_running}`; if a refresh job is already running, returns that job with `already_running: true` instead of starting a new one |
 | POST | `/api/instances/{label}/{region}/stop` | `instances.stop` | Stop a specific instance |
 
 ## Services
@@ -444,6 +444,8 @@ A directory in `cloudlab/services/` is considered a deployable service if it con
 |-----------|------|-------------|
 | `parent_job_id` | string | Filter jobs by parent job ID |
 | `object_id` | int | Filter jobs by inventory object ID (returns only jobs targeting that object) |
+| `status` | string | Filter jobs by status (`running`, `completed`, `failed`) |
+| `lite` | bool | Return jobs with empty `output` arrays (lightweight polling; used by the frontend job-completion watcher) |
 
 ### Job Object
 

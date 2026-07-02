@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Tag as TagIcon, Search, Trash2, Pencil, Terminal, Monitor, RefreshCw, Square, Eye, Shield } from 'lucide-react'
 import api from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { useInventoryStore } from '@/stores/inventoryStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useHasPermission } from '@/lib/permissions'
@@ -31,7 +32,7 @@ import { toast } from 'sonner'
 import { CredentialViewModal } from '@/components/inventory/CredentialViewModal'
 import { ReauthDialog } from '@/components/inventory/ReauthDialog'
 import type { ColumnDef, RowSelectionState } from '@tanstack/react-table'
-import type { InventoryObject, Tag } from '@/types'
+import type { InventoryObject, Tag, Job } from '@/types'
 
 export default function InventoryHubPage() {
   const { typeSlug } = useParams<{ typeSlug: string }>()
@@ -117,7 +118,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
       }
       queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
     },
-    onError: () => toast.error('Bulk delete failed'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Bulk delete failed')),
   })
 
   // Bulk tag management
@@ -152,7 +153,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
       }
       queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
     },
-    onError: () => toast.error('Bulk tag update failed'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Bulk tag update failed')),
   })
 
   // Bulk action (destroy, stop, etc.)
@@ -197,8 +198,9 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
         ? `Created ${data.created} access rules`
         : `Removed ${data.deleted} access rules`
       toast.success(msg)
+      queryClient.invalidateQueries({ queryKey: ['credential-access-rules'] })
     },
-    onError: () => toast.error('Bulk access update failed'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Bulk access update failed')),
   })
 
   // Credential reveal with re-auth gate
@@ -241,8 +243,8 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
       const { data } = await api.get(`/api/inventory/credential/${credentialId}/key-content`)
       setCredModalValue(data.private_key || '')
       setCredModalPublicKey(data.public_key || '')
-    } catch {
-      toast.error('Failed to fetch SSH keys')
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Failed to fetch SSH keys'))
       setCredModalOpen(false)
     } finally {
       setCredModalLoading(false)
@@ -267,7 +269,7 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
         toast.warning(`${data.skipped.length} items skipped`)
       }
     },
-    onError: () => toast.error('Bulk action failed'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Bulk action failed')),
   })
 
   const destroyMutation = useMutation({
@@ -285,9 +287,9 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
         queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
       }
     },
-    onError: () => {
+    onError: (err) => {
       setDestroyTarget(null)
-      toast.error('Destroy failed')
+      toast.error(getErrorMessage(err, 'Destroy failed'))
     },
   })
 
@@ -306,38 +308,49 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
   const syncSource = typeConfig?.sync && typeof typeConfig.sync === 'object' ? typeConfig.sync.source : typeConfig?.sync
   const needsInstanceRefresh = syncSource === 'vultr_inventory'
 
+  // Shares the ['jobs', 'watch'] cache with useJobCompletionWatcher, so this adds no extra polling.
+  // The watcher invalidates inventory queries when the refresh job completes.
+  const { data: runningJobs = [] } = useQuery({
+    queryKey: ['jobs', 'watch'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/jobs', { params: { status: 'running', lite: true } })
+      return (data.jobs || []) as Job[]
+    },
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    enabled: needsInstanceRefresh,
+  })
+  const refreshInProgress = needsInstanceRefresh
+    && runningJobs.some((j) => j.action === 'refresh' && j.service === 'inventory')
+
   const syncMutation = useMutation({
     mutationFn: async () => {
-      if (!hasSync) return
+      if (!hasSync) return null
 
       if (needsInstanceRefresh) {
-        // Run the Ansible playbook to refresh from Vultr API
+        // Kicks off the Vultr refresh job; the job-completion watcher picks up the result
         const { data } = await api.post('/api/instances/refresh')
-        const jobId = data.job_id
-        if (!jobId) return
-
-        // Poll until the job finishes (it also syncs inventory objects)
-        for (let i = 0; i < 120; i++) {
-          await new Promise((r) => setTimeout(r, 2000))
-          const { data: job } = await api.get(`/api/jobs/${jobId}`)
-          if (job.status !== 'running') {
-            if (job.status === 'failed') {
-              throw new Error('Refresh job failed')
-            }
-            break
-          }
-        }
-      } else {
-        await api.post(`/api/inventory/${typeSlug}/sync`)
+        return { kind: 'job' as const, alreadyRunning: !!data.already_running }
       }
+      await api.post(`/api/inventory/${typeSlug}/sync`)
+      return { kind: 'sync' as const }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (result?.kind === 'job') {
+        if (result.alreadyRunning) {
+          toast.info('An inventory refresh is already running')
+        } else {
+          toast.info('Inventory refresh started — results will update automatically')
+        }
+        queryClient.invalidateQueries({ queryKey: ['jobs', 'watch'] })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
       toast.success(`${typeConfig?.label || typeSlug} refreshed`)
     },
-    onError: () => {
+    onError: (err) => {
       queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
-      toast.error(`Failed to refresh ${typeConfig?.label || typeSlug}`)
+      toast.error(getErrorMessage(err, `Failed to refresh ${typeConfig?.label || typeSlug}`))
     },
   })
 
@@ -586,8 +599,9 @@ function InventoryListView({ typeSlug }: { typeSlug: string }) {
   return (
     <div>
       <PageHeader title={typeConfig?.label || typeSlug} description={`Manage ${typeConfig?.label || typeSlug} inventory`}>
-        <Button variant="outline" size="sm" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
-          <RefreshCw className={`mr-2 h-3 w-3 ${syncMutation.isPending ? 'animate-spin' : ''}`} /> Refresh
+        <Button variant="outline" size="sm" onClick={() => syncMutation.mutate()} disabled={refreshInProgress || syncMutation.isPending}>
+          <RefreshCw className={`mr-2 h-3 w-3 ${refreshInProgress || syncMutation.isPending ? 'animate-spin' : ''}`} />
+          {refreshInProgress ? 'Refreshing…' : 'Refresh'}
         </Button>
         {canCreate && (
           <Button size="sm" onClick={() => navigate(`/inventory/${typeSlug}/new`)}>
@@ -827,7 +841,7 @@ function TagsView() {
       setTagName('')
       toast.success('Tag created')
     },
-    onError: () => toast.error('Failed to create tag'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to create tag')),
   })
 
   const updateMutation = useMutation({
@@ -838,7 +852,7 @@ function TagsView() {
       setEditTag(null)
       toast.success('Tag updated')
     },
-    onError: () => toast.error('Failed to update tag'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to update tag')),
   })
 
   const deleteMutation = useMutation({
@@ -848,7 +862,7 @@ function TagsView() {
       setDeleteTag(null)
       toast.success('Tag deleted')
     },
-    onError: () => toast.error('Failed to delete tag'),
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to delete tag')),
   })
 
   return (

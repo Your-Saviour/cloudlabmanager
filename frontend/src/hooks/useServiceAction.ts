@@ -42,6 +42,8 @@ export function useServiceAction() {
       } else {
         toast.success('Action completed')
         queryClient.invalidateQueries({ queryKey: ['active-deployments'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory', 'service'] })
+        queryClient.invalidateQueries({ queryKey: ['service-summaries'] })
       }
     },
     onError: (err: any) => toast.error(err.response?.data?.detail || 'Action failed'),

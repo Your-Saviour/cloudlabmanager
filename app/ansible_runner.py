@@ -904,6 +904,14 @@ class AnsibleRunner:
             parent.status = "failed" if len(failed) == len(child_jobs) else "completed"
         else:
             parent.status = "completed"
+
+        if len(failed) < len(child_jobs):
+            try:
+                refresh_job = await self.refresh_instances(user_id=parent.user_id, username=parent.username)
+                parent.output.append(f"[Inventory refresh started: job {refresh_job.id}]")
+            except Exception as e:
+                parent.output.append(f"[Warning: inventory refresh failed to start: {e}]")
+
         parent.finished_at = datetime.now(timezone.utc).isoformat()
         self._persist_job(parent)
         await self._notify_job(parent)
@@ -927,7 +935,18 @@ class AnsibleRunner:
         asyncio.create_task(self._run_stop_instance(job, label, region))
         return job
 
+    def get_running_refresh(self) -> Job | None:
+        for j in self.jobs.values():
+            if j.action == "refresh" and j.service == "inventory" and j.status == "running":
+                return j
+        return None
+
     async def refresh_instances(self, user_id: int | None = None, username: str | None = None) -> Job:
+        # Dedupe: a refresh reconciles full Vultr state, so a running one covers all callers
+        existing = self.get_running_refresh()
+        if existing:
+            return existing
+
         job_id = str(uuid.uuid4())[:8]
         job = Job(
             id=job_id,
@@ -997,6 +1016,13 @@ class AnsibleRunner:
                 job.output.append("[SSH credentials synced]")
             except Exception as e:
                 job.output.append(f"[Warning: SSH credential sync failed: {e}]")
+
+            if not job.parent_job_id:  # bulk children skip; the bulk parent fires one refresh
+                try:
+                    refresh_job = await self.refresh_instances(user_id=job.user_id, username=job.username)
+                    job.output.append(f"[Inventory refresh started: job {refresh_job.id}]")
+                except Exception as e:
+                    job.output.append(f"[Warning: inventory refresh failed to start: {e}]")
 
         job.status = "completed" if ok else "failed"
         job.finished_at = datetime.now(timezone.utc).isoformat()

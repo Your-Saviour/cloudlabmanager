@@ -117,3 +117,32 @@ class TestRefreshInstances:
         assert entry is not None
         assert entry.username == "admin"
         assert entry.resource == "instances"
+
+class TestRefreshDedupeRoute:
+    async def test_refresh_returns_existing_running_job(self, client, auth_headers, test_app):
+        from models import Job
+        existing = Job(
+            id="ref99",
+            service="inventory",
+            action="refresh",
+            status="running",
+            started_at="2024-01-01T00:00:00",
+        )
+        test_app.state.ansible_runner.jobs["ref99"] = existing
+
+        resp = await client.post("/api/instances/refresh", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["job_id"] == "ref99"
+        assert data["already_running"] is True
+
+    async def test_refresh_reports_not_already_running(self, client, auth_headers, test_app):
+        from unittest.mock import AsyncMock
+        mock_job = _mock_job(job_id="refnew")
+        test_app.state.ansible_runner.refresh_instances = AsyncMock(return_value=mock_job)
+
+        resp = await client.post("/api/instances/refresh", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["job_id"] == "refnew"
+        assert data["already_running"] is False

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 import api from '@/lib/api'
 import { useInventoryStore } from '@/stores/inventoryStore'
@@ -16,6 +16,7 @@ import type { InventoryField } from '@/types'
 export default function InventoryCreatePage() {
   const { typeSlug } = useParams<{ typeSlug: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const types = useInventoryStore((s) => s.types)
   const typeConfig = types.find((t) => t.slug === typeSlug)
 
@@ -33,6 +34,7 @@ export default function InventoryCreatePage() {
       api.post(`/api/inventory/${typeSlug}`, body),
     onSuccess: (res) => {
       toast.success('Created successfully')
+      queryClient.invalidateQueries({ queryKey: ['inventory', typeSlug] })
       const id = res.data.id || res.data.object?.id
       if (id) navigate(`/inventory/${typeSlug}/${id}`)
       else navigate(`/inventory/${typeSlug}`)

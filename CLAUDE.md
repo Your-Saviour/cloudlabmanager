@@ -18,7 +18,7 @@ On first boot, create an admin account and enter the Ansible vault password.
 ## Architecture
 
 - **Backend**: FastAPI (Python) with SQLAlchemy ORM and SQLite database
-- **Frontend**: Vanilla HTML/CSS/JS SPA (hash-routed, no build step)
+- **Frontend**: React 18 + TypeScript SPA in `frontend/` (Vite build, TanStack Query, Tailwind + Radix UI); built into the image during `docker compose build`
 - **Auth**: JWT tokens (24h expiry) with RBAC permission system
 - **Ansible**: Runs playbooks via `asyncio.create_subprocess_exec`
 - **Database**: SQLite at `/data/cloudlab.db` (WAL mode)
