@@ -1,5 +1,7 @@
+import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -43,7 +45,12 @@ def _get_base_url(request: Request) -> str:
 
 @router.get("/status")
 async def auth_status():
-    return {"setup_complete": is_setup_complete()}
+    import oidc
+    return {
+        "setup_complete": is_setup_complete(),
+        "oidc_enabled": oidc.is_enabled(),
+        "oidc_provider": oidc.provider_name() if oidc.is_enabled() else None,
+    }
 
 
 @router.post("/setup")
@@ -123,6 +130,117 @@ async def login(req: LoginRequest, request: Request, session: Session = Depends(
         user=_user_dict(user),
         permissions=sorted(perms),
     )
+
+
+# --- OIDC / SSO login ---
+
+def _oidc_unique_username(session: Session, claims: dict) -> str:
+    """Derive a unique, valid CLM username from OIDC claims."""
+    raw = (claims.get("preferred_username")
+           or (claims.get("email") or "").split("@")[0]
+           or claims.get("sub") or "user")
+    base = re.sub(r"[^a-zA-Z0-9_.-]", "", raw)[:30] or "user"
+    candidate = base
+    n = 1
+    while session.query(User).filter_by(username=candidate).first() is not None:
+        suffix = str(n)
+        candidate = base[:30 - len(suffix)] + suffix
+        n += 1
+    return candidate
+
+
+@router.get("/oidc/login")
+async def oidc_login(request: Request):
+    import oidc
+    if not oidc.is_enabled():
+        raise HTTPException(status_code=404, detail="OIDC is not enabled")
+    try:
+        url, flow = await oidc.build_authorize_url()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"OIDC provider unavailable: {e}")
+    response = RedirectResponse(url=url, status_code=302)
+    response.set_cookie(
+        oidc.FLOW_COOKIE, flow,
+        max_age=oidc.FLOW_TTL_SECONDS,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        path=oidc.FLOW_COOKIE_PATH,
+    )
+    return response
+
+
+@router.get("/oidc/callback")
+async def oidc_callback(request: Request, session: Session = Depends(get_db_session)):
+    import oidc
+    if not oidc.is_enabled():
+        raise HTTPException(status_code=404, detail="OIDC is not enabled")
+
+    def _fail(reason: str) -> RedirectResponse:
+        resp = RedirectResponse(url=f"/login?oidc_error={reason}", status_code=302)
+        resp.delete_cookie(oidc.FLOW_COOKIE, path=oidc.FLOW_COOKIE_PATH)
+        return resp
+
+    if request.query_params.get("error"):
+        return _fail(request.query_params.get("error"))
+
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    flow = oidc.read_flow(request.cookies.get(oidc.FLOW_COOKIE))
+    if not code or not flow or not state or state != flow.get("state"):
+        return _fail("invalid_state")
+
+    try:
+        tokens = await oidc.exchange_code(code, flow["cv"])
+        id_token = tokens.get("id_token")
+        if not id_token:
+            return _fail("no_id_token")
+        claims = await oidc.validate_id_token(id_token, flow.get("nonce"))
+    except Exception:
+        return _fail("token_exchange_failed")
+
+    sub = claims.get("sub")
+    email = claims.get("email")
+    if not sub:
+        return _fail("no_subject")
+
+    # Find by OIDC subject, then link/adopt by email, else provision a new user.
+    user = session.query(User).filter_by(oidc_sub=sub).first()
+    if not user and email:
+        existing = session.query(User).filter_by(email=email).first()
+        if existing:
+            if not existing.oidc_sub:
+                existing.oidc_sub = sub
+            user = existing
+    if not user:
+        user = User(
+            username=_oidc_unique_username(session, claims),
+            email=email,
+            display_name=claims.get("name") or claims.get("preferred_username"),
+            oidc_sub=sub,
+            is_active=True,
+            invite_accepted_at=datetime.now(timezone.utc),
+        )
+        role = session.query(Role).filter_by(name=oidc.default_role()).first()
+        if role:
+            user.roles.append(role)
+        session.add(user)
+        session.flush()
+
+    if not user.is_active:
+        return _fail("account_disabled")
+
+    user.last_login_at = datetime.now(timezone.utc)
+    session.flush()
+
+    from audit import log_action
+    log_action(session, user.id, user.username, "login_oidc", "auth",
+               ip_address=request.client.host if request.client else None)
+
+    token = create_access_token(user)
+    resp = RedirectResponse(url=f"/auth/callback#token={token}", status_code=302)
+    resp.delete_cookie(oidc.FLOW_COOKIE, path=oidc.FLOW_COOKIE_PATH)
+    return resp
 
 
 @router.get("/me")

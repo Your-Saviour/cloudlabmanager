@@ -8,7 +8,12 @@ export function useAuthStatus() {
     queryKey: ['auth', 'status'],
     queryFn: async () => {
       const { data } = await api.get('/api/auth/status')
-      return data as { setup_complete: boolean; vault_set: boolean }
+      return data as {
+        setup_complete: boolean
+        vault_set: boolean
+        oidc_enabled?: boolean
+        oidc_provider?: string | null
+      }
     },
     staleTime: 30000,
   })

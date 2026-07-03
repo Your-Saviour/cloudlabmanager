@@ -14,6 +14,7 @@ import AcceptInvitePage from '@/pages/auth/AcceptInvitePage'
 import JoinPage from '@/pages/auth/JoinPage'
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage'
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage'
+import OidcCallback from '@/pages/auth/OidcCallback'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import InventoryHubPage from '@/pages/inventory/InventoryHubPage'
 import InventoryDetailPage from '@/pages/inventory/InventoryDetailPage'
@@ -100,6 +101,7 @@ function AppRoutes() {
       <Route path="/join/:token" element={<JoinPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+      <Route path="/auth/callback" element={<OidcCallback />} />
 
       {/* Protected routes */}
       <Route

@@ -130,6 +130,7 @@ class User(Base):
     ssh_public_key = Column(Text, nullable=True)
     personal_ssh_public_key = Column(Text, nullable=True)
     storage_quota_mb = Column(Integer, default=2048, nullable=False)  # Default 2 GB
+    oidc_sub = Column(String(255), nullable=True, index=True)  # OIDC subject, links an external IdP identity
 
     roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
     invited_by = relationship("User", remote_side="User.id", foreign_keys=[invited_by_id])
@@ -807,6 +808,7 @@ def create_tables():
         "ALTER TABLE users ADD COLUMN personal_ssh_public_key TEXT",
         "ALTER TABLE users ADD COLUMN storage_quota_mb INTEGER NOT NULL DEFAULT 500",
         "UPDATE users SET storage_quota_mb = 2048 WHERE storage_quota_mb = 500",
+        "ALTER TABLE users ADD COLUMN oidc_sub VARCHAR(255)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

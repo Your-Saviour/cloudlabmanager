@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Hexagon, ShieldCheck } from 'lucide-react'
+import { Hexagon, ShieldCheck, KeyRound } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
+import { useAuthStatus } from '@/hooks/useAuth'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +16,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const setAuth = useAuthStore((s) => s.setAuth)
   const navigate = useNavigate()
+  const { data: status } = useAuthStatus()
+
+  // Surface an OIDC error passed back via ?oidc_error=...
+  useEffect(() => {
+    const oidcError = new URLSearchParams(window.location.search).get('oidc_error')
+    if (oidcError) setError(`SSO sign-in failed (${oidcError})`)
+  }, [])
 
   // MFA state
   const [mfaRequired, setMfaRequired] = useState(false)
@@ -174,6 +182,27 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
+            {status?.oidc_enabled && (
+              <>
+                <div className="relative py-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border/50" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">or</span>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => { window.location.href = '/api/auth/oidc/login' }}
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  Sign in with {status.oidc_provider || 'SSO'}
+                </Button>
+              </>
+            )}
             <div className="text-center">
               <Link to="/forgot-password" className="text-sm text-muted-foreground hover:text-primary transition-colors">
                 Forgot password?

@@ -147,6 +147,13 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 | `SMTP_SENDER_NAME` | No | SMTP sender name (default: "CloudLab Manager") |
 | `MCP_SERVICE_ACCOUNT_PASSWORD` | No | Password for `mcp-service` account (enables MCP server) |
 | `ALLOWED_ORIGINS` | No | CORS origins (default: `*`) |
+| `OIDC_ENABLED` | No | Enable OIDC/SSO login (`true` to turn on) |
+| `OIDC_ISSUER` | No | OIDC issuer URL (e.g. Authentik `https://auth.<domain>/application/o/<slug>/`) |
+| `OIDC_CLIENT_ID` | No | OIDC client id |
+| `OIDC_CLIENT_SECRET` | No | OIDC client secret |
+| `OIDC_REDIRECT_URI` | No | OIDC redirect URI (`https://<clm-fqdn>/api/auth/oidc/callback`) |
+| `OIDC_DEFAULT_ROLE` | No | Role assigned to newly provisioned SSO users (default: `member`) |
+| `OIDC_PROVIDER_NAME` | No | Display name on the SSO button (default: `SSO`) |
 
 ## Database
 
