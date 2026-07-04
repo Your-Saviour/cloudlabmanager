@@ -152,6 +152,19 @@ class Scheduler:
                 if not result.get("skipped"):
                     logger.info("AD sync: %d users, %d groups", result.get("users", 0), result.get("groups", 0))
                 return
+            elif schedule.system_task == "authentik_sync":
+                from authentik_sync import run_authentik_sync
+                result = await run_authentik_sync(self.runner)
+                schedule.last_run_at = datetime.now(timezone.utc)
+                schedule.last_status = "completed" if "error" not in result else "failed"
+                schedule.next_run_at = self._next_run(schedule.cron_expression)
+                if not result.get("skipped"):
+                    logger.info(
+                        "Authentik sync: %d vm users, %d vm admins, %d new principals",
+                        result.get("vm_users", 0), result.get("vm_admins", 0),
+                        result.get("new_principals", 0),
+                    )
+                return
 
         elif schedule.job_type == "inventory_action":
             job = await self._dispatch_inventory_action(schedule, inputs)

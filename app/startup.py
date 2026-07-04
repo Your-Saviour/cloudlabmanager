@@ -323,6 +323,47 @@ def seed_ad_sync_schedule():
         session.close()
 
 
+def seed_authentik_sync_schedule():
+    """Create the Authentik VM-access mirror sync scheduled job if it doesn't exist."""
+    from database import SessionLocal, ScheduledJob
+    from croniter import croniter
+    from datetime import datetime, timezone
+
+    session = SessionLocal()
+    try:
+        existing = (
+            session.query(ScheduledJob)
+            .filter_by(system_task="authentik_sync")
+            .first()
+        )
+        if existing:
+            return
+
+        now = datetime.now(timezone.utc)
+        cron_expr = "*/15 * * * *"
+        cron = croniter(cron_expr, now)
+        next_run = cron.get_next(datetime).replace(tzinfo=timezone.utc)
+
+        schedule = ScheduledJob(
+            name="Authentik VM Access Sync",
+            description="Mirror personal-instance permissions into Authentik groups and Kerberos principals",
+            job_type="system_task",
+            system_task="authentik_sync",
+            cron_expression=cron_expr,
+            is_enabled=True,
+            skip_if_running=True,
+            next_run_at=next_run,
+        )
+        session.add(schedule)
+        session.commit()
+        print("  Seeded Authentik VM access sync schedule (every 15 min)")
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Could not seed Authentik sync schedule: {e}")
+    finally:
+        session.close()
+
+
 def backfill_credtype_tags():
     """One-time backfill of credtype: tags on existing credential objects."""
     import json
@@ -531,6 +572,9 @@ def init_database():
 
     # Seed AD directory sync schedule (idempotent)
     seed_ad_sync_schedule()
+
+    # Seed Authentik VM access mirror sync schedule (idempotent)
+    seed_authentik_sync_schedule()
 
     return type_configs
 

@@ -595,3 +595,37 @@ async def extend_instance_ttl(
         "ttl_hours": ttl_hours,
         "extended_at": _utc_iso(obj.created_at),
     }
+
+
+@router.post("/access-sync")
+async def trigger_access_sync(
+    request: Request,
+    user: User = Depends(require_permission("users.assign_roles")),
+    session: Session = Depends(get_db_session),
+):
+    """
+    Trigger the Authentik VM-access mirror sync: personal-instance permissions
+    are pushed to Authentik groups (clm-vm-users/clm-vm-admins) and Kerberos
+    KDC principals. Also runs automatically every 15 minutes.
+    """
+    from authentik_sync import run_authentik_sync, is_configured
+
+    if not is_configured():
+        raise HTTPException(
+            status_code=409,
+            detail="Authentik directory not configured — run the authentik "
+                   "service 'directory' deploy stage first.",
+        )
+
+    runner = request.app.state.ansible_runner
+    result = await run_authentik_sync(runner)
+
+    log_action(
+        session, user.id, user.username,
+        "personal_instance.access_sync",
+        "Manual Authentik VM access sync",
+        details=result,
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return result
