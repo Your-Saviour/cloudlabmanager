@@ -123,7 +123,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 - **Notification permissions**: `notifications.view`, `notifications.rules.view`, `notifications.rules.manage`, `notifications.channels.manage`
 - **Portal permissions**: `portal.view`, `portal.bookmarks.edit`
 - **Webhook permissions**: `webhooks.view`, `webhooks.create`, `webhooks.edit`, `webhooks.delete`
-- **Personal instance permissions**: `personal_instances.create`, `personal_instances.destroy`, `personal_instances.view_all`, `personal_instances.manage_all`
+- **Personal instance permissions**: `personal_instances.create`, `personal_instances.destroy`, `personal_instances.view_all`, `personal_instances.manage_all`. Mirrored outbound to Authentik + Kerberos by `app/authentik_sync.py` (`personal_instances.create` → group `clm-vm-users` + KDC principal; `personal_instances.manage_all` → group `clm-vm-admins`), runs every 15 min + `POST /api/personal-instances/access-sync` (needs `users.assign_roles`). See cloudlab `Documentation/Kerberos VM Access.md`.
 - **Feedback permissions**: `feedback.submit`, `feedback.view_all`, `feedback.manage`
 - **File library permissions**: `files.view`, `files.upload`, `files.delete`, `files.manage`
 - **MCP permissions**: `mcp.manage`, `mcp.config.read`
