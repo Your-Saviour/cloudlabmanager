@@ -47,6 +47,7 @@ cloudlabmanager/
 │   │   ├── personal_instance_routes.py # /api/personal-instances/*
 │   │   ├── feedback_routes.py # /api/feedback/*
 │   │   ├── mcp_routes.py     # /api/mcp/* (MCP server management)
+│   │   ├── vpc_routes.py     # /api/vpc/* (VPC + Vultr firewall management, "Networking" tab)
 │   │   └── file_routes.py    # /api/files/* (file library CRUD)
 │   ├── mcp_server/                   # MCP server package
 │   │   ├── server.py          # FastMCP entry point (stdio/SSE)
@@ -126,6 +127,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 - **Feedback permissions**: `feedback.submit`, `feedback.view_all`, `feedback.manage`
 - **File library permissions**: `files.view`, `files.upload`, `files.delete`, `files.manage`
 - **MCP permissions**: `mcp.manage`, `mcp.config.read`
+- **VPC/networking permissions**: `vpc.view`, `vpc.manage` — gate the Networking tab (`/vpc`) and `/api/vpc/*`. Mutations run cloudlab playbooks (`init_playbook/vpc-*.yaml`, `firewall-*.yaml`) as async jobs and auto-resync the cached report (AppMetadata keys `vpc_report`/`vpc_report_time`)
 
 ## Environment Variables
 

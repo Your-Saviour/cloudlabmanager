@@ -39,6 +39,7 @@ from routes.file_browser_routes import router as file_browser_router
 from routes.invite_link_routes import router as invite_link_router
 from routes.jit_routes import router as jit_router
 from routes.mcp_routes import router as mcp_router
+from routes.vpc_routes import router as vpc_router
 from health_checker import HealthPoller, load_health_configs
 from mcp_manager import MCPProcessManager
 from drift_checker import DriftPoller
@@ -187,6 +188,7 @@ app.include_router(file_browser_router)
 app.include_router(invite_link_router)
 app.include_router(jit_router)
 app.include_router(mcp_router)
+app.include_router(vpc_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

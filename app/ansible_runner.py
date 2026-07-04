@@ -1713,6 +1713,111 @@ class AnsibleRunner:
         self._persist_job(job)
         await self._notify_job(job)
 
+    # --- VPC / firewall methods ---
+
+    async def _run_vpc_list_step(self, job: Job) -> bool:
+        """Run vpc-list.yaml and cache the parsed report in AppMetadata.
+
+        Returns True on success. Used both by the standalone sync job and as
+        a follow-up step after mutation playbooks so the cache stays fresh.
+        """
+        job.output.append("--- Syncing VPC/firewall report from Vultr ---")
+        ok = await self._run_command(job, [
+            "ansible-playbook",
+            "/init_playbook/vpc-list.yaml",
+            "--vault-password-file", VAULT_PASS_FILE,
+        ])
+
+        if ok:
+            report_file = "/outputs/vpc_report.json"
+            if os.path.isfile(report_file):
+                try:
+                    with open(report_file, "r") as f:
+                        report = json.load(f)
+
+                    from database import SessionLocal, AppMetadata
+                    session = SessionLocal()
+                    try:
+                        AppMetadata.set(session, "vpc_report", report)
+                        AppMetadata.set(session, "vpc_report_time",
+                                        datetime.now(timezone.utc).isoformat())
+                        session.commit()
+                        job.output.append(
+                            f"[Synced {len(report.get('vpcs', []))} VPCs, "
+                            f"{len(report.get('firewall_groups', []))} firewall groups]")
+                    finally:
+                        session.close()
+                except Exception as e:
+                    job.output.append(f"[Warning: Could not cache VPC report: {e}]")
+            else:
+                job.output.append("[Warning: vpc_report.json not found after sync]")
+        return ok
+
+    async def sync_vpc_report(self, user_id: int | None = None, username: str | None = None) -> Job:
+        job_id = str(uuid.uuid4())[:8]
+        job = Job(
+            id=job_id,
+            service="vpc",
+            action="sync",
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+            inputs={},
+        )
+        self.jobs[job_id] = job
+        asyncio.create_task(self._run_sync_vpc_report(job))
+        return job
+
+    async def _run_sync_vpc_report(self, job: Job):
+        ok = await self._run_vpc_list_step(job)
+        job.status = "completed" if ok else "failed"
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(job)
+        await self._notify_job(job)
+
+    async def run_vpc_playbook(self, playbook: str, extra_vars: dict, action: str,
+                               user_id: int | None = None, username: str | None = None) -> Job:
+        """Run a VPC/firewall mutation playbook, then re-sync the VPC report."""
+        job_id = str(uuid.uuid4())[:8]
+        job = Job(
+            id=job_id,
+            service="vpc",
+            action=action,
+            status="running",
+            started_at=datetime.now(timezone.utc).isoformat(),
+            user_id=user_id,
+            username=username,
+            inputs=dict(extra_vars),
+        )
+        self.jobs[job_id] = job
+        asyncio.create_task(self._run_vpc_playbook(job, playbook, extra_vars))
+        return job
+
+    async def _run_vpc_playbook(self, job: Job, playbook: str, extra_vars: dict):
+        job.output.append(f"--- Running {playbook} ---")
+        cmd = [
+            "ansible-playbook",
+            f"/init_playbook/{playbook}",
+            "--vault-password-file", VAULT_PASS_FILE,
+        ]
+        for key, value in extra_vars.items():
+            cmd.extend(["-e", f"{key}={value}"])
+
+        ok = await self._run_command(job, cmd)
+
+        if ok:
+            # Re-sync the cached report so the UI stays fresh
+            try:
+                await self._run_vpc_list_step(job)
+            except Exception as e:
+                job.output.append(f"[Warning: VPC report re-sync failed: {e}]")
+
+        job.status = "completed" if ok else "failed"
+        job.finished_at = datetime.now(timezone.utc).isoformat()
+        self._persist_job(job)
+        await self._notify_job(job)
+
     def _persist_job(self, job: Job, object_id: int | None = None, type_slug: str | None = None):
         from database import SessionLocal, JobRecord
         session = SessionLocal()

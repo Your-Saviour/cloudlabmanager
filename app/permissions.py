@@ -77,6 +77,9 @@ STATIC_PERMISSION_DEFS = [
     ("snapshots.create", "snapshots", "Create Snapshots", "Take new snapshots of instances"),
     ("snapshots.delete", "snapshots", "Delete Snapshots", "Delete snapshots from Vultr"),
     ("snapshots.restore", "snapshots", "Restore Snapshots", "Create new instances from snapshots"),
+    # vpc / firewall
+    ("vpc.view", "vpc", "View VPC & Firewalls", "View VPC networks, firewall groups, and instance attachments"),
+    ("vpc.manage", "vpc", "Manage VPC & Firewalls", "Create/delete VPCs and firewall groups, manage rules and instance attachments"),
     # portal
     ("portal.view", "portal", "View Portal", "View the service access portal"),
     ("portal.bookmarks.edit", "portal", "Edit Bookmarks", "Create, edit, and delete personal portal bookmarks"),

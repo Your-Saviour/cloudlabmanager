@@ -39,6 +39,7 @@ import NotificationRulesPage from '@/pages/notifications/NotificationRulesPage'
 import PortalPage from '@/pages/portal/PortalPage'
 import WebhooksPage from '@/pages/webhooks/WebhooksPage'
 import SnapshotsPage from '@/pages/snapshots/SnapshotsPage'
+import VpcPage from '@/pages/vpc/VpcPage'
 import PersonalInstancesPage from '@/pages/personal-instances/PersonalInstancesPage'
 import FeedbackPage from '@/pages/feedback/FeedbackPage'
 import CredentialAccessRulesPage from '@/pages/settings/CredentialAccessRulesPage'
@@ -137,6 +138,7 @@ function AppRoutes() {
         <Route path="/drift" element={<DriftPage />} />
         <Route path="/notifications/rules" element={<NotificationRulesPage />} />
         <Route path="/snapshots" element={<SnapshotsPage />} />
+        <Route path="/vpc" element={<VpcPage />} />
         <Route path="/personal-instances" element={<PersonalInstancesPage />} />
         <Route path="/jit-admin" element={<JitAdminPage />} />
         <Route path="/feedback" element={<FeedbackPage />} />
