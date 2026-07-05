@@ -700,6 +700,26 @@ class InviteLinkRegistration(Base):
     user = relationship("User")
 
 
+class OidcGroupMapping(Base):
+    """Maps an Authentik (IdP) group name to a CLM role.
+
+    Applied on every OIDC login from the ID token's `groups` claim: mapped
+    roles are granted/removed to follow group membership, while roles that are
+    not the target of any mapping stay manually managed (see app/oidc_groups.py).
+    """
+    __tablename__ = "oidc_group_mappings"
+    __table_args__ = (UniqueConstraint("group_name", "role_id", name="uq_oidc_group_role"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    group_name = Column(String(200), nullable=False, index=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    role = relationship("Role", lazy="selectin")
+    creator = relationship("User", foreign_keys=[created_by])
+
+
 class JitGrant(Base):
     __tablename__ = "jit_grants"
 

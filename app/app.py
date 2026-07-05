@@ -37,6 +37,7 @@ from routes.update_routes import router as update_router
 from routes.file_routes import router as file_router
 from routes.file_browser_routes import router as file_browser_router
 from routes.invite_link_routes import router as invite_link_router
+from routes.authentik_routes import router as authentik_router
 from routes.jit_routes import router as jit_router
 from routes.mcp_routes import router as mcp_router
 from routes.vpc_routes import router as vpc_router
@@ -186,6 +187,7 @@ app.include_router(update_router)
 app.include_router(file_router)
 app.include_router(file_browser_router)
 app.include_router(invite_link_router)
+app.include_router(authentik_router)
 app.include_router(jit_router)
 app.include_router(mcp_router)
 app.include_router(vpc_router)

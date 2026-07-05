@@ -230,6 +230,14 @@ async def oidc_callback(request: Request, session: Session = Depends(get_db_sess
     if not user.is_active:
         return _fail("account_disabled")
 
+    # Sync mapped roles from the IdP groups claim (no-op when no mappings exist).
+    try:
+        from oidc_groups import apply_group_mappings
+        apply_group_mappings(session, user, claims.get("groups"))
+    except Exception:
+        import logging
+        logging.getLogger("oidc_groups").exception("Failed to apply OIDC group mappings")
+
     user.last_login_at = datetime.now(timezone.utc)
     session.flush()
 

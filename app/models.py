@@ -768,3 +768,15 @@ class FileLibraryResponse(BaseModel):
     tags: list[str]
     uploaded_at: str
     last_used_at: Optional[str]
+
+
+class OnboardingInviteCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=60)
+    email: Optional[str] = None
+    name: Optional[str] = None
+    expires_hours: int = Field(default=72, ge=1, le=720)
+
+
+class OidcGroupMappingCreate(BaseModel):
+    group_name: str = Field(min_length=1, max_length=200)
+    role_id: int

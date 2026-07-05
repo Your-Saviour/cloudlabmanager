@@ -32,6 +32,7 @@ import { toast } from 'sonner'
 import type { ColumnDef } from '@tanstack/react-table'
 import UserServiceAccess from '@/components/users/UserServiceAccess'
 import InviteLinksTab from './InviteLinksTab'
+import SsoOnboardingTab, { useAuthentikStatus } from './SsoOnboardingTab'
 import type { User, Role } from '@/types'
 
 export default function UsersPage() {
@@ -43,6 +44,8 @@ export default function UsersPage() {
   const canMfaReset = useHasPermission('users.mfa_reset')
   const canResetPassword = useHasPermission('users.password_reset')
   const canViewInviteLinks = useHasPermission('users.invite_links.view')
+  const { data: authentikStatus } = useAuthentikStatus()
+  const authentikConfigured = !!authentikStatus?.configured
   const [inviteOpen, setInviteOpen] = useState(false)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
   const [editUser, setEditUser] = useState<User | null>(null)
@@ -291,6 +294,7 @@ export default function UsersPage() {
         <TabsList>
           <TabsTrigger value="users">Users</TabsTrigger>
           {canViewInviteLinks && <TabsTrigger value="invite-links">Invite Links</TabsTrigger>}
+          {canViewInviteLinks && authentikConfigured && <TabsTrigger value="sso-onboarding">SSO Onboarding</TabsTrigger>}
         </TabsList>
         <TabsContent value="users">
 
@@ -482,6 +486,11 @@ export default function UsersPage() {
         {canViewInviteLinks && (
           <TabsContent value="invite-links">
             <InviteLinksTab />
+          </TabsContent>
+        )}
+        {canViewInviteLinks && authentikConfigured && (
+          <TabsContent value="sso-onboarding">
+            <SsoOnboardingTab />
           </TabsContent>
         )}
       </Tabs>

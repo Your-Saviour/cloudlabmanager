@@ -48,6 +48,7 @@ cloudlabmanager/
 │   │   ├── feedback_routes.py # /api/feedback/*
 │   │   ├── mcp_routes.py     # /api/mcp/* (MCP server management)
 │   │   ├── vpc_routes.py     # /api/vpc/* (VPC + Vultr firewall management, "Networking" tab)
+│   │   ├── authentik_routes.py # /api/authentik/* (SSO onboarding invitations + group→role mappings)
 │   │   └── file_routes.py    # /api/files/* (file library CRUD)
 │   ├── mcp_server/                   # MCP server package
 │   │   ├── server.py          # FastMCP entry point (stdio/SSE)
@@ -127,6 +128,7 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 - **Feedback permissions**: `feedback.submit`, `feedback.view_all`, `feedback.manage`
 - **File library permissions**: `files.view`, `files.upload`, `files.delete`, `files.manage`
 - **MCP permissions**: `mcp.manage`, `mcp.config.read`
+- **Authentik/SSO onboarding**: invitation endpoints (`/api/authentik/invitations*`) reuse `users.invite_links.view/manage`; group→role mappings (`/api/authentik/group-mappings*`) use `roles.view` (read) / `users.assign_roles` (write). Mappings are applied on every OIDC login from the ID token `groups` claim (`app/oidc_groups.py`) — mapped roles follow group membership, unmapped roles stay manual. UI: Users → SSO Onboarding tab (hidden unless `/api/authentik/status` reports configured).
 - **VPC/networking permissions**: `vpc.view`, `vpc.manage` — gate the Networking tab (`/vpc`) and `/api/vpc/*`. Mutations run cloudlab playbooks (`init_playbook/vpc-*.yaml`, `firewall-*.yaml`) as async jobs and auto-resync the cached report (AppMetadata keys `vpc_report`/`vpc_report_time`)
 
 ## Environment Variables
@@ -156,10 +158,13 @@ docker compose exec cloudlabmanager python3 /app/reset_password.py --username ja
 | `OIDC_REDIRECT_URI` | No | OIDC redirect URI (`https://<clm-fqdn>/api/auth/oidc/callback`) |
 | `OIDC_DEFAULT_ROLE` | No | Role assigned to newly provisioned SSO users (default: `member`) |
 | `OIDC_PROVIDER_NAME` | No | Display name on the SSO button (default: `SSO`) |
+| `AUTHENTIK_API_URL` | No | Authentik REST API base (e.g. `https://auth.<domain>/api/v3`); falls back to `web_url` from the mounted `services/authentik/outputs/service_outputs.yaml` |
+| `AUTHENTIK_API_TOKEN` | No | Authentik API token; falls back to `bootstrap_token` from the same outputs file |
+| `AUTHENTIK_ONBOARDING_FLOW` | No | Enrollment flow slug for onboarding invitations (default: `clm-onboarding`) |
 
 ## Database
 
-SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `cost_snapshots`, `notifications`, `notification_rules`, `notification_channels`, `user_preferences`, `portal_bookmarks`, `webhook_endpoints`, `bug_reports`, `feedback_requests`, `file_library`.
+SQLite with SQLAlchemy ORM. Key tables: `users`, `roles`, `permissions`, `inventory_types`, `inventory_objects`, `inventory_tags`, `object_acl`, `tag_permissions`, `scheduled_jobs`, `job_records`, `health_check_results`, `audit_log`, `app_metadata`, `invite_tokens`, `password_reset_tokens`, `config_versions`, `cost_snapshots`, `notifications`, `notification_rules`, `notification_channels`, `user_preferences`, `portal_bookmarks`, `webhook_endpoints`, `bug_reports`, `feedback_requests`, `file_library`, `oidc_group_mappings`.
 
 The `users` table includes a `storage_quota_mb` column (default: 2 GB) for per-user file library storage quotas.
 
