@@ -96,6 +96,37 @@ def check_inventory_permission(session: Session, user: User, object_id: int,
     return full_perm in perms
 
 
+def resolve_server_object_id(session: Session, hostname: str) -> int | None:
+    """Find the inventory 'server' object id whose data.hostname matches, or None."""
+    import json
+    server_type = session.query(InventoryType).filter_by(slug="server").first()
+    if not server_type:
+        return None
+    objs = session.query(InventoryObject).filter_by(type_id=server_type.id).all()
+    for obj in objs:
+        try:
+            data = json.loads(obj.data) if isinstance(obj.data, str) else obj.data
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if data and data.get("hostname") == hostname:
+            return obj.id
+    return None
+
+
+def check_hostname_ssh_permission(session: Session, user: User, hostname: str) -> bool:
+    """Object-level SSH authorization for a hostname.
+
+    The coarse type-level `instances.ssh` / `inventory.server.ssh` grant is checked
+    elsewhere; this additionally enforces per-object and per-tag ACLs (including
+    deny rules) when a matching inventory 'server' object exists. If no object
+    matches the hostname, we defer to the coarse check already performed.
+    """
+    obj_id = resolve_server_object_id(session, hostname)
+    if obj_id is None:
+        return True
+    return check_inventory_permission(session, user, obj_id, "ssh")
+
+
 _LEGACY_SERVICE_PERM_MAP = {
     "view": "services.view",
     "deploy": "services.deploy",

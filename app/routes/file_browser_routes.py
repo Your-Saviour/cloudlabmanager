@@ -8,7 +8,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from auth import get_current_user
-from service_auth import require_service_permission
+from service_auth import require_service_permission, check_service_permission
 from database import User
 from db_session import get_db_session
 from sqlalchemy.orm import Session
@@ -156,6 +156,55 @@ def _parse_ls_output(raw_output: str) -> list[dict]:
     return entries
 
 
+def _authorize_hostname(runner, session: Session, user: User, hostname: str,
+                        permission_suffix: str) -> dict:
+    """Ensure the target hostname belongs to a service the caller is authorized for.
+
+    The route-level permission dependency only checks the service ``name`` in the
+    URL, but the SSH target is the attacker-controlled ``hostname`` in the body.
+    Without this check, ``run``/``exec`` on any one service would grant root
+    access to every host CLM holds a key for. We resolve the service that
+    actually owns ``hostname`` and require the same permission on it.
+    """
+    creds = runner.resolve_ssh_credentials(hostname)
+    if not creds:
+        raise HTTPException(404, f"Cannot resolve SSH credentials for host: {hostname}")
+    owning_service = creds.get("service")
+    if not owning_service or not check_service_permission(
+        session, user, owning_service, permission_suffix
+    ):
+        raise HTTPException(403, f"Permission denied: no access to host {hostname}")
+    return creds
+
+
+# Paths that must never be readable through the browse/preview endpoints,
+# regardless of the (optional) allowed_browse_paths allowlist.
+_SENSITIVE_PATH_PREFIXES = (
+    "/root/.ssh",
+    "/etc/shadow",
+    "/etc/gshadow",
+    "/etc/ssh",
+    "/root/.vault_pass.txt",
+    "/proc",
+    "/sys",
+)
+
+
+def _is_sensitive_path(path: str) -> bool:
+    """Return True if the (normalized, absolute) path targets known-sensitive data."""
+    for prefix in _SENSITIVE_PATH_PREFIXES:
+        if path == prefix or path.startswith(prefix + "/"):
+            return True
+    # Block anything under a .ssh directory or obvious private-key / password files.
+    lowered = path.lower()
+    if "/.ssh/" in lowered or lowered.endswith("/.ssh"):
+        return True
+    base = os.path.basename(lowered)
+    if base in ("id_rsa", "id_ed25519", "id_ecdsa", "id_dsa", ".vault_pass.txt"):
+        return True
+    return False
+
+
 def _load_allowed_browse_paths() -> list[str]:
     """Load allowed_browse_paths from the download-file service config."""
     config_path = "/app/cloudlab/services/download-file/config.yaml"
@@ -192,10 +241,13 @@ async def browse_files(
     Permission: services.run for the target service (same as running scripts)."""
     path = _validate_path(body.path)
     runner = request.app.state.ansible_runner
+    _authorize_hostname(runner, session, user, body.hostname, "run")
 
     # Enforce path restrictions from config
     allowed_paths = _load_allowed_browse_paths()
     unrestricted = len(allowed_paths) == 0
+    if _is_sensitive_path(path):
+        raise HTTPException(403, "Path is not permitted")
     if not _check_path_restriction(path, allowed_paths):
         raise HTTPException(403, "Path is outside the allowed browsing scope")
 
@@ -233,9 +285,12 @@ async def file_preview(
     """Preview the first N lines of a text file on a remote instance."""
     path = _validate_path(body.path)
     runner = request.app.state.ansible_runner
+    _authorize_hostname(runner, session, user, body.hostname, "run")
 
     # Enforce path restrictions
     allowed_paths = _load_allowed_browse_paths()
+    if _is_sensitive_path(path):
+        raise HTTPException(403, "Path is not permitted")
     if not _check_path_restriction(path, allowed_paths):
         raise HTTPException(403, "Path is outside the allowed browsing scope")
 
@@ -295,6 +350,7 @@ async def run_command(
     """Run an ad-hoc shell command on a remote instance.
     Permission: services.exec for the target service."""
     runner = request.app.state.ansible_runner
+    _authorize_hostname(runner, session, user, body.hostname, "exec")
 
     result = await _run_ssh_command(
         runner, body.hostname, body.command,

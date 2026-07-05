@@ -11,7 +11,9 @@ from database import (
 )
 from auth import get_current_user, get_secret_key, ALGORITHM
 from permissions import require_permission, has_permission
-from inventory_auth import check_inventory_permission, check_type_permission
+from inventory_auth import (
+    check_inventory_permission, check_type_permission, check_hostname_ssh_permission,
+)
 from db_session import get_db_session
 from audit import log_action
 from routes.service_routes import resolve_library_files
@@ -950,6 +952,11 @@ async def websocket_ssh_by_id(websocket: WebSocket, obj_id: int):
         if not obj:
             await websocket.close(code=4004, reason="Object not found")
             return
+        # Enforce per-object/tag ACLs (incl. deny rules) for this specific host.
+        user = session.query(User).filter_by(id=user_info["user_id"]).first()
+        if not user or not check_inventory_permission(session, user, obj_id, "ssh"):
+            await websocket.close(code=4003, reason="Permission denied for this host")
+            return
         obj_data = json.loads(obj.data)
         hostname = obj_data.get("hostname", "")
     finally:
@@ -994,6 +1001,9 @@ async def get_ssh_users(
     if not has_permission(session, user.id, "instances.ssh") and \
        not has_permission(session, user.id, "inventory.server.ssh"):
         raise HTTPException(status_code=403, detail="Permission denied: SSH access")
+    # Enforce per-object/tag ACLs (incl. deny rules) for this specific host.
+    if not check_hostname_ssh_permission(session, user, hostname):
+        raise HTTPException(status_code=403, detail="Permission denied for this host")
 
     runner = request.app.state.ansible_runner
     creds = runner.resolve_ssh_credentials(hostname)
@@ -1043,6 +1053,16 @@ async def _handle_ssh_websocket(websocket: WebSocket, hostname: str, user_info: 
     if ssh_user_param and not re.match(r'^[a-zA-Z0-9._-]{1,32}$', ssh_user_param):
         await websocket.close(code=4002, reason="Invalid username format")
         return
+
+    # Enforce per-object/tag ACLs for this specific host (deny rules etc.).
+    session = SessionLocal()
+    try:
+        user = session.query(User).filter_by(id=user_info["user_id"]).first()
+        if not user or not check_hostname_ssh_permission(session, user, hostname):
+            await websocket.close(code=4003, reason="Permission denied for this host")
+            return
+    finally:
+        session.close()
 
     # Audit log
     session = SessionLocal()
@@ -1272,6 +1292,11 @@ async def websocket_rdp_by_id(websocket: WebSocket, obj_id: int):
         if not obj:
             await websocket.close(code=4004, reason="Object not found")
             return
+        # Enforce per-object/tag ACLs (incl. deny rules) for this specific host.
+        user = session.query(User).filter_by(id=user_info["user_id"]).first()
+        if not user or not check_inventory_permission(session, user, obj_id, "ssh"):
+            await websocket.close(code=4003, reason="Permission denied for this host")
+            return
         obj_data = json.loads(obj.data)
         hostname = obj_data.get("hostname", "")
     finally:
@@ -1354,6 +1379,16 @@ async def _handle_rdp_websocket(websocket: WebSocket, hostname: str, user_info: 
     )
 
     rdp_user_param = websocket.query_params.get("user")
+
+    # Enforce per-object/tag ACLs for this specific host (deny rules etc.).
+    session = SessionLocal()
+    try:
+        user = session.query(User).filter_by(id=user_info["user_id"]).first()
+        if not user or not check_hostname_ssh_permission(session, user, hostname):
+            await websocket.close(code=4003, reason="Permission denied for this host")
+            return
+    finally:
+        session.close()
 
     # Audit log
     session = SessionLocal()

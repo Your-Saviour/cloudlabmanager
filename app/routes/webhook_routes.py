@@ -14,6 +14,8 @@ def _utc_iso(dt: datetime | None) -> str | None:
     return dt.isoformat()
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from database import WebhookEndpoint, JobRecord, User, SessionLocal
 from auth import get_current_user
@@ -27,6 +29,7 @@ from service_auth import check_service_script_permission, check_service_permissi
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 def _extract_inputs_from_payload(payload: dict, mapping: dict) -> dict:
@@ -78,8 +81,14 @@ async def _update_webhook_status(webhook_id: int, job_id: str, runner):
 
 
 @router.post("/trigger/{token}")
+@limiter.limit("20/minute")
 async def trigger_webhook(token: str, request: Request, session: Session = Depends(get_db_session)):
-    """Unauthenticated endpoint for external systems to trigger webhooks."""
+    """Unauthenticated endpoint for external systems to trigger webhooks.
+
+    Rate-limited per source IP: this is the only unauthenticated action-executing
+    endpoint, and each call spawns a real Ansible job, so an unthrottled endpoint
+    is a resource/cost-exhaustion vector.
+    """
     webhook = session.query(WebhookEndpoint).filter_by(token=token).first()
     if not webhook:
         raise HTTPException(404, "Not found")

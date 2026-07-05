@@ -120,6 +120,17 @@ async def websocket_ssh(websocket: WebSocket, hostname: str):
         await websocket.close(code=4002, reason="Invalid username format")
         return
 
+    # Enforce per-object/tag ACLs for this specific host (deny rules etc.).
+    session = SessionLocal()
+    try:
+        from inventory_auth import check_hostname_ssh_permission
+        user = session.query(User).filter_by(id=user_info["user_id"]).first()
+        if not user or not check_hostname_ssh_permission(session, user, hostname):
+            await websocket.close(code=4003, reason="Permission denied for this host")
+            return
+    finally:
+        session.close()
+
     # Audit log SSH connection
     session = SessionLocal()
     try:
